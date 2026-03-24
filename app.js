@@ -381,9 +381,3 @@ document.querySelector("#export-csv").addEventListener("click", () => {
   closeMenu();
 });
 
-document.querySelector("#clear-data").addEventListener("click", () => {
-  if (!confirm("Na pewno usunąć wszystkie lokalne dane?")) return;
-  localStorage.removeItem(STORAGE_KEY);
-  renderEntries();
-  closeMenu();
-});

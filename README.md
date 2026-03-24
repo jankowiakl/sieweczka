@@ -6,7 +6,7 @@ Mobilna aplikacja terenowa (offline w przeglądarce telefonu) do szybkiego zbier
 
 - formularz protokołu terenowego pod badania sieweczek,
 - zapis lokalny (`localStorage`) i eksport CSV/JSON,
-- menu opcji pod ikoną `☰` (zarządzanie bazą danych),
+- menu opcji pod ikoną `☰` (instalacja i eksport danych),
 - automatyczne chowanie górnej belki przy przewijaniu w dół,
 - gotowość do instalacji PWA (manifest + service worker + instalacja z poziomu aplikacji),
 - pełny zestaw zmiennych mikro/mezo:
@@ -40,3 +40,6 @@ Repo jest przygotowane pod PWABuilder:
 - `manifest.webmanifest` ma ustawione `id`, `start_url` i `scope` na `/sieweczka/` (GitHub Pages project site),
 - service worker cache’uje app shell i ma fallback na nawigację offline,
 - aplikacja ma przycisk "Losuj azymut" dla punktu losowego.
+
+
+> Uwaga: manifest używa ikon PNG osadzonych jako data URI, więc PR nie zawiera plików binarnych.
