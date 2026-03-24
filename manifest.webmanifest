@@ -9,11 +9,7 @@
   "scope": "/sieweczka/",
   "display": "standalone",
   "display_override": [
-    "standalone",
-    "minimal-ui",
-    "window-controls-overlay",
-    "fullscreen",
-    "browser"
+    "window-controls-overlay"
   ],
   "orientation": "portrait",
   "background_color": "#edf2f7",
