@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Sieweczka Field App</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Sieweczka Field App</h1>
+      <p>Rejestracja gniazd, punktów kontrolnych i zdjęć + plan lotu drona.</p>
+    </header>
+
+    <main class="grid">
+      <section class="card">
+        <h2>Nowy wpis terenowy</h2>
+        <form id="entry-form">
+          <label>
+            Typ punktu
+            <select id="entry-type" required>
+              <option value="nest">Gniazdo</option>
+              <option value="control">Punkt kontrolny</option>
+            </select>
+          </label>
+
+          <label>
+            Gatunek
+            <select id="species" required>
+              <option value="charadrius-hiaticula">Sieweczka obrożna</option>
+              <option value="charadrius-dubius">Sieweczka rzeczna</option>
+              <option value="unknown">Nieokreślony</option>
+            </select>
+          </label>
+
+          <label>
+            Identyfikator punktu
+            <input id="point-id" type="text" placeholder="np. N-2026-001" required />
+          </label>
+
+          <div class="row">
+            <label>
+              Szerokość (lat)
+              <input id="lat" type="number" step="0.000001" required />
+            </label>
+            <label>
+              Długość (lon)
+              <input id="lon" type="number" step="0.000001" required />
+            </label>
+          </div>
+
+          <div class="row">
+            <button type="button" id="gps-btn">Pobierz GPS</button>
+            <small id="gps-status">GPS: brak</small>
+          </div>
+
+          <label>
+            Notatki siedliskowe
+            <textarea id="notes" rows="4" placeholder="np. 70% żwir, 20% piasek, 10% roślinność"></textarea>
+          </label>
+
+          <label>
+            Zdjęcia (1–5)
+            <input id="photos" type="file" accept="image/*" capture="environment" multiple />
+          </label>
+
+          <button type="submit">Zapisz wpis</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Wpisy</h2>
+        <p><strong id="entry-count">0</strong> zapisanych punktów.</p>
+        <div class="actions">
+          <button id="export-json">Eksport JSON</button>
+          <button id="export-csv">Eksport CSV</button>
+          <button id="clear-data" class="danger">Wyczyść dane</button>
+        </div>
+        <ul id="entries-list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Plan lotu drona (po wyznaczeniu gniazd/punktów)</h2>
+        <p>Generuje waypointy na podstawie zapisanych punktów i bufora.</p>
+        <div class="row">
+          <label>
+            Bufor [m]
+            <input id="buffer-m" type="number" min="5" max="100" value="15" />
+          </label>
+          <label>
+            Wysokość lotu [m AGL]
+            <input id="altitude-m" type="number" min="20" max="120" value="45" />
+          </label>
+        </div>
+        <button id="build-flight">Generuj plan lotu (CSV)</button>
+        <p class="hint">Rekomendacja metodyczna: 40–50 m AGL przy overlap ~80/70.</p>
+      </section>
+    </main>
+
+    <template id="entry-item-template">
+      <li class="entry-item">
+        <div>
+          <strong class="entry-id"></strong>
+          <span class="pill entry-type"></span>
+          <span class="pill species"></span>
+        </div>
+        <div class="muted coords"></div>
+        <div class="muted date"></div>
+        <details>
+          <summary>Notatki i zdjęcia</summary>
+          <p class="notes"></p>
+          <div class="photos"></div>
+        </details>
+      </li>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
