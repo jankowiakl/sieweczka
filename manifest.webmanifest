@@ -1,0 +1,20 @@
+{
+  "name": "Sieweczka Field App",
+  "short_name": "Sieweczka",
+  "description": "Mobilna aplikacja terenowa do zbierania danych siedliskowych przy gniazdach sieweczek.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#edf2f7",
+  "theme_color": "#0f766e",
+  "lang": "pl",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
