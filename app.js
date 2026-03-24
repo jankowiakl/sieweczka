@@ -6,6 +6,7 @@ const entryCount = document.querySelector("#entry-count");
 const template = document.querySelector("#entry-item-template");
 const gpsBtn = document.querySelector("#gps-btn");
 const gpsStatus = document.querySelector("#gps-status");
+const randomAzimuthBtn = document.querySelector("#random-azimuth-btn");
 
 const menuToggle = document.querySelector("#menu-toggle");
 const menu = document.querySelector("#app-menu");
@@ -40,6 +41,12 @@ registerServiceWorker();
 setupInstallFlow();
 setupMenu();
 setupHeaderAutoHide();
+
+randomAzimuthBtn.addEventListener("click", () => {
+  const value = Math.floor(Math.random() * 360);
+  document.querySelector("#random-azimuth").value = String(value);
+});
+
 
 function numberInput(id) {
   return Number(document.querySelector(id).value);

@@ -33,3 +33,10 @@ python3 -m http.server 8080
 ```
 
 Następnie otwórz `http://localhost:8080`.
+
+## PWABuilder readiness (github.io)
+
+Repo jest przygotowane pod PWABuilder:
+- `manifest.webmanifest` ma ustawione `id`, `start_url` i `scope` na `/sieweczka/` (GitHub Pages project site),
+- service worker cache’uje app shell i ma fallback na nawigację offline,
+- aplikacja ma przycisk "Losuj azymut" dla punktu losowego.

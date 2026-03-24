@@ -137,7 +137,10 @@
 
           <fieldset>
             <legend>Mikrohabitat (punkt losowy 10 m)</legend>
-            <label>Azymut punktu losowego [°] <input id="random-azimuth" type="number" min="0" max="359" step="1" required /></label>
+            <div class="row-2 azimuth-row">
+              <label>Azymut punktu losowego [°] <input id="random-azimuth" type="number" min="0" max="359" step="1" required /></label>
+              <button type="button" id="random-azimuth-btn">Losuj azymut</button>
+            </div>
             <label>Zdjęcie 1 m² (punkt losowy) <input id="random-photos" type="file" accept="image/*" capture="environment" multiple /></label>
             <label>
               Dominujące podłoże
