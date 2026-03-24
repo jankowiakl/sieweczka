@@ -8,7 +8,12 @@ Mobilna aplikacja terenowa (offline w przeglądarce telefonu) do szybkiego zbier
 - zapis lokalny (`localStorage`) i eksport CSV/JSON,
 - menu opcji pod ikoną `☰` (zarządzanie bazą danych),
 - automatyczne chowanie górnej belki przy przewijaniu w dół,
-- gotowość do instalacji PWA (manifest + service worker + instalacja z poziomu aplikacji).
+- gotowość do instalacji PWA (manifest + service worker + instalacja z poziomu aplikacji),
+- pełny zestaw zmiennych mikro/mezo:
+  - 8 kategorii % pokrycia z foto 1 m² dla gniazda i punktu losowego,
+  - odległości/wysokości roślin i obiektów osłony,
+  - nachylenie,
+  - dystanse strukturalne (woda, krawędź roślinności, struktura pionowa, płaty drobnego i grubszego żwiru, najbliższe gniazda obu gatunków).
 
 ## Instalacja aplikacji z github.io
 

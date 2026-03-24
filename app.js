@@ -20,25 +20,9 @@ const speciesLabel = {
   unknown: "Nieokreślony",
 };
 
-const statusLabel = {
-  fresh: "Świeże",
-  incubated: "Inkubowane",
-  unknown: "Nieznany",
-};
-
-const yesNoLabel = {
-  no: "Nie",
-  yes: "Tak",
-  uncertain: "Niepewne",
-};
-
-const slopeLabel = {
-  flat: "Płasko",
-  slight: "Lekki spadek",
-  moderate: "Umiarkowany spadek",
-  steep: "Wyraźny spadek",
-};
-
+const statusLabel = { fresh: "Świeże", incubated: "Inkubowane", unknown: "Nieznany" };
+const yesNoLabel = { no: "Nie", yes: "Tak", uncertain: "Niepewne" };
+const slopeLabel = { flat: "Płasko", slight: "Lekki spadek", moderate: "Umiarkowany spadek", steep: "Wyraźny spadek" };
 const substrateLabel = {
   sand: "Piasek",
   "fine-gravel": "Drobny żwir",
@@ -57,16 +41,39 @@ setupInstallFlow();
 setupMenu();
 setupHeaderAutoHide();
 
-function registerServiceWorker() {
-  if (!("serviceWorker" in navigator)) {
-    return;
-  }
+function numberInput(id) {
+  return Number(document.querySelector(id).value);
+}
 
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {
-      // Brak blokującego błędu dla użytkownika terenowego.
-    });
-  });
+function readCoverage(prefix) {
+  return {
+    pctSand: numberInput(`#${prefix}-pct-sand`),
+    pctFineGravel: numberInput(`#${prefix}-pct-fine-gravel`),
+    pctCoarse: numberInput(`#${prefix}-pct-coarse`),
+    pctShells: numberInput(`#${prefix}-pct-shells`),
+    pctLiveVeg: numberInput(`#${prefix}-pct-live-veg`),
+    pctDryVeg: numberInput(`#${prefix}-pct-dry-veg`),
+    pctOrganic: numberInput(`#${prefix}-pct-organic`),
+    pctAnthro: numberInput(`#${prefix}-pct-anthro`),
+  };
+}
+
+function sumCoverage(cov) {
+  return (
+    cov.pctSand +
+    cov.pctFineGravel +
+    cov.pctCoarse +
+    cov.pctShells +
+    cov.pctLiveVeg +
+    cov.pctDryVeg +
+    cov.pctOrganic +
+    cov.pctAnthro
+  );
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
 }
 
 function setupInstallFlow() {
@@ -97,26 +104,16 @@ function setupInstallFlow() {
 
     alert(
       "Na iPhone zainstaluj ręcznie: Udostępnij → Dodaj do ekranu początkowego.\n\n" +
-        "Na Androidzie, jeśli nie ma przycisku instalacji, odśwież stronę po wejściu na https://...github.io i spróbuj ponownie z menu przeglądarki."
+        "Na Androidzie, jeśli brak promptu, użyj menu Chrome (⋮) → Zainstaluj aplikację."
     );
   });
 }
 
 function setupMenu() {
-  menuToggle.addEventListener("click", () => {
-    if (menu.classList.contains("open")) {
-      closeMenu();
-    } else {
-      openMenu();
-    }
-  });
-
+  menuToggle.addEventListener("click", () => (menu.classList.contains("open") ? closeMenu() : openMenu()));
   menuOverlay.addEventListener("click", closeMenu);
-
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      closeMenu();
-    }
+    if (event.key === "Escape") closeMenu();
   });
 }
 
@@ -137,16 +134,12 @@ function setupHeaderAutoHide() {
     "scroll",
     () => {
       const current = window.scrollY;
-      const scrollingDown = current > lastScrollY;
-      const enoughOffset = current > 80;
-
-      if (scrollingDown && enoughOffset) {
+      if (current > lastScrollY && current > 80) {
         header.classList.add("header-hidden");
         closeMenu();
       } else {
         header.classList.remove("header-hidden");
       }
-
       lastScrollY = current;
     },
     { passive: true }
@@ -171,14 +164,9 @@ function setEntries(entries) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
 }
 
-function numberInput(id) {
-  return Number(document.querySelector(id).value);
-}
-
 async function filesToDataUrls(fileList, maxFiles = 4) {
   const files = Array.from(fileList).slice(0, maxFiles);
   const urls = [];
-
   for (const file of files) {
     const url = await new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -188,14 +176,20 @@ async function filesToDataUrls(fileList, maxFiles = 4) {
     });
     urls.push(url);
   }
-
   return urls;
 }
 
 function validatePercentages(record) {
-  const total = record.meso.pctSand + record.meso.pctGravel + record.meso.pctVegetation + record.meso.pctWater;
-  if (total > 100) {
-    alert("Suma % piasku, żwiru, roślinności i wody nie może przekraczać 100.");
+  const mesoTotal = record.meso.pctSand + record.meso.pctGravel + record.meso.pctVegetation + record.meso.pctWater;
+  const nestCoverTotal = sumCoverage(record.nestMicro.coverage);
+  const randomCoverTotal = sumCoverage(record.randomMicro.coverage);
+
+  if (mesoTotal > 100) {
+    alert("Suma % dla mezohabitatu nie może przekraczać 100.");
+    return false;
+  }
+  if (nestCoverTotal > 100 || randomCoverTotal > 100) {
+    alert("Suma 8 kategorii pokrycia na zdjęciu 1 m² nie może przekraczać 100.");
     return false;
   }
   return true;
@@ -208,22 +202,16 @@ function renderEntries() {
 
   for (const entry of entries) {
     const item = template.content.cloneNode(true);
-
     item.querySelector(".entry-id").textContent = entry.nestId;
     item.querySelector(".species").textContent = speciesLabel[entry.species] || entry.species;
     item.querySelector(".status").textContent = statusLabel[entry.nestStatus] || entry.nestStatus;
     item.querySelector(".meta").textContent = `${entry.obsDate} ${entry.obsTime} • ${entry.sector} • jaja: ${entry.eggCount} • renest: ${yesNoLabel[entry.possibleRenest]}`;
     item.querySelector(".coords").textContent = `${entry.lat.toFixed(6)}, ${entry.lon.toFixed(6)}`;
 
-    const summary = [
-      `Mikro gniazdo: ${substrateLabel[entry.nestMicro.substrate]}, roślina ${entry.nestMicro.distPlantM} m / ${entry.nestMicro.heightPlantCm} cm, obiekt ${entry.nestMicro.distObjectM} m / ${entry.nestMicro.heightObjectCm} cm, nachylenie: ${slopeLabel[entry.nestMicro.slope]}.`,
-      `Punkt losowy 10 m: azymut ${entry.randomMicro.azimuthDeg}°, podłoże ${substrateLabel[entry.randomMicro.substrate]}, roślina ${entry.randomMicro.distPlantM} m / ${entry.randomMicro.heightPlantCm} cm, obiekt ${entry.randomMicro.distObjectM} m / ${entry.randomMicro.heightObjectCm} cm, nachylenie: ${slopeLabel[entry.randomMicro.slope]}.`,
-      `Mezo 15 m: piasek ${entry.meso.pctSand}%, żwir ${entry.meso.pctGravel}%, roślinność ${entry.meso.pctVegetation}%, woda ${entry.meso.pctWater}%. Dystanse: woda ${entry.meso.distWaterM} m, krawędź roślinności ${entry.meso.distVegEdgeM} m, najbliższa obrożna ${entry.meso.distNearestHiaticulaM} m, najbliższa rzeczna ${entry.meso.distNearestDubiusM} m.`,
-    ];
-    if (entry.notes) {
-      summary.push(`Notatka: ${entry.notes}`);
-    }
-    item.querySelector(".summary").textContent = summary.join(" ");
+    item.querySelector(".summary").textContent =
+      `Mikro(gniazdo): ${substrateLabel[entry.nestMicro.substrate]}, osłona ${entry.nestMicro.distObjectM} m.` +
+      ` Mikro(punkt losowy): azymut ${entry.randomMicro.azimuthDeg}°, ${substrateLabel[entry.randomMicro.substrate]}.` +
+      ` Mezo: piasek ${entry.meso.pctSand}%, żwir ${entry.meso.pctGravel}%, roślinność ${entry.meso.pctVegetation}%, woda ${entry.meso.pctWater}%.`;
 
     const photoWrap = item.querySelector(".photos");
     const allPhotos = [...entry.nestMicro.photos, ...entry.randomMicro.photos];
@@ -259,6 +247,7 @@ form.addEventListener("submit", async (event) => {
     nestMicro: {
       photos: await filesToDataUrls(document.querySelector("#nest-photos").files, 4),
       substrate: document.querySelector("#nest-substrate").value,
+      coverage: readCoverage("nest"),
       distPlantM: numberInput("#nest-dist-plant"),
       heightPlantCm: numberInput("#nest-height-plant"),
       distObjectM: numberInput("#nest-dist-object"),
@@ -269,6 +258,7 @@ form.addEventListener("submit", async (event) => {
       azimuthDeg: numberInput("#random-azimuth"),
       photos: await filesToDataUrls(document.querySelector("#random-photos").files, 4),
       substrate: document.querySelector("#random-substrate").value,
+      coverage: readCoverage("random"),
       distPlantM: numberInput("#random-dist-plant"),
       heightPlantCm: numberInput("#random-height-plant"),
       distObjectM: numberInput("#random-dist-object"),
@@ -280,8 +270,12 @@ form.addEventListener("submit", async (event) => {
       pctGravel: numberInput("#pct-gravel"),
       pctVegetation: numberInput("#pct-vegetation"),
       pctWater: numberInput("#pct-water"),
+      bigObjects: document.querySelector("#meso-big-objects").value,
       distWaterM: numberInput("#dist-water"),
       distVegEdgeM: numberInput("#dist-veg-edge"),
+      distVerticalStructureM: numberInput("#dist-vertical-structure"),
+      distFineGravelPatchM: numberInput("#dist-fine-gravel-patch"),
+      distCoarseGravelPatchM: numberInput("#dist-coarse-gravel-patch"),
       distNearestHiaticulaM: numberInput("#dist-nearest-hiaticula"),
       distNearestDubiusM: numberInput("#dist-nearest-dubius"),
     },
@@ -293,10 +287,7 @@ form.addEventListener("submit", async (event) => {
     alert("Uzupełnij pola identyfikacji i GPS.");
     return;
   }
-
-  if (!validatePercentages(record)) {
-    return;
-  }
+  if (!validatePercentages(record)) return;
 
   const entries = getEntries();
   entries.unshift(record);
@@ -313,7 +304,6 @@ gpsBtn.addEventListener("click", () => {
     gpsStatus.textContent = "GPS: niedostępny";
     return;
   }
-
   gpsStatus.textContent = "GPS: pobieranie...";
   navigator.geolocation.getCurrentPosition(
     ({ coords }) => {
@@ -339,86 +329,40 @@ function downloadBlob(filename, mimeType, content) {
 }
 
 document.querySelector("#export-json").addEventListener("click", () => {
-  const payload = JSON.stringify(getEntries(), null, 2);
-  downloadBlob(`sieweczka-gniazda-${Date.now()}.json`, "application/json", payload);
+  downloadBlob(`sieweczka-gniazda-${Date.now()}.json`, "application/json", JSON.stringify(getEntries(), null, 2));
   closeMenu();
 });
 
 document.querySelector("#export-csv").addEventListener("click", () => {
   const rows = getEntries();
   const header = [
-    "nest_id",
-    "species",
-    "obs_date",
-    "obs_time",
-    "sector",
-    "lat",
-    "lon",
-    "egg_count",
-    "nest_status",
-    "possible_renest",
-    "nest_substrate",
-    "nest_dist_plant_m",
-    "nest_height_plant_cm",
-    "nest_dist_object_m",
-    "nest_height_object_cm",
-    "nest_slope",
-    "random_azimuth_deg",
-    "random_substrate",
-    "random_dist_plant_m",
-    "random_height_plant_cm",
-    "random_dist_object_m",
-    "random_height_object_cm",
-    "random_slope",
-    "pct_sand",
-    "pct_gravel",
-    "pct_vegetation",
-    "pct_water",
-    "dist_water_m",
-    "dist_veg_edge_m",
-    "dist_nearest_hiaticula_m",
-    "dist_nearest_dubius_m",
-    "notes",
-    "created_at",
+    "nest_id", "species", "obs_date", "obs_time", "sector", "lat", "lon", "egg_count", "nest_status", "possible_renest",
+    "nest_substrate", "nest_pct_sand", "nest_pct_fine_gravel", "nest_pct_coarse", "nest_pct_shells", "nest_pct_live_veg", "nest_pct_dry_veg", "nest_pct_organic", "nest_pct_anthro",
+    "nest_dist_plant_m", "nest_height_plant_cm", "nest_dist_object_m", "nest_height_object_cm", "nest_slope",
+    "random_azimuth_deg", "random_substrate", "random_pct_sand", "random_pct_fine_gravel", "random_pct_coarse", "random_pct_shells", "random_pct_live_veg", "random_pct_dry_veg", "random_pct_organic", "random_pct_anthro",
+    "random_dist_plant_m", "random_height_plant_cm", "random_dist_object_m", "random_height_object_cm", "random_slope",
+    "pct_sand", "pct_gravel", "pct_vegetation", "pct_water", "meso_big_objects",
+    "dist_water_m", "dist_veg_edge_m", "dist_vertical_structure_m", "dist_fine_gravel_patch_m", "dist_coarse_gravel_patch_m", "dist_nearest_hiaticula_m", "dist_nearest_dubius_m",
+    "notes", "created_at"
   ];
 
   const csv = [header.join(",")]
     .concat(
       rows.map((r) =>
         [
-          r.nestId,
-          r.species,
-          r.obsDate,
-          r.obsTime,
-          r.sector,
-          r.lat,
-          r.lon,
-          r.eggCount,
-          r.nestStatus,
-          r.possibleRenest,
+          r.nestId, r.species, r.obsDate, r.obsTime, r.sector, r.lat, r.lon, r.eggCount, r.nestStatus, r.possibleRenest,
           r.nestMicro.substrate,
-          r.nestMicro.distPlantM,
-          r.nestMicro.heightPlantCm,
-          r.nestMicro.distObjectM,
-          r.nestMicro.heightObjectCm,
-          r.nestMicro.slope,
-          r.randomMicro.azimuthDeg,
-          r.randomMicro.substrate,
-          r.randomMicro.distPlantM,
-          r.randomMicro.heightPlantCm,
-          r.randomMicro.distObjectM,
-          r.randomMicro.heightObjectCm,
-          r.randomMicro.slope,
-          r.meso.pctSand,
-          r.meso.pctGravel,
-          r.meso.pctVegetation,
-          r.meso.pctWater,
-          r.meso.distWaterM,
-          r.meso.distVegEdgeM,
-          r.meso.distNearestHiaticulaM,
-          r.meso.distNearestDubiusM,
-          (r.notes || "").replaceAll('"', '""'),
-          r.createdAt,
+          r.nestMicro.coverage.pctSand, r.nestMicro.coverage.pctFineGravel, r.nestMicro.coverage.pctCoarse, r.nestMicro.coverage.pctShells,
+          r.nestMicro.coverage.pctLiveVeg, r.nestMicro.coverage.pctDryVeg, r.nestMicro.coverage.pctOrganic, r.nestMicro.coverage.pctAnthro,
+          r.nestMicro.distPlantM, r.nestMicro.heightPlantCm, r.nestMicro.distObjectM, r.nestMicro.heightObjectCm, r.nestMicro.slope,
+          r.randomMicro.azimuthDeg, r.randomMicro.substrate,
+          r.randomMicro.coverage.pctSand, r.randomMicro.coverage.pctFineGravel, r.randomMicro.coverage.pctCoarse, r.randomMicro.coverage.pctShells,
+          r.randomMicro.coverage.pctLiveVeg, r.randomMicro.coverage.pctDryVeg, r.randomMicro.coverage.pctOrganic, r.randomMicro.coverage.pctAnthro,
+          r.randomMicro.distPlantM, r.randomMicro.heightPlantCm, r.randomMicro.distObjectM, r.randomMicro.heightObjectCm, r.randomMicro.slope,
+          r.meso.pctSand, r.meso.pctGravel, r.meso.pctVegetation, r.meso.pctWater, r.meso.bigObjects,
+          r.meso.distWaterM, r.meso.distVegEdgeM, r.meso.distVerticalStructureM, r.meso.distFineGravelPatchM, r.meso.distCoarseGravelPatchM,
+          r.meso.distNearestHiaticulaM, r.meso.distNearestDubiusM,
+          (r.notes || "").replaceAll('"', '""'), r.createdAt,
         ]
           .map((value) => `"${String(value)}"`)
           .join(",")
@@ -431,9 +375,7 @@ document.querySelector("#export-csv").addEventListener("click", () => {
 });
 
 document.querySelector("#clear-data").addEventListener("click", () => {
-  if (!confirm("Na pewno usunąć wszystkie lokalne dane?")) {
-    return;
-  }
+  if (!confirm("Na pewno usunąć wszystkie lokalne dane?")) return;
   localStorage.removeItem(STORAGE_KEY);
   renderEntries();
   closeMenu();
