@@ -2,44 +2,29 @@
 
 Mobilna aplikacja terenowa (offline w przeglądarce telefonu) do szybkiego zbierania danych siedliskowych przy gniazdach sieweczek.
 
-## Co zostało dodane dla instalacji jako aplikacja
+## Najważniejsze funkcje
 
-- `manifest.webmanifest` (konfiguracja PWA),
-- `sw.js` (service worker do cache/offline),
-- ikona PWA w formacie tekstowym SVG (`icons/icon.svg`) — bez plików binarnych,
-- rejestracja service workera w `app.js`,
-- instrukcja instalacji z `github.io` na Android i iOS.
+- formularz protokołu terenowego pod badania sieweczek,
+- zapis lokalny (`localStorage`) i eksport CSV/JSON,
+- menu opcji pod ikoną `☰` (zarządzanie bazą danych),
+- automatyczne chowanie górnej belki przy przewijaniu w dół,
+- gotowość do instalacji PWA (manifest + service worker + instalacja z poziomu aplikacji).
 
-## Uruchomienie
+## Instalacja aplikacji z github.io
 
-To statyczna aplikacja HTML/CSS/JS.
+### Android (Chrome)
+1. Wejdź na stronę `https://...github.io/...`.
+2. Otwórz menu `☰` w aplikacji i kliknij **Zainstaluj aplikację**.
+3. Jeśli prompt się nie pokaże, użyj menu Chrome `⋮` → **Zainstaluj aplikację**.
 
-### Opcja 1: otwarcie bez serwera
+### iOS (Safari)
+1. Wejdź na stronę `https://...github.io/...`.
+2. Udostępnij → **Dodaj do ekranu początkowego**.
 
-Otwórz plik `index.html` w przeglądarce.
-
-### Opcja 2: lokalny serwer
+## Lokalny podgląd
 
 ```bash
 python3 -m http.server 8080
 ```
 
 Następnie otwórz `http://localhost:8080`.
-
-## Instalacja jako aplikacja po wdrożeniu na github.io
-
-Po opublikowaniu na HTTPS (GitHub Pages):
-
-### Android (Chrome)
-1. Otwórz aplikację.
-2. Menu `⋮` → **Zainstaluj aplikację** albo **Dodaj do ekranu głównego**.
-
-### iOS (Safari)
-1. Otwórz aplikację.
-2. Udostępnij → **Dodaj do ekranu początkowego**.
-
-## Praca w terenie na telefonie
-
-- Dane zapisują się lokalnie (`localStorage`) — działają także bez sieci.
-- `Pobierz GPS` uzupełnia współrzędne bez przepisywania ręcznego.
-- Wpis możesz szybko wyeksportować do CSV lub JSON po zakończeniu dnia terenowego.

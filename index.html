@@ -14,11 +14,26 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header>
-      <h1>Sieweczka Field App</h1>
-      <p>Mobilny formularz protokołu terenowego dla gniazd sieweczek.</p>
-      <small class="install-hint">Po wejściu na stronę użyj „Zainstaluj aplikację” / „Dodaj do ekranu głównego”.</small>
+    <header id="app-header">
+      <div class="header-row">
+        <div>
+          <h1>Sieweczka Field App</h1>
+          <p>Mobilny formularz protokołu terenowego dla gniazd sieweczek.</p>
+          <small class="install-hint" id="install-hint">Po wejściu na stronę użyj „Zainstaluj aplikację” / „Dodaj do ekranu głównego”.</small>
+        </div>
+        <button id="menu-toggle" class="menu-toggle" type="button" aria-label="Otwórz menu">☰</button>
+      </div>
     </header>
+
+    <div id="menu-overlay" class="menu-overlay" hidden></div>
+    <aside id="app-menu" class="app-menu" aria-hidden="true">
+      <h3>Opcje</h3>
+      <button id="install-app" type="button">Zainstaluj aplikację</button>
+      <button id="export-json" type="button">Eksport JSON</button>
+      <button id="export-csv" type="button">Eksport CSV</button>
+      <button id="clear-data" type="button" class="danger">Wyczyść dane</button>
+      <small>Menu zarządzania bazą zostało przeniesione tutaj.</small>
+    </aside>
 
     <main>
       <section class="card">
@@ -267,11 +282,7 @@
       <section class="card">
         <h2>Zapisane rekordy</h2>
         <p><strong id="entry-count">0</strong> gniazd w pamięci telefonu.</p>
-        <div class="actions">
-          <button id="export-json" type="button">Eksport JSON</button>
-          <button id="export-csv" type="button">Eksport CSV</button>
-          <button id="clear-data" type="button" class="danger">Wyczyść dane</button>
-        </div>
+        <p class="muted">Opcje eksportu i czyszczenia danych są w menu ☰.</p>
         <ul id="entries-list"></ul>
       </section>
     </main>

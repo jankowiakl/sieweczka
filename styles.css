@@ -24,27 +24,88 @@ body {
 header {
   background: var(--primary);
   color: #fff;
-  padding: 1rem 0.9rem;
+  padding: 0.65rem 0.85rem;
   position: sticky;
   top: 0;
-  z-index: 3;
+  z-index: 30;
+  transition: transform 0.22s ease;
+}
+
+header.header-hidden {
+  transform: translateY(-100%);
+}
+
+.header-row {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  justify-content: space-between;
 }
 
 header h1 {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.15rem;
 }
 
 header p {
-  margin: 0.35rem 0 0;
-  font-size: 0.95rem;
+  margin: 0.2rem 0 0;
+  font-size: 0.86rem;
 }
 
 .install-hint {
   display: block;
-  margin-top: 0.35rem;
-  font-size: 0.8rem;
-  opacity: 0.9;
+  margin-top: 0.25rem;
+  font-size: 0.76rem;
+  opacity: 0.92;
+}
+
+.menu-toggle {
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: 700;
+  padding: 0;
+}
+
+.menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.36);
+  z-index: 35;
+}
+
+.app-menu {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(86vw, 340px);
+  height: 100dvh;
+  background: #ffffff;
+  box-shadow: -6px 0 20px rgba(0, 0, 0, 0.2);
+  padding: 1rem 0.85rem;
+  display: grid;
+  align-content: start;
+  gap: 0.6rem;
+  z-index: 40;
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+}
+
+.app-menu.open {
+  transform: translateX(0);
+}
+
+.app-menu h3 {
+  margin: 0.1rem 0 0.35rem;
+}
+
+.app-menu small {
+  color: var(--muted);
 }
 
 main {
@@ -132,12 +193,6 @@ button.danger {
   gap: 0.55rem;
 }
 
-.actions {
-  display: grid;
-  gap: 0.55rem;
-  margin-bottom: 0.55rem;
-}
-
 .entry-item {
   border: 1px solid #d9e2ec;
   border-radius: 0.7rem;
@@ -185,16 +240,11 @@ details {
 }
 
 @media (min-width: 640px) {
-  header {
-    position: static;
-  }
-
   main {
     padding: 1rem;
   }
 
-  .row-2,
-  .actions {
+  .row-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

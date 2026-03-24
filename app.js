@@ -7,6 +7,13 @@ const template = document.querySelector("#entry-item-template");
 const gpsBtn = document.querySelector("#gps-btn");
 const gpsStatus = document.querySelector("#gps-status");
 
+const menuToggle = document.querySelector("#menu-toggle");
+const menu = document.querySelector("#app-menu");
+const menuOverlay = document.querySelector("#menu-overlay");
+const installBtn = document.querySelector("#install-app");
+const installHint = document.querySelector("#install-hint");
+const header = document.querySelector("#app-header");
+
 const speciesLabel = {
   "charadrius-hiaticula": "Sieweczka obrożna",
   "charadrius-dubius": "Sieweczka rzeczna",
@@ -40,20 +47,110 @@ const substrateLabel = {
   mixed: "Mieszane",
 };
 
+let deferredInstallPrompt = null;
+let lastScrollY = 0;
+
 setDefaultDateTime();
 renderEntries();
 registerServiceWorker();
+setupInstallFlow();
+setupMenu();
+setupHeaderAutoHide();
 
 function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) {
+  if (!("serviceWorker" in navigator)) {
     return;
   }
 
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {
       // Brak blokującego błędu dla użytkownika terenowego.
     });
   });
+}
+
+function setupInstallFlow() {
+  installBtn.disabled = true;
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    installBtn.disabled = false;
+    installHint.textContent = "Aplikacja gotowa do instalacji — użyj menu ☰ i kliknij 'Zainstaluj aplikację'.";
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    installBtn.disabled = true;
+    installHint.textContent = "Aplikacja została zainstalowana na telefonie.";
+  });
+
+  installBtn.addEventListener("click", async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      installBtn.disabled = true;
+      closeMenu();
+      return;
+    }
+
+    alert(
+      "Na iPhone zainstaluj ręcznie: Udostępnij → Dodaj do ekranu początkowego.\n\n" +
+        "Na Androidzie, jeśli nie ma przycisku instalacji, odśwież stronę po wejściu na https://...github.io i spróbuj ponownie z menu przeglądarki."
+    );
+  });
+}
+
+function setupMenu() {
+  menuToggle.addEventListener("click", () => {
+    if (menu.classList.contains("open")) {
+      closeMenu();
+    } else {
+      openMenu();
+    }
+  });
+
+  menuOverlay.addEventListener("click", closeMenu);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeMenu();
+    }
+  });
+}
+
+function openMenu() {
+  menu.classList.add("open");
+  menu.setAttribute("aria-hidden", "false");
+  menuOverlay.hidden = false;
+}
+
+function closeMenu() {
+  menu.classList.remove("open");
+  menu.setAttribute("aria-hidden", "true");
+  menuOverlay.hidden = true;
+}
+
+function setupHeaderAutoHide() {
+  window.addEventListener(
+    "scroll",
+    () => {
+      const current = window.scrollY;
+      const scrollingDown = current > lastScrollY;
+      const enoughOffset = current > 80;
+
+      if (scrollingDown && enoughOffset) {
+        header.classList.add("header-hidden");
+        closeMenu();
+      } else {
+        header.classList.remove("header-hidden");
+      }
+
+      lastScrollY = current;
+    },
+    { passive: true }
+  );
 }
 
 function setDefaultDateTime() {
@@ -244,6 +341,7 @@ function downloadBlob(filename, mimeType, content) {
 document.querySelector("#export-json").addEventListener("click", () => {
   const payload = JSON.stringify(getEntries(), null, 2);
   downloadBlob(`sieweczka-gniazda-${Date.now()}.json`, "application/json", payload);
+  closeMenu();
 });
 
 document.querySelector("#export-csv").addEventListener("click", () => {
@@ -329,6 +427,7 @@ document.querySelector("#export-csv").addEventListener("click", () => {
     .join("\n");
 
   downloadBlob(`sieweczka-gniazda-${Date.now()}.csv`, "text/csv;charset=utf-8", csv);
+  closeMenu();
 });
 
 document.querySelector("#clear-data").addEventListener("click", () => {
@@ -337,4 +436,5 @@ document.querySelector("#clear-data").addEventListener("click", () => {
   }
   localStorage.removeItem(STORAGE_KEY);
   renderEntries();
+  closeMenu();
 });
