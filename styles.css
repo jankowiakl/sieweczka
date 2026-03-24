@@ -108,6 +108,25 @@ header p {
   color: var(--muted);
 }
 
+.sync-box {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.sync-box label {
+  font-size: 0.82rem;
+}
+
+.sync-box input {
+  padding: 0.5rem;
+}
+
+.sync-box small {
+  color: var(--muted);
+}
+
 main {
   max-width: 760px;
   margin: 0 auto;

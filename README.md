@@ -43,3 +43,59 @@ Repo jest przygotowane pod PWABuilder:
 
 
 > Uwaga: manifest używa ikon PNG osadzonych jako data URI, więc PR nie zawiera plików binarnych.
+
+## Synchronizacja wielu użytkowników przez Google Drive (Apps Script)
+
+Aplikacja wspiera synchronizację przez **Google Apps Script** zapisujący JSON na Google Drive.
+
+### 1) Utwórz Apps Script
+
+Wklej kod (Code.gs):
+
+```javascript
+function doPost(e) {
+  const body = JSON.parse(e.postData.contents || "{}");
+  const action = body.action || "pull";
+  const teamKey = body.teamKey || "default";
+  const records = Array.isArray(body.records) ? body.records : [];
+
+  const fileName = `sieweczka-sync-${teamKey}.json`;
+  const files = DriveApp.getFilesByName(fileName);
+  let file;
+  if (files.hasNext()) {
+    file = files.next();
+  } else {
+    file = DriveApp.createFile(fileName, "[]", MimeType.PLAIN_TEXT);
+  }
+
+  const current = JSON.parse(file.getBlob().getDataAsString() || "[]");
+
+  if (action === "push") {
+    const map = new Map();
+    current.forEach((r) => map.set(r.uid || r.createdAt, r));
+    records.forEach((r) => map.set(r.uid || r.createdAt, r));
+    const merged = Array.from(map.values());
+    file.setContent(JSON.stringify(merged));
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, records: merged })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, records: current })).setMimeType(ContentService.MimeType.JSON);
+}
+```
+
+### 2) Deploy
+
+- Deploy → New deployment → Web app
+- Execute as: **Me**
+- Access: **Anyone with the link**
+- Skopiuj URL Web App
+
+### 3) W aplikacji
+
+- Otwórz menu ☰
+- Wklej URL do pola **Google Apps Script URL**
+- Ustaw **Klucz zespołu** (ten sam dla wszystkich użytkowników)
+- Kliknij **Zapisz konfigurację**
+- Używaj:
+  - **Wyślij synchronizację** (push)
+  - **Pobierz synchronizację** (pull)

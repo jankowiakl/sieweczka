@@ -1,4 +1,5 @@
 const STORAGE_KEY = "sieweczka-field-data-v2";
+const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
 
 const form = document.querySelector("#entry-form");
 const entriesList = document.querySelector("#entries-list");
@@ -14,6 +15,13 @@ const menuOverlay = document.querySelector("#menu-overlay");
 const installBtn = document.querySelector("#install-app");
 const installHint = document.querySelector("#install-hint");
 const header = document.querySelector("#app-header");
+
+const syncEndpointInput = document.querySelector("#sync-endpoint");
+const syncTeamKeyInput = document.querySelector("#sync-team-key");
+const saveSyncConfigBtn = document.querySelector("#save-sync-config");
+const syncPullBtn = document.querySelector("#sync-pull");
+const syncPushBtn = document.querySelector("#sync-push");
+const syncStatus = document.querySelector("#sync-status");
 
 const speciesLabel = {
   "charadrius-hiaticula": "Sieweczka obrożna",
@@ -41,6 +49,7 @@ registerServiceWorker();
 setupInstallFlow();
 setupMenu();
 setupHeaderAutoHide();
+setupSyncControls();
 
 randomAzimuthBtn.addEventListener("click", () => {
   const value = Math.floor(Math.random() * 360);
@@ -159,16 +168,24 @@ function setDefaultDateTime() {
   document.querySelector("#obs-time").value = now.toTimeString().slice(0, 5);
 }
 
+function normalizeEntries(entries) {
+  return entries.map((entry) => ({
+    ...entry,
+    uid: entry.uid || `${entry.nestId || "rec"}-${entry.createdAt || Date.now()}-${Math.random().toString(16).slice(2)}`,
+  }));
+}
+
 function getEntries() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    return normalizeEntries(parsed);
   } catch {
     return [];
   }
 }
 
 function setEntries(entries) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeEntries(entries)));
 }
 
 async function filesToDataUrls(fileList, maxFiles = 4) {
@@ -287,6 +304,7 @@ form.addEventListener("submit", async (event) => {
       distNearestDubiusM: numberInput("#dist-nearest-dubius"),
     },
     notes: document.querySelector("#notes").value.trim(),
+    uid: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     createdAt: new Date().toISOString(),
   };
 
@@ -324,6 +342,99 @@ gpsBtn.addEventListener("click", () => {
     { enableHighAccuracy: true, timeout: 10000 }
   );
 });
+
+
+function loadSyncConfig() {
+  try {
+    return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveSyncConfig(config) {
+  localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(config));
+}
+
+function setSyncStatus(message) {
+  syncStatus.textContent = `Sync: ${message}`;
+}
+
+function setupSyncControls() {
+  const cfg = loadSyncConfig();
+  syncEndpointInput.value = cfg.endpoint || "";
+  syncTeamKeyInput.value = cfg.teamKey || "";
+  setSyncStatus(cfg.endpoint ? "gotowe" : "nie skonfigurowano");
+
+  saveSyncConfigBtn.addEventListener("click", () => {
+    const endpoint = syncEndpointInput.value.trim();
+    const teamKey = syncTeamKeyInput.value.trim();
+    saveSyncConfig({ endpoint, teamKey });
+    setSyncStatus(endpoint ? "konfiguracja zapisana" : "brak URL");
+  });
+
+  syncPullBtn.addEventListener("click", async () => {
+    await syncWithDrive("pull");
+  });
+
+  syncPushBtn.addEventListener("click", async () => {
+    await syncWithDrive("push");
+  });
+}
+
+function mergeEntries(localEntries, remoteEntries) {
+  const map = new Map();
+  for (const record of normalizeEntries(localEntries)) {
+    map.set(record.uid, record);
+  }
+  for (const record of normalizeEntries(remoteEntries)) {
+    map.set(record.uid, record);
+  }
+  return Array.from(map.values()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+async function syncWithDrive(mode) {
+  const cfg = loadSyncConfig();
+  if (!cfg.endpoint) {
+    alert("Najpierw podaj URL Google Apps Script i zapisz konfigurację.");
+    return;
+  }
+
+  setSyncStatus(mode === "push" ? "wysyłanie..." : "pobieranie...");
+  try {
+    const local = getEntries();
+    const payload = {
+      action: mode,
+      teamKey: cfg.teamKey || "default",
+      records: local,
+    };
+
+    const res = await fetch(cfg.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data || data.ok === false) throw new Error(data?.error || "Błąd odpowiedzi serwera");
+
+    const remoteRecords = Array.isArray(data.records) ? data.records : [];
+    if (mode === "push") {
+      // po push aktualizujemy lokalnie tym, co zwróci serwer
+      setEntries(mergeEntries(local, remoteRecords));
+    } else {
+      setEntries(mergeEntries(local, remoteRecords));
+    }
+
+    renderEntries();
+    setSyncStatus(`OK (${mode})`);
+    closeMenu();
+  } catch (error) {
+    setSyncStatus("błąd synchronizacji");
+    alert(`Błąd synchronizacji: ${error.message}`);
+  }
+}
 
 function downloadBlob(filename, mimeType, content) {
   const blob = new Blob([content], { type: mimeType });
