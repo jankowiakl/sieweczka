@@ -42,6 +42,19 @@ const substrateLabel = {
 
 setDefaultDateTime();
 renderEntries();
+registerServiceWorker();
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) {
+    return;
+  }
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      // Brak blokującego błędu dla użytkownika terenowego.
+    });
+  });
+}
 
 function setDefaultDateTime() {
   const now = new Date();

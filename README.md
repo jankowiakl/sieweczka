@@ -2,16 +2,13 @@
 
 Mobilna aplikacja terenowa (offline w przeglądarce telefonu) do szybkiego zbierania danych siedliskowych przy gniazdach sieweczek.
 
-## Co zostało zmienione
+## Co zostało dodane dla instalacji jako aplikacja
 
-- usunięto cały moduł związany z planowaniem lotu drona,
-- formularz został przebudowany dokładnie pod protokół terenowy:
-  - **Identyfikacja** (ID, gatunek, data, godzina, sektor, GPS, liczba jaj, status, renest),
-  - **Mikrohabitat gniazda**,
-  - **Mikrohabitat punktu losowego 10 m**,
-  - **Mezohabitat (bufor 15 m)**,
-- dodano układ mobilny (duże pola, łatwe klikanie, przejrzyste sekcje),
-- eksport JSON/CSV obejmuje wszystkie zmienne protokołu.
+- `manifest.webmanifest` (konfiguracja PWA),
+- `sw.js` (service worker do cache/offline),
+- ikona PWA w formacie tekstowym SVG (`icons/icon.svg`) — bez plików binarnych,
+- rejestracja service workera w `app.js`,
+- instrukcja instalacji z `github.io` na Android i iOS.
 
 ## Uruchomienie
 
@@ -28,6 +25,18 @@ python3 -m http.server 8080
 ```
 
 Następnie otwórz `http://localhost:8080`.
+
+## Instalacja jako aplikacja po wdrożeniu na github.io
+
+Po opublikowaniu na HTTPS (GitHub Pages):
+
+### Android (Chrome)
+1. Otwórz aplikację.
+2. Menu `⋮` → **Zainstaluj aplikację** albo **Dodaj do ekranu głównego**.
+
+### iOS (Safari)
+1. Otwórz aplikację.
+2. Udostępnij → **Dodaj do ekranu początkowego**.
 
 ## Praca w terenie na telefonie
 
