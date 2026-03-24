@@ -153,6 +153,14 @@
               <label>Azymut punktu losowego [°] <input id="random-azimuth" type="number" min="0" max="359" step="1" required /></label>
               <button type="button" id="random-azimuth-btn">Losuj azymut</button>
             </div>
+            <div class="row-2">
+              <label>GPS punktu kontrolnego lat <input id="random-lat" type="number" step="0.000001" inputmode="decimal" /></label>
+              <label>GPS punktu kontrolnego lon <input id="random-lon" type="number" step="0.000001" inputmode="decimal" /></label>
+            </div>
+            <div class="row-2">
+              <button type="button" id="random-gps-btn">Pobierz GPS punktu kontrolnego</button>
+              <small id="random-gps-status">GPS kontrolny: brak</small>
+            </div>
             <label>Zdjęcie 1 m² (punkt losowy) <input id="random-photos" type="file" accept="image/*" capture="environment" multiple /></label>
             <label>
               Dominujące podłoże

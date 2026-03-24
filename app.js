@@ -8,6 +8,8 @@ const template = document.querySelector("#entry-item-template");
 const gpsBtn = document.querySelector("#gps-btn");
 const gpsStatus = document.querySelector("#gps-status");
 const randomAzimuthBtn = document.querySelector("#random-azimuth-btn");
+const randomGpsBtn = document.querySelector("#random-gps-btn");
+const randomGpsStatus = document.querySelector("#random-gps-status");
 
 const menuToggle = document.querySelector("#menu-toggle");
 const menu = document.querySelector("#app-menu");
@@ -56,9 +58,35 @@ randomAzimuthBtn.addEventListener("click", () => {
   document.querySelector("#random-azimuth").value = String(value);
 });
 
+randomGpsBtn.addEventListener("click", () => {
+  if (!navigator.geolocation) {
+    randomGpsStatus.textContent = "GPS kontrolny: niedostępny";
+    return;
+  }
+  randomGpsStatus.textContent = "GPS kontrolny: pobieranie...";
+  navigator.geolocation.getCurrentPosition(
+    ({ coords }) => {
+      document.querySelector("#random-lat").value = coords.latitude.toFixed(6);
+      document.querySelector("#random-lon").value = coords.longitude.toFixed(6);
+      randomGpsStatus.textContent = `GPS kontrolny: dokładność ±${Math.round(coords.accuracy)} m`;
+    },
+    () => {
+      randomGpsStatus.textContent = "GPS kontrolny: błąd pobierania";
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+});
+
 
 function numberInput(id) {
   return Number(document.querySelector(id).value);
+}
+
+function optionalNumberInput(id) {
+  const raw = document.querySelector(id).value;
+  if (raw === "" || raw == null) return null;
+  const value = Number(raw);
+  return Number.isNaN(value) ? null : value;
 }
 
 function readCoverage(prefix) {
@@ -280,6 +308,8 @@ form.addEventListener("submit", async (event) => {
     },
     randomMicro: {
       azimuthDeg: numberInput("#random-azimuth"),
+      lat: optionalNumberInput("#random-lat"),
+      lon: optionalNumberInput("#random-lon"),
       photos: await filesToDataUrls(document.querySelector("#random-photos").files, 4),
       substrate: document.querySelector("#random-substrate").value,
       coverage: readCoverage("random"),
@@ -321,6 +351,7 @@ form.addEventListener("submit", async (event) => {
   form.reset();
   setDefaultDateTime();
   gpsStatus.textContent = "GPS: brak";
+  randomGpsStatus.textContent = "GPS kontrolny: brak";
   renderEntries();
 });
 
@@ -409,10 +440,12 @@ async function syncWithDrive(mode) {
       records: local,
     };
 
+    const formBody = new URLSearchParams();
+    formBody.set("payload", JSON.stringify(payload));
+
     const res = await fetch(cfg.endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: formBody,
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -457,7 +490,7 @@ document.querySelector("#export-csv").addEventListener("click", () => {
     "nest_id", "species", "obs_date", "obs_time", "sector", "lat", "lon", "egg_count", "nest_status", "possible_renest",
     "nest_substrate", "nest_pct_sand", "nest_pct_fine_gravel", "nest_pct_coarse", "nest_pct_shells", "nest_pct_live_veg", "nest_pct_dry_veg", "nest_pct_organic", "nest_pct_anthro",
     "nest_dist_plant_m", "nest_height_plant_cm", "nest_dist_object_m", "nest_height_object_cm", "nest_slope",
-    "random_azimuth_deg", "random_substrate", "random_pct_sand", "random_pct_fine_gravel", "random_pct_coarse", "random_pct_shells", "random_pct_live_veg", "random_pct_dry_veg", "random_pct_organic", "random_pct_anthro",
+    "random_azimuth_deg", "random_lat", "random_lon", "random_substrate", "random_pct_sand", "random_pct_fine_gravel", "random_pct_coarse", "random_pct_shells", "random_pct_live_veg", "random_pct_dry_veg", "random_pct_organic", "random_pct_anthro",
     "random_dist_plant_m", "random_height_plant_cm", "random_dist_object_m", "random_height_object_cm", "random_slope",
     "pct_sand", "pct_gravel", "pct_vegetation", "pct_water", "meso_big_objects",
     "dist_water_m", "dist_veg_edge_m", "dist_vertical_structure_m", "dist_fine_gravel_patch_m", "dist_coarse_gravel_patch_m", "dist_nearest_hiaticula_m", "dist_nearest_dubius_m",
@@ -473,7 +506,7 @@ document.querySelector("#export-csv").addEventListener("click", () => {
           r.nestMicro.coverage.pctSand, r.nestMicro.coverage.pctFineGravel, r.nestMicro.coverage.pctCoarse, r.nestMicro.coverage.pctShells,
           r.nestMicro.coverage.pctLiveVeg, r.nestMicro.coverage.pctDryVeg, r.nestMicro.coverage.pctOrganic, r.nestMicro.coverage.pctAnthro,
           r.nestMicro.distPlantM, r.nestMicro.heightPlantCm, r.nestMicro.distObjectM, r.nestMicro.heightObjectCm, r.nestMicro.slope,
-          r.randomMicro.azimuthDeg, r.randomMicro.substrate,
+          r.randomMicro.azimuthDeg, r.randomMicro.lat, r.randomMicro.lon, r.randomMicro.substrate,
           r.randomMicro.coverage.pctSand, r.randomMicro.coverage.pctFineGravel, r.randomMicro.coverage.pctCoarse, r.randomMicro.coverage.pctShells,
           r.randomMicro.coverage.pctLiveVeg, r.randomMicro.coverage.pctDryVeg, r.randomMicro.coverage.pctOrganic, r.randomMicro.coverage.pctAnthro,
           r.randomMicro.distPlantM, r.randomMicro.heightPlantCm, r.randomMicro.distObjectM, r.randomMicro.heightObjectCm, r.randomMicro.slope,

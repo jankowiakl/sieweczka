@@ -54,7 +54,8 @@ Wklej kod (Code.gs):
 
 ```javascript
 function doPost(e) {
-  const body = JSON.parse(e.postData.contents || "{}");
+  const rawPayload = (e.parameter && e.parameter.payload) || (e.postData && e.postData.contents) || "{}";
+  const body = JSON.parse(rawPayload);
   const action = body.action || "pull";
   const teamKey = body.teamKey || "default";
   const records = Array.isArray(body.records) ? body.records : [];
