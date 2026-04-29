@@ -31,6 +31,7 @@ const editRecordLabel = document.querySelector("#edit-record-label");
 const cancelEditBtn = document.querySelector("#cancel-edit");
 const recordSearchInput = document.querySelector("#record-search");
 const sheetAddBtn = document.querySelector("#sheet-add");
+const scrollTopBtn = document.querySelector("#scroll-top");
 
 const PERCENT_IDS = [
   "nest-pct-sand","nest-pct-fine-gravel","nest-pct-coarse","nest-pct-shells","nest-pct-live-veg","nest-pct-dry-veg","nest-pct-organic","nest-pct-anthro",
@@ -980,5 +981,11 @@ function setupFieldHelp() {
       const active = document.activeElement;
       if (!active || !form.contains(active)) bubble.hidden = true;
     }, 0);
+  });
+}
+
+if (scrollTopBtn) {
+  scrollTopBtn.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
   });
 }

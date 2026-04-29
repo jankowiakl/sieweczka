@@ -1,3 +1,7 @@
+html {
+  scroll-behavior: smooth;
+}
+
 :root {
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   color-scheme: light;
@@ -385,3 +389,59 @@ input,select,textarea{background: rgba(255,255,255,.92);}
 .percent-badge{font-size:.78rem;color:var(--muted);min-width:42px;text-align:right;}
 
 .percent-number[readonly]{cursor:pointer;}
+
+.field-toolbar {
+  position: sticky;
+  top: 58px;
+  z-index: 20;
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding: 0.35rem;
+  margin-bottom: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: rgba(255,255,255,.96);
+}
+
+button.ghost {
+  background: #e2e8f0;
+  color: #0f172a;
+  min-height: 42px;
+  padding: 0.45rem 0.7rem;
+  white-space: nowrap;
+}
+
+.jump-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #f8fafc;
+  color: #0f172a;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+fieldset {
+  scroll-margin-top: 130px;
+}
+
+.sticky-actions {
+  position: sticky;
+  bottom: 8px;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  padding: 0.55rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 6px 18px rgba(2,6,23,.12);
+}

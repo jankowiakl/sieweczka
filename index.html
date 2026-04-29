@@ -41,7 +41,14 @@
             <button id="cancel-edit" type="button" class="danger">Anuluj edycję</button>
           </div>
           <form id="entry-form">
-          <fieldset>
+          <div class="field-toolbar">
+            <a class="jump-link" href="#identyfikacja">Start</a>
+            <a class="jump-link" href="#mikro-gniazdo">Mikro gniazdo</a>
+            <a class="jump-link" href="#mikro-losowy">Mikro losowy</a>
+            <a class="jump-link" href="#mezohabitat">Mezohabitat</a>
+            <a class="jump-link" href="#jakosc">Jakość</a>
+          </div>
+          <fieldset id="identyfikacja">
             <legend>Identyfikacja</legend>
             <label>ID gniazda <input id="nest-id" type="text" placeholder="np. OBR-2026-014" required /></label>
             <label>
@@ -89,7 +96,7 @@
             </label>
           </fieldset>
 
-          <fieldset>
+          <fieldset id="mikro-gniazdo">
             <legend>Mikrohabitat (gniazdo)</legend>
             <label>Zdjęcie 1 m² (gniazdo) <input id="nest-photos" type="file" accept="image/*" multiple /></label>
             <label>
@@ -143,7 +150,7 @@
             </label>
           </fieldset>
 
-          <fieldset>
+          <fieldset id="mikro-losowy">
             <legend>Mikrohabitat (punkt losowy 10 m)</legend>
             <div class="row-2 azimuth-row">
               <label>Azymut punktu losowego [°] <input id="random-azimuth" type="number" min="0" max="359" step="1" required /></label>
@@ -209,7 +216,7 @@
             </label>
           </fieldset>
 
-          <fieldset>
+          <fieldset id="mezohabitat">
             <legend>Mezohabitat (bufor 15 m)</legend>
             <div class="row-2">
               <label>% nagi piasek <input id="pct-sand" type="number" min="0" max="100" step="1" required /></label>
@@ -246,7 +253,7 @@
           </fieldset>
 
 
-          <fieldset>
+          <fieldset id="jakosc">
             <legend>E. Kontrola jakości i uwagi</legend>
             <div class="row-2">
               <label>Reakcja ptaków
@@ -284,7 +291,10 @@
           </fieldset>
 
           <label>Dodatkowe notatki ogólne <textarea id="notes" rows="3" placeholder="Szybka notatka terenowa"></textarea></label>
-          <button type="submit" class="primary">Zapisz gniazdo</button>
+          <div class="sticky-actions">
+            <button type="submit" class="primary">Zapisz gniazdo</button>
+            <button type="button" id="scroll-top" class="ghost">↑ Do góry</button>
+          </div>
         </form>
       </section>
 
