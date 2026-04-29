@@ -372,3 +372,14 @@ details {
 }
 
 #field-help-bubble[hidden] { display:none; }
+
+
+/* Semi-transparent mobile UI */
+.menu-overlay{backdrop-filter: blur(2px);}
+.app-menu{background: rgba(255,255,255,.9);backdrop-filter: blur(8px);}
+.sheet-panel{background: rgba(255,255,255,.94);backdrop-filter: blur(6px);}
+#field-help-bubble{background: rgba(15,23,42,.86);backdrop-filter: blur(6px);}
+input,select,textarea{background: rgba(255,255,255,.92);}
+.percent-control{display:flex;align-items:center;gap:.45rem;margin-top:.3rem;}
+.percent-slider{flex:1;padding:.2rem;}
+.percent-badge{font-size:.78rem;color:var(--muted);min-width:42px;text-align:right;}
