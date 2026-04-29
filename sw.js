@@ -1,9 +1,10 @@
-const CACHE_NAME = "sieweczka-pwa-v2";
+const CACHE_NAME = "sieweczka-pwa-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./sieweczka-hotfix.js",
   "./manifest.webmanifest",
   "./icons/icon.svg"
 ];
