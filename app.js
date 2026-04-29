@@ -23,9 +23,6 @@ const sheetPanel = document.querySelector("#sheet-panel");
 const sheetTableBody = document.querySelector("#sheet-table tbody");
 const sheetSaveBtn = document.querySelector("#sheet-save");
 const sheetCloseBtn = document.querySelector("#sheet-close");
-const exportBundleBtn = document.querySelector("#export-bundle");
-const exportExcelBtn = document.querySelector("#export-excel");
-const exportMediaBtn = document.querySelector("#export-media");
 const editBanner = document.querySelector("#edit-banner");
 const editRecordLabel = document.querySelector("#edit-record-label");
 const cancelEditBtn = document.querySelector("#cancel-edit");
@@ -615,148 +612,57 @@ function downloadBlob(filename, mimeType, content) {
   URL.revokeObjectURL(url);
 }
 
-document.querySelector("#export-json").addEventListener("click", () => {
-  downloadBlob(`sieweczka-gniazda-${Date.now()}.json`, "application/json", JSON.stringify(getEntries(), null, 2));
-  closeMenu();
-});
 
-
-if (exportExcelBtn) {
-  exportExcelBtn.addEventListener("click", () => {
-    const rows = getEntries();
-    const escapeHtml = (v) => String(v ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;");
-
-    const header = [
-      "uid","nest_id","species","obs_date","obs_time","sector","lat","lon","egg_count","nest_status","possible_renest",
-      "nest_substrate","nest_pct_sand","nest_pct_fine_gravel","nest_pct_coarse","nest_pct_shells","nest_pct_live_veg","nest_pct_dry_veg","nest_pct_organic","nest_pct_anthro",
-      "nest_dist_plant_m","nest_height_plant_cm","nest_dist_object_m","nest_height_object_cm","nest_slope",
-      "random_azimuth_deg","random_lat","random_lon","random_substrate","random_pct_sand","random_pct_fine_gravel","random_pct_coarse","random_pct_shells","random_pct_live_veg","random_pct_dry_veg","random_pct_organic","random_pct_anthro",
-      "random_dist_plant_m","random_height_plant_cm","random_dist_object_m","random_height_object_cm","random_slope",
-      "pct_sand","pct_gravel","pct_vegetation","pct_water","meso_big_objects",
-      "dist_water_m","dist_veg_edge_m","dist_vertical_structure_m","dist_fine_gravel_patch_m","dist_coarse_gravel_patch_m","dist_nearest_hiaticula_m","dist_nearest_dubius_m",
-      "notes_identification","notes_nest_micro","notes_random_micro","notes_meso","notes","nest_photo_files","random_photo_files"
-    ];
-
-    const bodyRows = rows.map((r) => {
-      const nestNames = (r.nestMicro?.photos || []).map((_, i) => `${r.uid}_nest_${i + 1}.jpg`).join("; ");
-      const randomNames = (r.randomMicro?.photos || []).map((_, i) => `${r.uid}_random_${i + 1}.jpg`).join("; ");
-      return [
-        r.uid, r.nestId, r.species, r.obsDate, r.obsTime, r.sector, r.lat, r.lon, r.eggCount, r.nestStatus, r.possibleRenest,
-        r.nestMicro?.substrate,
-        r.nestMicro?.coverage?.pctSand, r.nestMicro?.coverage?.pctFineGravel, r.nestMicro?.coverage?.pctCoarse, r.nestMicro?.coverage?.pctShells,
-        r.nestMicro?.coverage?.pctLiveVeg, r.nestMicro?.coverage?.pctDryVeg, r.nestMicro?.coverage?.pctOrganic, r.nestMicro?.coverage?.pctAnthro,
-        r.nestMicro?.distPlantM, r.nestMicro?.heightPlantCm, r.nestMicro?.distObjectM, r.nestMicro?.heightObjectCm, r.nestMicro?.slope,
-        r.randomMicro?.azimuthDeg, r.randomMicro?.lat, r.randomMicro?.lon, r.randomMicro?.substrate,
-        r.randomMicro?.coverage?.pctSand, r.randomMicro?.coverage?.pctFineGravel, r.randomMicro?.coverage?.pctCoarse, r.randomMicro?.coverage?.pctShells,
-        r.randomMicro?.coverage?.pctLiveVeg, r.randomMicro?.coverage?.pctDryVeg, r.randomMicro?.coverage?.pctOrganic, r.randomMicro?.coverage?.pctAnthro,
-        r.randomMicro?.distPlantM, r.randomMicro?.heightPlantCm, r.randomMicro?.distObjectM, r.randomMicro?.heightObjectCm, r.randomMicro?.slope,
-        r.meso?.pctSand, r.meso?.pctGravel, r.meso?.pctVegetation, r.meso?.pctWater, r.meso?.bigObjects,
-        r.meso?.distWaterM, r.meso?.distVegEdgeM, r.meso?.distVerticalStructureM, r.meso?.distFineGravelPatchM, r.meso?.distCoarseGravelPatchM, r.meso?.distNearestHiaticulaM, r.meso?.distNearestDubiusM,
-        r.moduleNotes?.identification, r.moduleNotes?.nestMicro, r.moduleNotes?.randomMicro, r.moduleNotes?.meso, r.notes,
-        nestNames, randomNames,
-      ];
-    });
-
-    const tableHeader = header.map((h) => `<th>${escapeHtml(h)}</th>`).join("");
-    const tableBody = bodyRows.map((row) => `<tr>${row.map((v) => `<td>${escapeHtml(v)}</td>`).join("")}</tr>`).join("\n");
-    const html = `<!doctype html><html><head><meta charset="utf-8" /><style>table{border-collapse:collapse}th,td{border:1px solid #999;padding:4px;vertical-align:top;font-size:12px;}</style></head><body><table><thead><tr>${tableHeader}</tr></thead><tbody>${tableBody}</tbody></table></body></html>`;
-    downloadBlob(`sieweczka-raport-${Date.now()}.xls`, "application/vnd.ms-excel", html);
-    closeMenu();
-  });
-}
-
-if (exportMediaBtn) {
-  exportMediaBtn.addEventListener("click", async () => {
-    const rows = getEntries();
-    const mapping = [];
-    for (const r of rows) {
-      (r.nestMicro?.photos || []).forEach((src, i) => {
-        const name = `${r.uid}_nest_${i + 1}.jpg`;
-        mapping.push({ uid: r.uid, nestId: r.nestId, type: "nest", file: name, src });
-      });
-      (r.randomMicro?.photos || []).forEach((src, i) => {
-        const name = `${r.uid}_random_${i + 1}.jpg`;
-        mapping.push({ uid: r.uid, nestId: r.nestId, type: "random", file: name, src });
-      });
-    }
-
-    const csv = ["uid,nest_id,type,file,link"].concat(
-      mapping.map((m) => `"${m.uid}","${m.nestId}","${m.type}","${m.file}","${m.file}"`)
-    ).join("\n");
-    downloadBlob(`sieweczka-zdjecia-linki-${Date.now()}.csv`, "text/csv;charset=utf-8", csv);
-
-    for (const m of mapping) {
-      try {
-        const res = await fetch(m.src);
-        const blob = await res.blob();
-        downloadBlob(m.file, blob.type || "image/jpeg", blob);
-      } catch {
-        // ignore per-file errors
-      }
-    }
-
-    closeMenu();
-  });
-}
-
-if (exportBundleBtn) {
-  exportBundleBtn.addEventListener("click", () => {
-    const rows = getEntries();
-    const payload = rows.map((r) => ({
-      uid: r.uid,
-      nestId: r.nestId,
-      photos: {
-        nest: r.nestMicro?.photos || [],
-        random: r.randomMicro?.photos || [],
-      },
-    }));
-    downloadBlob(`sieweczka-zdjecia-${Date.now()}.json`, "application/json", JSON.stringify(payload, null, 2));
-    closeMenu();
-  });
-}
-
-document.querySelector("#export-csv").addEventListener("click", () => {
+document.querySelector("#export-csv").addEventListener("click", async () => {
   const rows = getEntries();
+
   const header = [
-    "nest_id", "species", "obs_date", "obs_time", "sector", "lat", "lon", "egg_count", "nest_status", "possible_renest",
-    "nest_substrate", "nest_pct_sand", "nest_pct_fine_gravel", "nest_pct_coarse", "nest_pct_shells", "nest_pct_live_veg", "nest_pct_dry_veg", "nest_pct_organic", "nest_pct_anthro",
-    "nest_dist_plant_m", "nest_height_plant_cm", "nest_dist_object_m", "nest_height_object_cm", "nest_slope",
-    "random_azimuth_deg", "random_lat", "random_lon", "random_substrate", "random_pct_sand", "random_pct_fine_gravel", "random_pct_coarse", "random_pct_shells", "random_pct_live_veg", "random_pct_dry_veg", "random_pct_organic", "random_pct_anthro",
-    "random_dist_plant_m", "random_height_plant_cm", "random_dist_object_m", "random_height_object_cm", "random_slope",
-    "pct_sand", "pct_gravel", "pct_vegetation", "pct_water", "meso_big_objects",
-    "dist_water_m", "dist_veg_edge_m", "dist_vertical_structure_m", "dist_fine_gravel_patch_m", "dist_coarse_gravel_patch_m", "dist_nearest_hiaticula_m", "dist_nearest_dubius_m",
-    "notes_identification", "notes_nest_micro", "notes_random_micro", "notes_meso", "notes", "created_at"
+    "uid", "nest_id", "species", "obs_date", "obs_time", "sector", "lat", "lon", "egg_count", "nest_status", "possible_renest",
+    "photo_refs", "notes"
   ];
+
+  const photoMap = [];
 
   const csv = [header.join(",")]
     .concat(
-      rows.map((r) =>
-        [
-          r.nestId, r.species, r.obsDate, r.obsTime, r.sector, r.lat, r.lon, r.eggCount, r.nestStatus, r.possibleRenest,
-          r.nestMicro.substrate,
-          r.nestMicro.coverage.pctSand, r.nestMicro.coverage.pctFineGravel, r.nestMicro.coverage.pctCoarse, r.nestMicro.coverage.pctShells,
-          r.nestMicro.coverage.pctLiveVeg, r.nestMicro.coverage.pctDryVeg, r.nestMicro.coverage.pctOrganic, r.nestMicro.coverage.pctAnthro,
-          r.nestMicro.distPlantM, r.nestMicro.heightPlantCm, r.nestMicro.distObjectM, r.nestMicro.heightObjectCm, r.nestMicro.slope,
-          r.randomMicro.azimuthDeg, r.randomMicro.lat, r.randomMicro.lon, r.randomMicro.substrate,
-          r.randomMicro.coverage.pctSand, r.randomMicro.coverage.pctFineGravel, r.randomMicro.coverage.pctCoarse, r.randomMicro.coverage.pctShells,
-          r.randomMicro.coverage.pctLiveVeg, r.randomMicro.coverage.pctDryVeg, r.randomMicro.coverage.pctOrganic, r.randomMicro.coverage.pctAnthro,
-          r.randomMicro.distPlantM, r.randomMicro.heightPlantCm, r.randomMicro.distObjectM, r.randomMicro.heightObjectCm, r.randomMicro.slope,
-          r.meso.pctSand, r.meso.pctGravel, r.meso.pctVegetation, r.meso.pctWater, r.meso.bigObjects,
-          r.meso.distWaterM, r.meso.distVegEdgeM, r.meso.distVerticalStructureM, r.meso.distFineGravelPatchM, r.meso.distCoarseGravelPatchM,
-          r.meso.distNearestHiaticulaM, r.meso.distNearestDubiusM,
-          (r.moduleNotes?.identification || "").replaceAll('"', '""'), (r.moduleNotes?.nestMicro || "").replaceAll('"', '""'), (r.moduleNotes?.randomMicro || "").replaceAll('"', '""'), (r.moduleNotes?.meso || "").replaceAll('"', '""'), (r.notes || "").replaceAll('"', '""'), r.createdAt,
+      rows.map((r) => {
+        const refs = [];
+        (r.nestMicro?.photos || []).forEach((src, i) => {
+          const file = `photos/${r.uid}_nest_${i + 1}.jpg`;
+          refs.push(file);
+          photoMap.push({ file, src });
+        });
+        (r.randomMicro?.photos || []).forEach((src, i) => {
+          const file = `photos/${r.uid}_random_${i + 1}.jpg`;
+          refs.push(file);
+          photoMap.push({ file, src });
+        });
+
+        return [
+          r.uid, r.nestId, r.species, r.obsDate, r.obsTime, r.sector, r.lat, r.lon, r.eggCount, r.nestStatus, r.possibleRenest,
+          refs.join(";"),
+          (r.notes || "").replaceAll('"', '""'),
         ]
           .map((value) => `"${String(value)}"`)
-          .join(",")
-      )
+          .join(",");
+      })
     )
     .join("\n");
 
-  downloadBlob(`sieweczka-gniazda-${Date.now()}.csv`, "text/csv;charset=utf-8", csv);
+  downloadBlob(`sieweczka_dane_i_linki_${Date.now()}.csv`, "text/csv;charset=utf-8", csv);
+
+  for (const item of photoMap) {
+    try {
+      const res = await fetch(item.src);
+      const blob = await res.blob();
+      const name = item.file.replace("photos/", "");
+      downloadBlob(name, blob.type || "image/jpeg", blob);
+    } catch {
+      // ignore single photo download failure
+    }
+  }
+
+  alert("Pobrano CSV i zdjęcia. Umieść zdjęcia w folderze 'photos' obok pliku CSV.");
   closeMenu();
 });
 

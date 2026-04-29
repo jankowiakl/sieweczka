@@ -48,23 +48,20 @@ Repo jest przygotowane pod PWABuilder:
 
 
 
-## Eksport zdjęć
+## Eksport danych + zdjęć (prosty standard terenowy)
 
-W menu dostępne są:
-- **Eksport Excel (pełne kolumny + linki zdjęć)** – plik `.xls` ze wszystkimi kolumnami danych i nazwami plików zdjęć,
-- **Pobierz zdjęcia + arkusz linków** – pobiera CSV mapujący rekord→plik oraz same pliki zdjęć,
-- **Eksport pakietu (CSV+zdjęcia JSON)** – dodatkowy plik JSON z przypisaniem zdjęć (data URL) do każdego rekordu (`uid`, `nestId`).
+W aplikacji jest jeden główny eksport: **Eksport CSV + zdjęcia**.
 
+Co dostajesz:
+1. plik CSV z kolumną `photo_refs` (lista nazw plików zdjęć),
+2. pobrane zdjęcia jako osobne pliki JPG.
 
-## Jak inne aplikacje rozwiązują eksport danych + zdjęć
+### Jak ułożyć pliki, żeby linki działały
 
-Najczęstszy i najprostszy wzorzec (np. AppSheet/Ona/Kobo):
-1. **CSV/Excel z metadanymi** (w tym `photo_file_name`),
-2. **osobny folder/archiwum zdjęć** z dokładnie tymi samymi nazwami plików,
-3. opcjonalnie trzeci plik mapujący `record_id -> photo_file_name`.
+To samo podejście stosują aplikacje terenowe (CSV + osobne pliki mediów):
+- utwórz folder projektu, np. `wynik_exportu/`,
+- umieść w nim plik CSV,
+- utwórz podfolder `photos/`,
+- przenieś wszystkie pobrane zdjęcia do `photos/`.
 
-W tej aplikacji najbliższy temu workflow to:
-- **Eksport Excel (pełne kolumny + linki zdjęć)**,
-- **Pobierz zdjęcia + arkusz linków**.
-
-To podejście jest najbardziej kompatybilne z analizą w R/Excel/QGIS i łatwe do przekazania między osobami.
+Wtedy ścieżki z `photo_refs` będą poprawne (np. `photos/abc123_nest_1.jpg`).
