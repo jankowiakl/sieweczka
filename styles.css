@@ -314,3 +314,17 @@ details {
   padding: 0.3rem;
   font-size: 13px;
 }
+
+
+.edit-banner {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  padding: 0.5rem;
+  border-radius: 0.6rem;
+  margin-bottom: 0.6rem;
+}

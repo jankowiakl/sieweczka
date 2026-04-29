@@ -51,7 +51,11 @@
     <main>
       <section class="card">
         <h2>Arkusz terenowy</h2>
-        <form id="entry-form">
+        <div id="edit-banner" class="edit-banner" hidden>
+            <strong>Tryb edycji rekordu:</strong> <span id="edit-record-label"></span>
+            <button id="cancel-edit" type="button" class="danger">Anuluj edycję</button>
+          </div>
+          <form id="entry-form">
           <fieldset>
             <legend>Identyfikacja</legend>
             <label>ID gniazda <input id="nest-id" type="text" placeholder="np. OBR-2026-014" required /></label>
@@ -265,7 +269,10 @@
         <h2>Zapisane rekordy</h2>
         <p><strong id="entry-count">0</strong> gniazd w pamięci telefonu.</p>
         <p class="muted">Opcje eksportu i czyszczenia danych są w menu ☰.</p>
-        <button id="open-sheet-inline" type="button">Przeglądaj rekordy (arkusz)</button>
+        <div class="row-2">
+          <button id="open-sheet-inline" type="button">Przeglądaj rekordy (arkusz)</button>
+          <input id="record-search" type="search" placeholder="Szukaj po ID/sektorze/gatunku" />
+        </div>
         <ul id="entries-list"></ul>
       </section>
     </main>

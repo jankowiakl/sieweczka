@@ -30,6 +30,10 @@ const sheetPanel = document.querySelector("#sheet-panel");
 const sheetTableBody = document.querySelector("#sheet-table tbody");
 const sheetSaveBtn = document.querySelector("#sheet-save");
 const sheetCloseBtn = document.querySelector("#sheet-close");
+const editBanner = document.querySelector("#edit-banner");
+const editRecordLabel = document.querySelector("#edit-record-label");
+const cancelEditBtn = document.querySelector("#cancel-edit");
+const recordSearchInput = document.querySelector("#record-search");
 
 const speciesLabel = {
   "charadrius-hiaticula": "Sieweczka obrożna",
@@ -50,6 +54,7 @@ const substrateLabel = {
 
 let deferredInstallPrompt = null;
 let lastScrollY = 0;
+let editingUid = null;
 
 setDefaultDateTime();
 renderEntries();
@@ -59,6 +64,7 @@ setupMenu();
 setupHeaderAutoHide();
 setupSyncControls();
 setupSheetEditor();
+setupRecordBrowser();
 
 randomAzimuthBtn.addEventListener("click", () => {
   const value = Math.floor(Math.random() * 360);
@@ -84,6 +90,47 @@ randomGpsBtn.addEventListener("click", () => {
   );
 });
 
+
+
+function setupRecordBrowser() {
+  if (recordSearchInput) {
+    recordSearchInput.addEventListener("input", () => renderEntries(recordSearchInput.value));
+  }
+  if (cancelEditBtn) {
+    cancelEditBtn.addEventListener("click", () => clearEditMode());
+  }
+}
+
+function clearEditMode() {
+  editingUid = null;
+  form.reset();
+  setDefaultDateTime();
+  gpsStatus.textContent = "GPS: brak";
+  randomGpsStatus.textContent = "GPS kontrolny: brak";
+  editBanner.hidden = true;
+}
+
+function loadRecordToForm(record) {
+  editingUid = record.uid;
+  editRecordLabel.textContent = `${record.nestId} (${record.obsDate})`;
+  editBanner.hidden = false;
+
+  document.querySelector("#nest-id").value = record.nestId || "";
+  document.querySelector("#species").value = record.species || "unknown";
+  document.querySelector("#obs-date").value = record.obsDate || "";
+  document.querySelector("#obs-time").value = record.obsTime || "";
+  document.querySelector("#sector").value = record.sector || "";
+  document.querySelector("#lat").value = record.lat ?? "";
+  document.querySelector("#lon").value = record.lon ?? "";
+  document.querySelector("#egg-count").value = record.eggCount ?? "";
+  document.querySelector("#nest-status").value = record.nestStatus || "unknown";
+  document.querySelector("#possible-renest").value = record.possibleRenest || "uncertain";
+  document.querySelector("#notes").value = record.notes || "";
+  document.querySelector("#notes-identification").value = record.moduleNotes?.identification || "";
+  document.querySelector("#notes-nest-micro").value = record.moduleNotes?.nestMicro || "";
+  document.querySelector("#notes-random-micro").value = record.moduleNotes?.randomMicro || "";
+  document.querySelector("#notes-meso").value = record.moduleNotes?.meso || "";
+}
 
 function numberInput(id) {
   return Number(document.querySelector(id).value);
@@ -254,12 +301,18 @@ function validatePercentages(record) {
   return true;
 }
 
-function renderEntries() {
+function renderEntries(searchTerm = "") {
   const entries = getEntries();
   entryCount.textContent = String(entries.length);
   entriesList.innerHTML = "";
 
-  for (const entry of entries) {
+  const query = String(searchTerm || "").trim().toLowerCase();
+  const visible = !query ? entries : entries.filter((entry) => {
+    const hay = `${entry.nestId || ""} ${entry.sector || ""} ${speciesLabel[entry.species] || entry.species || ""}`.toLowerCase();
+    return hay.includes(query);
+  });
+
+  for (const entry of visible) {
     const item = template.content.cloneNode(true);
     item.querySelector(".entry-id").textContent = entry.nestId;
     item.querySelector(".species").textContent = speciesLabel[entry.species] || entry.species;
@@ -286,6 +339,15 @@ function renderEntries() {
     } else {
       photoWrap.textContent = "Brak zdjęć.";
     }
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "Edytuj rekord";
+    editBtn.addEventListener("click", () => {
+      loadRecordToForm(entry);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    item.querySelector("details").before(editBtn);
 
     entriesList.appendChild(item);
   }
@@ -360,14 +422,21 @@ form.addEventListener("submit", async (event) => {
   if (!validatePercentages(record)) return;
 
   const entries = getEntries();
-  entries.unshift(record);
+  if (editingUid) {
+    const idx = entries.findIndex((r) => String(r.uid) === String(editingUid));
+    if (idx >= 0) {
+      record.uid = editingUid;
+      entries[idx] = record;
+    } else {
+      entries.unshift(record);
+    }
+  } else {
+    entries.unshift(record);
+  }
   setEntries(entries);
 
-  form.reset();
-  setDefaultDateTime();
-  gpsStatus.textContent = "GPS: brak";
-  randomGpsStatus.textContent = "GPS kontrolny: brak";
-  renderEntries();
+  clearEditMode();
+  renderEntries(recordSearchInput?.value || "");
 });
 
 gpsBtn.addEventListener("click", () => {
@@ -414,7 +483,7 @@ function setupSheetEditor() {
     if (!target) return;
     if (!confirm(`Usunąć rekord ${target.nestId}?`)) return;
     setEntries(records.filter((r) => String(r.uid) !== String(uid)));
-    renderEntries();
+    renderEntries(recordSearchInput?.value || "");
     renderSheetEditor();
   });
 
@@ -440,7 +509,7 @@ function setupSheetEditor() {
     }
 
     setEntries(Array.from(byUid.values()));
-    renderEntries();
+    renderEntries(recordSearchInput?.value || "");
     sheetPanel.hidden = true;
   });
 }
@@ -449,7 +518,13 @@ function renderSheetEditor() {
   const entries = getEntries();
   sheetTableBody.innerHTML = "";
 
-  for (const entry of entries) {
+  const query = String(searchTerm || "").trim().toLowerCase();
+  const visible = !query ? entries : entries.filter((entry) => {
+    const hay = `${entry.nestId || ""} ${entry.sector || ""} ${speciesLabel[entry.species] || entry.species || ""}`.toLowerCase();
+    return hay.includes(query);
+  });
+
+  for (const entry of visible) {
     const tr = document.createElement("tr");
     tr.dataset.uid = String(entry.uid);
     tr.innerHTML = `
@@ -567,7 +642,7 @@ async function syncWithDrive(mode) {
       setEntries(mergeEntries(local, remoteRecords));
     }
 
-    renderEntries();
+    renderEntries(recordSearchInput?.value || "");
     setSyncStatus(`OK (${mode})`);
     closeMenu();
   } catch (error) {
