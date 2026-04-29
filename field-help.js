@@ -16,7 +16,7 @@
 
     lat: ["GPS gniazda", "Współrzędne środka gniazda. Preferowany zapis z telefonu/GPS plus zdjęcie i opis, bez widocznego markera przy samym gnieździe."],
     lon: ["GPS gniazda", "Współrzędne środka gniazda. Jeśli dokładność GPS jest słaba, zapisz rekord, ale warto dodać uwagę jakościową."],
-    "nest-photos": ["Zdjęcia gniazda", "Dodaj zdjęcie dokumentacyjne i/lub zdjęcie kwadratu 1 m². Zdjęcie 1 m² powinno być pionowe i możliwie powtarzalne między obserwatorami."],
+    "nest-photos": ["Zdjęcia gniazda", "Domyślnie wybieraj zdjęcia z galerii/folderu. Zdjęcie 1 m² powinno być pionowe i możliwie powtarzalne między obserwatorami."],
 
     "nest-substrate": ["Dominujący typ podłoża", "Wybierz klasę dominującą bez nadmiernego rozdrabniania. Liczy się porównywalność między obserwatorami bardziej niż bardzo drobna typologia."],
     "random-substrate": ["Dominujący typ podłoża", "Wybierz klasę dominującą w punkcie losowym według tych samych zasad co przy gnieździe."],
@@ -39,7 +39,7 @@
     "random-reroll-reason": ["Powód ponownego losowania", "Wybierz powód: woda, roślinność zwarta, poza dostępnym siedliskiem lub inne. Dzięki temu wiadomo, dlaczego punkt kontrolny nie był pierwszy z losowania."],
     "random-lat": ["GPS punktu losowego", "Współrzędne faktycznie ocenianego punktu losowego 10 m od gniazda."],
     "random-lon": ["GPS punktu losowego", "Współrzędne faktycznie ocenianego punktu losowego 10 m od gniazda."],
-    "random-photos": ["Zdjęcia punktu losowego", "Zdjęcie 1 m² wykonuj tak samo jak nad gniazdem: pionowo, ok. 1,5 m nad gruntem, z całym kwadratem 1 × 1 m w kadrze."],
+    "random-photos": ["Zdjęcia punktu losowego", "Domyślnie wybieraj zdjęcia z galerii/folderu. Zdjęcie 1 m² wykonuj tak samo jak nad gniazdem: pionowo, ok. 1,5 m nad gruntem."],
 
     "meso-assessment-method": ["Sposób oceny buforu 15 m", "Zaznacz, czy udział klas oceniono w terenie jako szybki szacunek, czy później z ortofotomapy/GIS. Preferowana jest ocena z ortofotomapy, jeśli jest dostępna."],
     "dist-water": ["Odległość do wody", "Najkrótsza odległość od gniazda do aktualnej linii wody lub brzegu czynnego zbiornika/kanału. Mierz w terenie lub później w GIS."],
@@ -64,23 +64,18 @@
     "nest-pct-sand": ["Piasek", "Luźne, drobnoziarniste podłoże mineralne. Wpisuj jako piasek, gdy klasa wizualnie dominuje lub tworzy ciągłe płaty."],
     "random-pct-sand": ["Piasek", "Luźne, drobnoziarniste podłoże mineralne. Stosuj tę samą definicję co przy gnieździe."],
     "pct-sand": ["Piasek w buforze 15 m", "Łączny udział otwartych piaszczystych powierzchni w promieniu 15 m."],
-
     "nest-pct-fine-gravel": ["Drobny żwir", "Drobne kamienie i otoczaki większe od piasku, ale nadal drobne; powierzchnia wygląda ziarnisto, bez dominacji dużych kamieni."],
     "random-pct-fine-gravel": ["Drobny żwir", "Drobne kamienie i otoczaki większe od piasku; koduj tak samo jak przy gnieździe."],
-
     "nest-pct-coarse": ["Gruby żwir / kamienie", "Grubsze kamienie, otoczaki i większe frakcje mineralne widoczne pojedynczo lub w skupieniach."],
     "random-pct-coarse": ["Gruby żwir / kamienie", "Grubsze kamienie, otoczaki i większe frakcje mineralne w punkcie losowym."],
     "pct-gravel": ["Żwir / kamienie w buforze", "Łączny udział powierzchni żwirowych, kamienistych i otoczakowych. W mezohabitatcie można łączyć frakcje w jedną klasę."],
-
     "nest-pct-shells": ["Muszle", "Fragmenty muszli, skorup lub wyraźne nagromadzenia materiału muszlowego. Koduj osobno tylko, gdy są dobrze widoczne."],
     "random-pct-shells": ["Muszle", "Fragmenty muszli lub skorup w kwadracie 1 m² punktu losowego."],
-
     "nest-pct-live-veg": ["Roślinność żywa", "Zielone, żywe części roślin w obrębie kwadratu. Oceniaj procent powierzchni zakrytej rzutem roślin, nie liczbę pędów."],
     "random-pct-live-veg": ["Roślinność żywa", "Zielone, żywe części roślin w kwadracie 1 m² punktu losowego."],
     "nest-pct-dry-veg": ["Roślinność sucha", "Suche łodygi, martwe części roślin, zeszłoroczne pędy lub sucha darń. Nie łącz z roślinnością żywą."],
     "random-pct-dry-veg": ["Roślinność sucha", "Suche lub martwe części roślin w kwadracie 1 m² punktu losowego."],
     "pct-vegetation": ["Roślinność w buforze", "Łączny udział płatów roślinności, żywej i suchej, jeśli są widoczne jako strukturalne płaty. Tu ważna jest otwartość siedliska."],
-
     "nest-pct-organic": ["Drewno / szczątki", "Patyki, gałązki, wyrzucone szczątki roślinne, glony lub detrytus organiczny. Koduj, gdy stanowią widoczny element powierzchni."],
     "random-pct-organic": ["Drewno / szczątki", "Patyki, gałązki, detrytus lub inne szczątki organiczne w punkcie losowym."],
     "nest-pct-anthro": ["Antropogeniczne", "Szkło, plastik, metal, beton, sznurki, odpady budowlane lub fragmenty infrastruktury. Każdy nienaturalny element zaliczaj do tej klasy."],
@@ -95,6 +90,30 @@
     meso: ["Bufor 15 m", "Koło o promieniu 15 m wokół gniazda, używane do szybkiej oceny otwartości i struktury otoczenia. Jeśli oceniasz w terenie, stosuj te same klasy co później na ortofotomapie."],
   };
 
+  let deferredInstallPrompt = null;
+
+  function injectUiStyles() {
+    if (document.getElementById("field-help-ui-overrides")) return;
+    const style = document.createElement("style");
+    style.id = "field-help-ui-overrides";
+    style.textContent = `
+      .help-label-line{display:inline-flex;align-items:center;gap:.35rem;width:max-content;max-width:100%;}
+      label>.help-label-line{font-weight:760;}
+      .field-label .help-bubble-btn,.percent-group h3 .help-bubble-btn,label span .help-bubble-btn{margin-left:.35rem;}
+      .help-bubble-btn{flex:0 0 auto;vertical-align:middle;}
+      .photo-choice-grid{display:grid;gap:.55rem;margin:.6rem 0 1rem;}
+      .photo-choice-grid .photo-input{margin:0;}
+      .photo-choice-grid .photo-camera-input{border-style:solid;background:#fff;}
+      .install-helper-card{position:fixed;inset:0;z-index:1100;background:rgba(15,23,42,.55);display:grid;place-items:end center;padding:1rem;}
+      .install-helper-card[hidden]{display:none!important;}
+      .install-helper-card>div{width:min(680px,100%);background:#fff;border:2px solid var(--primary);border-radius:18px;padding:1rem;color:var(--text);box-shadow:0 18px 50px rgba(0,0,0,.25);}
+      .install-helper-card h3{margin-top:0;}
+      .install-helper-card ol{padding-left:1.25rem;}
+      .install-helper-card li{margin:.35rem 0;}
+    `;
+    document.head.appendChild(style);
+  }
+
   function makeButton(title, body) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -106,9 +125,35 @@
     return btn;
   }
 
+  function labelTitleText(label, fallback) {
+    for (const node of Array.from(label.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) return node.textContent.trim();
+      if (node.nodeType === Node.ELEMENT_NODE && node.matches("span:not(.help-label-line)")) return node.textContent.trim();
+    }
+    return fallback;
+  }
+
   function addHelpNearElement(element, title, body) {
     if (!element || element.querySelector?.(".help-bubble-btn")) return;
-    element.appendChild(makeButton(title, body));
+    const btn = makeButton(title, body);
+
+    if (element.tagName === "LABEL") {
+      const existingSpan = Array.from(element.children).find((child) => child.tagName === "SPAN" && !child.classList.contains("help-label-line"));
+      if (existingSpan) {
+        existingSpan.appendChild(btn);
+        return;
+      }
+      const firstText = Array.from(element.childNodes).find((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+      const line = document.createElement("span");
+      line.className = "help-label-line";
+      line.textContent = labelTitleText(element, title);
+      line.appendChild(btn);
+      if (firstText) firstText.remove();
+      element.prepend(line);
+      return;
+    }
+
+    element.appendChild(btn);
   }
 
   function addHelpForControl(id, entry) {
@@ -173,10 +218,126 @@
   }
 
   function installHelp() {
+    injectUiStyles();
     ensureHelpPanel();
     Object.entries(HELP).forEach(([id, entry]) => addHelpForControl(id, entry));
     Object.entries(PERCENT_HELP).forEach(([id, entry]) => addPercentHelp(id, entry));
     addGroupHelp();
+  }
+
+  function createInstallInstructions() {
+    if (document.getElementById("install-helper-card")) return;
+    const panel = document.createElement("div");
+    panel.id = "install-helper-card";
+    panel.className = "install-helper-card";
+    panel.hidden = true;
+    panel.innerHTML = `
+      <div role="dialog" aria-modal="true" aria-labelledby="install-helper-title">
+        <h3 id="install-helper-title">Instalacja aplikacji</h3>
+        <p>Ta strona działa jako aplikacja PWA. Możesz dodać ją do ekranu głównego telefonu albo pulpitu komputera.</p>
+        <ol>
+          <li><strong>Android / Chrome:</strong> menu ⋮ → „Zainstaluj aplikację” albo „Dodaj do ekranu głównego”.</li>
+          <li><strong>iPhone / Safari:</strong> przycisk Udostępnij → „Dodaj do ekranu początkowego”.</li>
+          <li><strong>Komputer / Chrome lub Edge:</strong> ikona instalacji w pasku adresu albo menu ⋮ → „Zainstaluj”.</li>
+        </ol>
+        <button type="button" id="install-helper-close">Zamknij</button>
+      </div>
+    `;
+    document.body.appendChild(panel);
+    panel.addEventListener("click", (event) => {
+      if (event.target === panel || event.target.id === "install-helper-close") panel.hidden = true;
+    });
+  }
+
+  function setupInstallButton() {
+    createInstallInstructions();
+    const actions = document.querySelector(".home-actions");
+    if (!actions || document.getElementById("install-pwa-button")) return;
+    const btn = document.createElement("button");
+    btn.id = "install-pwa-button";
+    btn.type = "button";
+    btn.className = "big";
+    btn.textContent = "Zainstaluj aplikację na telefonie/pulpicie";
+    actions.insertBefore(btn, actions.children[1] || null);
+
+    const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    const update = () => {
+      if (isStandalone()) {
+        btn.textContent = "Aplikacja jest już zainstalowana";
+        btn.disabled = true;
+      } else if (deferredInstallPrompt) {
+        btn.textContent = "Zainstaluj aplikację";
+        btn.disabled = false;
+      } else {
+        btn.textContent = "Jak zainstalować aplikację?";
+        btn.disabled = false;
+      }
+    };
+
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      update();
+    });
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      update();
+    });
+    btn.addEventListener("click", async () => {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice.catch(() => null);
+        deferredInstallPrompt = null;
+        update();
+        return;
+      }
+      const panel = document.getElementById("install-helper-card");
+      if (panel) panel.hidden = false;
+    });
+    update();
+  }
+
+  function mergeFilesIntoPrimary(primaryInput, extraInput) {
+    const extraFiles = Array.from(extraInput.files || []);
+    if (!extraFiles.length) return;
+    try {
+      const dt = new DataTransfer();
+      Array.from(primaryInput.files || []).forEach((file) => dt.items.add(file));
+      extraFiles.forEach((file) => dt.items.add(file));
+      primaryInput.files = dt.files;
+      primaryInput.dispatchEvent(new Event("change", { bubbles: true }));
+      extraInput.value = "";
+    } catch (error) {
+      alert("Nie udało się automatycznie dołączyć zdjęcia z aparatu. Użyj przycisku wyboru z galerii/folderu i wybierz zdjęcie zapisane przez aparat.");
+      console.error(error);
+    }
+  }
+
+  function enhancePhotoInput(inputId, galleryText, cameraText) {
+    const primary = document.getElementById(inputId);
+    if (!primary || primary.dataset.sourceEnhanced === "1") return;
+    primary.dataset.sourceEnhanced = "1";
+    primary.removeAttribute("capture");
+    primary.setAttribute("multiple", "");
+    const label = primary.closest("label");
+    if (!label) return;
+    label.querySelector("span") && (label.querySelector("span").textContent = galleryText);
+
+    const wrap = document.createElement("div");
+    wrap.className = "photo-choice-grid";
+    label.parentNode.insertBefore(wrap, label);
+    wrap.appendChild(label);
+
+    const cameraLabel = document.createElement("label");
+    cameraLabel.className = "photo-input photo-camera-input";
+    cameraLabel.innerHTML = `<span>${cameraText}</span><input id="${inputId}-camera" type="file" accept="image/*" capture="environment" multiple />`;
+    wrap.appendChild(cameraLabel);
+    cameraLabel.querySelector("input").addEventListener("change", (event) => mergeFilesIntoPrimary(primary, event.target));
+  }
+
+  function setupPhotoChoices() {
+    enhancePhotoInput("nest-photos", "+ Wybierz zdjęcie gniazda z galerii/folderu", "📷 Zrób zdjęcie gniazda aparatem");
+    enhancePhotoInput("random-photos", "+ Wybierz zdjęcie punktu losowego z galerii/folderu", "📷 Zrób zdjęcie punktu losowego aparatem");
   }
 
   document.addEventListener("click", (event) => {
@@ -187,6 +348,13 @@
     openHelp(btn.dataset.helpTitle, btn.dataset.helpBody);
   });
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => setTimeout(installHelp, 0));
-  else setTimeout(installHelp, 0);
+  function boot() {
+    installHelp();
+    setupInstallButton();
+    setupPhotoChoices();
+    setTimeout(installHelp, 50);
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
 })();
