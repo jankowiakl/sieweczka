@@ -31,7 +31,6 @@ const editRecordLabel = document.querySelector("#edit-record-label");
 const cancelEditBtn = document.querySelector("#cancel-edit");
 const recordSearchInput = document.querySelector("#record-search");
 const sheetAddBtn = document.querySelector("#sheet-add");
-const jumpButtons = document.querySelectorAll("[data-jump]");
 const scrollTopBtn = document.querySelector("#scroll-top");
 
 const PERCENT_IDS = [
@@ -986,18 +985,8 @@ function setupFieldHelp() {
   });
 }
 
-function setupSectionJumps() {
-  jumpButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const target = document.getElementById(btn.dataset.jump || "");
-      if (!target) return;
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+if (scrollTopBtn) {
+  scrollTopBtn.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
   });
-
-  if (scrollTopBtn) {
-    scrollTopBtn.addEventListener("click", () => {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    });
-  }
 }
