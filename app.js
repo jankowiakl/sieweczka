@@ -1,4 +1,7 @@
 const STORAGE_KEY = "sieweczka-field-data-v2";
+const PHOTO_DB = "sieweczka-photo-db";
+const PHOTO_STORE = "photos";
+const photoUrlCache = new Map();
 
 const form = document.querySelector("#entry-form");
 const entriesList = document.querySelector("#entries-list");
@@ -55,6 +58,50 @@ const substrateLabel = {
 let deferredInstallPrompt = null;
 let lastScrollY = 0;
 let editingUid = null;
+
+function openPhotoDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PHOTO_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(PHOTO_STORE)) db.createObjectStore(PHOTO_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function savePhotoFile(file) {
+  const db = await openPhotoDb();
+  const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, "readwrite");
+    tx.objectStore(PHOTO_STORE).put(file, id);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+  return `idb:${id}`;
+}
+
+async function resolvePhotoSrc(ref) {
+  if (!ref) return "";
+  if (String(ref).startsWith("data:")) return ref;
+  if (!String(ref).startsWith("idb:")) return "";
+  if (photoUrlCache.has(ref)) return photoUrlCache.get(ref);
+  const id = String(ref).slice(4);
+  const db = await openPhotoDb();
+  const blob = await new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE, "readonly");
+    const req = tx.objectStore(PHOTO_STORE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+  if (!blob) return "";
+  const url = URL.createObjectURL(blob);
+  photoUrlCache.set(ref, url);
+  return url;
+}
+
 
 setDefaultDateTime();
 renderEntries();
@@ -375,13 +422,13 @@ function setEntries(entries) {
   }
 }
 
-async function filesToDataUrls(fileList, maxFiles = 4) {
+async function filesToPhotoRefs(fileList, maxFiles = 4) {
   const files = Array.from(fileList).slice(0, maxFiles);
-  const urls = [];
+  const refs = [];
   for (const file of files) {
-    urls.push(await fileToDataUrlOptimized(file));
+    refs.push(await savePhotoFile(file));
   }
-  return urls;
+  return refs;
 }
 
 function validatePercentages(record) {
@@ -431,9 +478,9 @@ function renderEntries(searchTerm = "") {
     if (allPhotos.length) {
       for (const photo of allPhotos) {
         const img = document.createElement("img");
-        img.src = photo;
         img.alt = `Zdjęcie dla gniazda ${entry.nestId}`;
         photoWrap.appendChild(img);
+        resolvePhotoSrc(photo).then((src) => { if (src) img.src = src; });
       }
     } else {
       photoWrap.textContent = "Brak zdjęć.";
@@ -458,8 +505,8 @@ form.addEventListener("submit", async (event) => {
   const entries = getEntries();
   const existingRecord = editingUid ? entries.find((r) => String(r.uid) === String(editingUid)) : null;
 
-  const newNestPhotos = await filesToDataUrls(document.querySelector("#nest-photos").files, 4);
-  const newRandomPhotos = await filesToDataUrls(document.querySelector("#random-photos").files, 4);
+  const newNestPhotos = await filesToPhotoRefs(document.querySelector("#nest-photos").files, 4);
+  const newRandomPhotos = await filesToPhotoRefs(document.querySelector("#random-photos").files, 4);
 
   const record = {
     nestId: document.querySelector("#nest-id").value.trim(),
@@ -625,8 +672,8 @@ function setupSheetEditor() {
 
       const nestUploadInput = row.querySelector('[data-col="nestPhotosUpload"]');
       const randomUploadInput = row.querySelector('[data-col="randomPhotosUpload"]');
-      const newNestPhotos = nestUploadInput ? await filesToDataUrls(nestUploadInput.files, 4) : [];
-      const newRandomPhotos = randomUploadInput ? await filesToDataUrls(randomUploadInput.files, 4) : [];
+      const newNestPhotos = nestUploadInput ? await filesToPhotoRefs(nestUploadInput.files, 4) : [];
+      const newRandomPhotos = randomUploadInput ? await filesToPhotoRefs(randomUploadInput.files, 4) : [];
       if (!target.nestMicro) target.nestMicro = {};
       if (!target.randomMicro) target.randomMicro = {};
       target.nestMicro.photos = newNestPhotos.length ? newNestPhotos : (target.nestMicro.photos || []);
@@ -688,8 +735,8 @@ function renderSheetEditor() {
       <td><input data-col="qcTracksVisible" value="${entry.qualityControl?.tracksVisible || ""}" /></td>
       <td>
         <div class="sheet-photo-grid">
-          ${(entry.nestMicro?.photos || []).map((src) => `<img src="${src}" alt="nest photo"/>`).join("")}
-          ${(entry.randomMicro?.photos || []).map((src) => `<img src="${src}" alt="random photo"/>`).join("")}
+          ${(entry.nestMicro?.photos || []).map((src) => `<img data-ref="${src}" alt="nest photo"/>`).join("")}
+          ${(entry.randomMicro?.photos || []).map((src) => `<img data-ref="${src}" alt="random photo"/>`).join("")}
         </div>
         <div class="row-2">
           <label>Nowe gniazdo foto <input data-col="nestPhotosUpload" type="file" accept="image/*" multiple /></label>
@@ -699,6 +746,9 @@ function renderSheetEditor() {
       <td><button type="button" class="sheet-delete danger" data-uid="${entry.uid}">Usuń</button></td>
     `;
     sheetTableBody.appendChild(tr);
+    const imgs = tr.querySelectorAll(".sheet-photo-grid img");
+    const refs = [...(entry.nestMicro?.photos || []), ...(entry.randomMicro?.photos || [])];
+    imgs.forEach((img, i) => resolvePhotoSrc(refs[i]).then((src) => { if (src) img.src = src; }));
   }
 }
 
@@ -788,7 +838,9 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
 
   for (const item of photoMap) {
     try {
-      const res = await fetch(item.src);
+      const src = await resolvePhotoSrc(item.src);
+      if (!src) continue;
+      const res = await fetch(src);
       const blob = await res.blob();
       zip.file(item.file, blob);
     } catch {
