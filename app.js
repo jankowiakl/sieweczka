@@ -151,6 +151,7 @@ setupSheetEditor();
 setupRecordBrowser();
 setupFieldHelp();
 setupPercentSliders();
+setupSectionJumps();
 migrateLegacyDataUrlsToIdb();
 
 randomAzimuthBtn.addEventListener("click", () => {
