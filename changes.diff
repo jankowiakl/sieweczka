@@ -1,0 +1,107 @@
+--- manifest.webmanifest (old)
++++ manifest.webmanifest (new)
+@@ -8,24 +8,49 @@
+   "start_url": "/sieweczka/",
+   "scope": "/sieweczka/",
+   "display": "standalone",
+-  "display_override": ["standalone", "minimal-ui"],
++  "display_override": [
++    "standalone",
++    "minimal-ui"
++  ],
+   "orientation": "portrait",
+   "background_color": "#edf2f7",
+   "theme_color": "#0f766e",
+-  "categories": ["science", "productivity", "utilities"],
++  "categories": [
++    "science",
++    "productivity",
++    "utilities"
++  ],
+   "prefer_related_applications": false,
+   "icons": [
++    {
++      "src": "icons/icon-192.png",
++      "sizes": "192x192",
++      "type": "image/png",
++      "purpose": "any"
++    },
++    {
++      "src": "icons/icon-512.png",
++      "sizes": "512x512",
++      "type": "image/png",
++      "purpose": "any"
++    },
++    {
++      "src": "icons/icon-maskable-192.png",
++      "sizes": "192x192",
++      "type": "image/png",
++      "purpose": "maskable"
++    },
++    {
++      "src": "icons/icon-maskable-512.png",
++      "sizes": "512x512",
++      "type": "image/png",
++      "purpose": "maskable"
++    },
+     {
+       "src": "icons/icon.svg",
+       "sizes": "any",
+       "type": "image/svg+xml",
+       "purpose": "any"
+-    },
+-    {
+-      "src": "icons/icon.svg",
+-      "sizes": "any",
+-      "type": "image/svg+xml",
+-      "purpose": "maskable"
+     }
+   ]
+ }
+
+--- index.html (old)
++++ index.html (new)
+@@ -10,6 +10,8 @@
+     <meta name="apple-mobile-web-app-title" content="Sieweczka" />
+     <link rel="manifest" href="manifest.webmanifest" />
+     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+-    <link rel="apple-touch-icon" href="icons/icon.svg" />
++    <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png" />
++    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+     <link rel="stylesheet" href="styles.css" />
+   </head>
++  </head>
+
+--- sw.js (old)
++++ sw.js (new)
+@@ -1,11 +1,16 @@
+-const CACHE_NAME = "sieweczka-pwa-v2";
++const CACHE_NAME = "sieweczka-pwa-v3";
+ const APP_SHELL = [
+   "./",
+   "./index.html",
+   "./styles.css",
+   "./app.js",
+   "./manifest.webmanifest",
+-  "./icons/icon.svg"
++  "./icons/icon.svg",
++  "./icons/icon-192.png",
++  "./icons/icon-512.png",
++  "./icons/icon-maskable-192.png",
++  "./icons/icon-maskable-512.png",
++  "./icons/apple-touch-icon.png"
+ ];
+ 
+ self.addEventListener("install", (event) => {
+@@ -15,7 +20,9 @@
+ 
+ self.addEventListener("activate", (event) => {
+   event.waitUntil(
+-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
++    caches.keys().then((keys) =>
++      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
++    )
+   );
+   self.clients.claim();
+ });
+
