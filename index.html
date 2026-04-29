@@ -530,5 +530,73 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="app.js"></script>
   <script src="field-help.js"></script>
+  <script>
+  (() => {
+    "use strict";
+    const distanceFields = [
+      ["nest-dist-plant", 1, "cm"], ["nest-dist-object", 1, "cm"],
+      ["random-dist-plant", 1, "cm"], ["random-dist-object", 1, "cm"],
+      ["dist-water", 0.5, "m"], ["dist-veg-edge", 0.5, "m"],
+      ["dist-vertical-structure", 0.5, "m"], ["dist-nearest-hiaticula", 0.5, "m"],
+      ["dist-nearest-dubius", 0.5, "m"], ["dist-fine-gravel-patch", 0.5, "m"],
+      ["dist-coarse-gravel-patch", 0.5, "m"]
+    ];
+    function injectStyles(){
+      if(document.getElementById("ui-tweaks-styles")) return;
+      const style=document.createElement("style");
+      style.id="ui-tweaks-styles";
+      style.textContent = `.distance-stepper-row{display:grid;grid-template-columns:minmax(0,1fr) 52px;gap:.45rem;align-items:stretch}.distance-stepper-row input{min-width:0}.distance-stepper-buttons{display:grid;grid-template-rows:1fr 1fr;gap:.25rem}.distance-stepper-buttons button{min-height:23px;height:23px;padding:0;border-radius:9px;font-size:.85rem;line-height:1;font-weight:900}.distance-stepper-unit{color:var(--muted);font-size:.86rem;font-weight:650;margin-top:.15rem}.photo-guidance{margin:.45rem 0 1rem;padding:.75rem .85rem;border:1px solid var(--warning-border,#fb923c);background:var(--warning-bg,#fff7ed);border-radius:14px;color:var(--text);font-weight:650}.photo-guidance strong{font-weight:850}.field-mode .distance-stepper-buttons button,.field-mode .photo-guidance{border:2px solid #000}`;
+      document.head.appendChild(style);
+    }
+    function fmt(value, step){return (step<1?value.toFixed(1):String(Math.round(value))).replace(/\.0$/,"");}
+    function stepInput(input, delta, step){
+      const raw=input.value;
+      const current=raw===""||raw==null?null:Number(raw);
+      const next=current==null||Number.isNaN(current)?(delta>0?step:0):Math.max(0,current+delta);
+      input.value=fmt(next, step);
+      input.dispatchEvent(new Event("input",{bubbles:true}));
+      input.dispatchEvent(new Event("change",{bubbles:true}));
+    }
+    function enhanceDistance(id, step, unit){
+      const input=document.getElementById(id);
+      if(!input || input.dataset.stepperEnhanced==="1") return;
+      input.dataset.stepperEnhanced="1";
+      input.step=String(step);
+      input.min="0";
+      const row=document.createElement("div");
+      row.className="distance-stepper-row";
+      const buttons=document.createElement("div");
+      buttons.className="distance-stepper-buttons";
+      buttons.innerHTML=`<button type="button" aria-label="Zwiększ wartość">▲</button><button type="button" aria-label="Zmniejsz wartość">▼</button>`;
+      buttons.children[0].addEventListener("click",()=>stepInput(input, step, step));
+      buttons.children[1].addEventListener("click",()=>stepInput(input, -step, step));
+      input.parentNode.insertBefore(row,input);
+      row.appendChild(input);
+      row.appendChild(buttons);
+      const note=document.createElement("div");
+      note.className="distance-stepper-unit";
+      note.textContent=`Strzałki zmieniają wartość co ${step} ${unit}; pole może pozostać puste.`;
+      row.insertAdjacentElement("afterend", note);
+    }
+    function addPhotoGuidance(id){
+      const input=document.getElementById(id);
+      if(!input) return;
+      const wrap=input.closest(".photo-choice-grid") || input.closest("label")?.parentElement;
+      if(!wrap || wrap.dataset.photoGuidance==="1") return;
+      wrap.dataset.photoGuidance="1";
+      const note=document.createElement("div");
+      note.className="photo-guidance";
+      note.innerHTML=`<strong>Zdjęcie 1 m²:</strong> użyj ramki/taśmy 1 × 1 m albo innego stałego odniesienia. Telefon trzymaj ok. <strong>1,5 m nad podłożem</strong> (akceptowalne 1,4–1,6 m), równolegle do powierzchni, tak aby cały kwadrat 1 × 1 m był widoczny w kadrze.`;
+      wrap.insertAdjacentElement("afterend", note);
+    }
+    function boot(){
+      injectStyles();
+      distanceFields.forEach(args=>enhanceDistance(...args));
+      addPhotoGuidance("nest-photos"); addPhotoGuidance("random-photos");
+      setTimeout(()=>{distanceFields.forEach(args=>enhanceDistance(...args)); addPhotoGuidance("nest-photos"); addPhotoGuidance("random-photos");},150);
+    }
+    if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",boot); else boot();
+  })();
+  </script>
 </body>
 </html>
