@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Sieweczka">
+  <rect width="512" height="512" rx="96" fill="#0f766e"/>
+  <rect x="132" y="132" width="248" height="248" rx="42" fill="#ffffff"/>
+  <path d="M126 196c48 0 96 28 130 76 34-48 82-76 130-76-49 16-88 52-110 101l-20 44-20-44c-22-49-61-85-110-101z" fill="#0f766e"/>
+</svg>
