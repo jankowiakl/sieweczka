@@ -499,6 +499,76 @@ summary {
   font-weight: 750;
 }
 
+.help-bubble-btn {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
+  margin-left: .35rem;
+  border-radius: 999px;
+  border: 2px solid var(--primary);
+  background: #fff;
+  color: var(--primary);
+  font-weight: 900;
+  line-height: 1;
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.help-bubble-btn:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+.field-help-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, .55);
+  display: grid;
+  place-items: end center;
+  padding: 1rem;
+}
+
+.field-help-panel[hidden] {
+  display: none !important;
+}
+
+.field-help-card {
+  width: min(680px, 100%);
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  background: #fff;
+  color: var(--text);
+  border: 2px solid var(--primary);
+  border-radius: 18px;
+  padding: 1rem;
+  box-shadow: 0 18px 50px rgba(0,0,0,.25);
+}
+
+.field-help-card h3 {
+  margin: 0 2.5rem .5rem 0;
+}
+
+.field-help-card p {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.field-help-close {
+  float: right;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 1.4rem;
+}
+
 @media (min-width: 640px) {
   .row-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -582,4 +652,15 @@ summary {
   border: 2px solid #000;
   background: #fff;
   backdrop-filter: none;
+}
+
+.field-mode .help-bubble-btn {
+  border: 2px solid #000;
+  background: #fff;
+  color: #000;
+}
+
+.field-mode .field-help-card {
+  border: 3px solid #000;
+  box-shadow: none;
 }
