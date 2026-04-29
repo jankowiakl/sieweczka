@@ -396,6 +396,12 @@ function renderEntries(searchTerm = "") {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
+  const entries = getEntries();
+  const existingRecord = editingUid ? entries.find((r) => String(r.uid) === String(editingUid)) : null;
+
+  const newNestPhotos = await filesToDataUrls(document.querySelector("#nest-photos").files, 4);
+  const newRandomPhotos = await filesToDataUrls(document.querySelector("#random-photos").files, 4);
+
   const record = {
     nestId: document.querySelector("#nest-id").value.trim(),
     species: document.querySelector("#species").value,
@@ -408,7 +414,7 @@ form.addEventListener("submit", async (event) => {
     nestStatus: document.querySelector("#nest-status").value,
     possibleRenest: document.querySelector("#possible-renest").value,
     nestMicro: {
-      photos: await filesToDataUrls(document.querySelector("#nest-photos").files, 4),
+      photos: newNestPhotos.length ? newNestPhotos : (existingRecord?.nestMicro?.photos || []),
       substrate: document.querySelector("#nest-substrate").value,
       coverage: readCoverage("nest"),
       distPlantM: numberInput("#nest-dist-plant"),
@@ -421,7 +427,7 @@ form.addEventListener("submit", async (event) => {
       azimuthDeg: numberInput("#random-azimuth"),
       lat: optionalNumberInput("#random-lat"),
       lon: optionalNumberInput("#random-lon"),
-      photos: await filesToDataUrls(document.querySelector("#random-photos").files, 4),
+      photos: newRandomPhotos.length ? newRandomPhotos : (existingRecord?.randomMicro?.photos || []),
       substrate: document.querySelector("#random-substrate").value,
       coverage: readCoverage("random"),
       distPlantM: numberInput("#random-dist-plant"),
@@ -461,7 +467,6 @@ form.addEventListener("submit", async (event) => {
   }
   if (!validatePercentages(record)) return;
 
-  const entries = getEntries();
   if (editingUid) {
     const idx = entries.findIndex((r) => String(r.uid) === String(editingUid));
     if (idx >= 0) {
@@ -676,19 +681,28 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
     )
     .join("\n");
 
-  downloadBlob(`sieweczka_dane_i_linki_${Date.now()}.csv`, "text/csv;charset=utf-8", csv);
+  if (typeof JSZip === "undefined") {
+    alert("Brak modułu ZIP. Odśwież aplikację i spróbuj ponownie.");
+    return;
+  }
+
+  const zip = new JSZip();
+  zip.file("sieweczka_dane_i_linki.csv", csv);
 
   for (const item of photoMap) {
     try {
       const res = await fetch(item.src);
       const blob = await res.blob();
-      downloadBlob(item.file, blob.type || "image/jpeg", blob);
+      zip.file(item.file, blob);
     } catch {
       // ignore single photo download failure
     }
   }
 
-  alert("Pobrano CSV i zdjęcia.");
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  downloadBlob(`sieweczka_export_${Date.now()}.zip`, "application/zip", zipBlob);
+
+  alert("Pobrano paczkę ZIP (CSV + zdjęcia).");
   closeMenu();
 });
 
