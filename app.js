@@ -240,6 +240,18 @@ function setupPercentSliders() {
 
     const badge = document.createElement("span");
     badge.className = "percent-badge";
+    numberInputEl.readOnly = true;
+    numberInputEl.classList.add("percent-number");
+
+    numberInputEl.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      numberInputEl.readOnly = false;
+      numberInputEl.focus();
+    });
+    numberInputEl.addEventListener("blur", () => {
+      numberInputEl.readOnly = true;
+    });
+
     const sync = (value) => {
       const val = Math.max(0, Math.min(100, Number(value) || 0));
       numberInputEl.value = String(val);
@@ -361,23 +373,6 @@ function setEntries(entries) {
     alert("Nie udało się zapisać danych (pamięć telefonu jest pełna). Zmniejsz liczbę/rozmiar zdjęć i spróbuj ponownie.");
     return false;
   }
-}
-
-async function fileToDataUrlOptimized(file, maxSide = 1600, quality = 0.82) {
-  const image = await new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Błąd odczytu obrazu ${file.name}`));
-    img.src = URL.createObjectURL(file);
-  });
-
-  const ratio = Math.min(1, maxSide / Math.max(image.width, image.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(image.width * ratio));
-  canvas.height = Math.max(1, Math.round(image.height * ratio));
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", quality);
 }
 
 async function filesToDataUrls(fileList, maxFiles = 4) {
