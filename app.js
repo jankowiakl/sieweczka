@@ -103,6 +103,43 @@ async function resolvePhotoSrc(ref) {
 }
 
 
+async function saveDataUrlToIdb(dataUrl) {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return savePhotoFile(new File([blob], `legacy-${Date.now()}.jpg`, { type: blob.type || "image/jpeg" }));
+}
+
+async function migrateLegacyDataUrlsToIdb() {
+  const entries = getEntries();
+  let changed = false;
+
+  for (const entry of entries) {
+    const convertList = async (arr = []) => {
+      const next = [];
+      for (const ref of arr) {
+        if (typeof ref === "string" && ref.startsWith("data:")) {
+          try {
+            next.push(await saveDataUrlToIdb(ref));
+            changed = true;
+          } catch {
+            next.push(ref);
+          }
+        } else {
+          next.push(ref);
+        }
+      }
+      return next;
+    };
+
+    entry.nestMicro = entry.nestMicro || {};
+    entry.randomMicro = entry.randomMicro || {};
+    entry.nestMicro.photos = await convertList(entry.nestMicro.photos || []);
+    entry.randomMicro.photos = await convertList(entry.randomMicro.photos || []);
+  }
+
+  if (changed) setEntries(entries);
+}
+
 setDefaultDateTime();
 renderEntries();
 registerServiceWorker();
@@ -113,6 +150,7 @@ setupSheetEditor();
 setupRecordBrowser();
 setupFieldHelp();
 setupPercentSliders();
+migrateLegacyDataUrlsToIdb();
 
 randomAzimuthBtn.addEventListener("click", () => {
   const value = Math.floor(Math.random() * 360);
@@ -426,7 +464,12 @@ async function filesToPhotoRefs(fileList, maxFiles = 4) {
   const files = Array.from(fileList).slice(0, maxFiles);
   const refs = [];
   for (const file of files) {
-    refs.push(await savePhotoFile(file));
+    try {
+      refs.push(await savePhotoFile(file));
+    } catch (error) {
+      alert(`Nie udało się zapisać zdjęcia: ${file.name}. Zwolnij pamięć w telefonie lub usuń część zdjęć.`);
+      throw error;
+    }
   }
   return refs;
 }
@@ -505,8 +548,14 @@ form.addEventListener("submit", async (event) => {
   const entries = getEntries();
   const existingRecord = editingUid ? entries.find((r) => String(r.uid) === String(editingUid)) : null;
 
-  const newNestPhotos = await filesToPhotoRefs(document.querySelector("#nest-photos").files, 4);
-  const newRandomPhotos = await filesToPhotoRefs(document.querySelector("#random-photos").files, 4);
+  let newNestPhotos = [];
+  let newRandomPhotos = [];
+  try {
+    newNestPhotos = await filesToPhotoRefs(document.querySelector("#nest-photos").files, 4);
+    newRandomPhotos = await filesToPhotoRefs(document.querySelector("#random-photos").files, 4);
+  } catch {
+    return;
+  }
 
   const record = {
     nestId: document.querySelector("#nest-id").value.trim(),
@@ -672,8 +721,14 @@ function setupSheetEditor() {
 
       const nestUploadInput = row.querySelector('[data-col="nestPhotosUpload"]');
       const randomUploadInput = row.querySelector('[data-col="randomPhotosUpload"]');
-      const newNestPhotos = nestUploadInput ? await filesToPhotoRefs(nestUploadInput.files, 4) : [];
-      const newRandomPhotos = randomUploadInput ? await filesToPhotoRefs(randomUploadInput.files, 4) : [];
+      let newNestPhotos = [];
+      let newRandomPhotos = [];
+      try {
+        newNestPhotos = nestUploadInput ? await filesToPhotoRefs(nestUploadInput.files, 4) : [];
+        newRandomPhotos = randomUploadInput ? await filesToPhotoRefs(randomUploadInput.files, 4) : [];
+      } catch {
+        return;
+      }
       if (!target.nestMicro) target.nestMicro = {};
       if (!target.randomMicro) target.randomMicro = {};
       target.nestMicro.photos = newNestPhotos.length ? newNestPhotos : (target.nestMicro.photos || []);
