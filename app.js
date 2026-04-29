@@ -150,7 +150,7 @@ setupHeaderAutoHide();
 
 setupRecordBrowser();
 setupFieldHelp();
-setupPercentSliders();
+setupPercentControls();
 
 migrateLegacyDataUrlsToIdb();
 
@@ -310,28 +310,23 @@ function sumCoverage(cov) {
   );
 }
 
-function setupPercentSliders() {
-  for (const id of PERCENT_IDS) {
-    const input = document.querySelector(`#${id}`);
-    if (!input || input.dataset.enhanced === "1") continue;
-    input.step = "1";
-    const row = document.createElement("div");
-    row.className = "pct-row unified";
-    const minus = document.createElement("button"); minus.type="button"; minus.textContent="−"; minus.className="pct-adjust";
-    const plus = document.createElement("button"); plus.type="button"; plus.textContent="+"; plus.className="pct-adjust";
-    const slider = document.createElement("input"); slider.type="range"; slider.min="0"; slider.max="100"; slider.step="1"; slider.className="percent-slider";
-    const sliderWrap = document.createElement("div"); sliderWrap.className="percent-control";
-    input.parentElement?.insertBefore(row, input);
-    row.append(minus, input, plus);
-    input.parentElement?.appendChild(sliderWrap); sliderWrap.appendChild(slider);
-    const sync=(v)=>{ const n=Math.max(0,Math.min(100,Number(v)||0)); input.value=String(n); slider.value=String(n); };
-    minus.addEventListener("click",()=>sync((Number(input.value)||0)-5));
-    plus.addEventListener("click",()=>sync((Number(input.value)||0)+5));
-    input.addEventListener("input",()=>sync(input.value));
-    slider.addEventListener("input",()=>sync(slider.value));
-    sync(input.value||0);
-    input.dataset.enhanced = "1";
-  }
+function setupPercentControls() {
+  document.querySelectorAll('.pct-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const input = document.querySelector(`#${btn.dataset.id}`);
+      if (!input) return;
+      const delta = Number(btn.dataset.delta || 0);
+      const group = percentGroupByInputId(btn.dataset.id);
+      const current = Number(input.value) || 0;
+      let next = Math.max(0, Math.min(100, current + delta));
+      if (delta > 0 && group) {
+        const remaining = 100 - groupSum(group.ids) + current;
+        next = Math.min(next, remaining);
+      }
+      input.value = String(Math.max(0, Math.min(100, next)));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
 }
 
 function registerServiceWorker() {
@@ -346,13 +341,13 @@ function setupInstallFlow() {
     event.preventDefault();
     deferredInstallPrompt = event;
     installBtn.disabled = false;
-    installHint.textContent = "Aplikacja gotowa do instalacji — użyj menu ☰ i kliknij 'Zainstaluj aplikację'.";
+    if (installHint) installHint.textContent = "Aplikacja gotowa do instalacji — użyj menu ☰ i kliknij 'Zainstaluj aplikację'.";
   });
 
   window.addEventListener("appinstalled", () => {
     deferredInstallPrompt = null;
     installBtn.disabled = true;
-    installHint.textContent = "Aplikacja została zainstalowana na telefonie.";
+    if (installHint) installHint.textContent = "Aplikacja została zainstalowana na telefonie.";
   });
 
   installBtn.addEventListener("click", async () => {
@@ -488,7 +483,7 @@ function renderEntries(searchTerm = "") {
     item.querySelector(".species").textContent = speciesLabel[entry.species] || entry.species;
     item.querySelector(".status").textContent = statusLabel[entry.nestStatus] || entry.nestStatus;
     item.querySelector(".meta").textContent = `${entry.obsDate} ${entry.obsTime} • ${entry.sector} • jaja: ${entry.eggCount} • renest: ${yesNoLabel[entry.possibleRenest]}`;
-    item.querySelector(".coords").textContent = `${entry.lat.toFixed(6)}, ${entry.lon.toFixed(6)}`;
+    const c=item.querySelector('.coords'); if(c) c.textContent = `${(entry.lat??0).toFixed(6)}, ${(entry.lon??0).toFixed(6)}`;
 
     const notesCount = Object.values(entry.moduleNotes || {}).filter(Boolean).length;
     item.querySelector(".summary").textContent =
@@ -984,8 +979,52 @@ function setupTiles(){document.querySelectorAll('.tile-group').forEach(g=>{g.add
 function setupFieldMode(){const key='sieweczka-field-mode';const btn=document.querySelector('#field-mode-toggle');const apply=()=>{const on=localStorage.getItem(key)==='1';document.body.classList.toggle('field-mode',on);if(btn)btn.textContent='Tryb terenowy: '+(on?'włączony':'wyłączony');};btn?.addEventListener('click',()=>{localStorage.setItem(key,localStorage.getItem(key)==='1'?'0':'1');apply();});apply();}
 function gpsQuality(acc){if(acc<=5)return 'dobry';if(acc<=10)return 'średni';return 'słaby';}
 const oldGps=gpsBtn?.onclick;
-function updateCounts(){const e=getEntries();document.querySelector('#entry-count').textContent=e.length;const d=new Date().toISOString().slice(0,10);document.querySelector('#today-count').textContent=e.filter(x=>x.obsDate===d).length;document.querySelector('#offline-status').textContent='Status: '+(navigator.onLine?'online':'offline');}
+function updateCounts(){const e=getEntries();document.querySelector('#entry-count').textContent=e.length;const d=new Date().toISOString().slice(0,10);document.querySelector('#today-count').textContent=e.filter(x=>x.obsDate===d).length;document.querySelector('#offline-status').textContent='Status: '+(navigator.onLine?'online':'offline'); const fm=localStorage.getItem('sieweczka-field-mode')==='1'?'włączony':'wyłączony'; const fms=document.querySelector('#field-mode-status'); if(fms) fms.textContent='Tryb terenowy: '+fm;}
 function renderValidationList(){const errs=[];if(!document.querySelector('#lat')?.value||!document.querySelector('#lon')?.value)errs.push([2,'Brakuje GPS gniazda']);if(!document.querySelector('#sector')?.value)errs.push([1,'Brakuje sektora']);const div=document.querySelector('#validation-list');if(!div)return;div.innerHTML=errs.map(([s,m])=>`<div class='val-item'>${m} <button type='button' data-go='${s}'>Przejdź do pola</button></div>`).join('')||'<p>Brak krytycznych braków. Możesz zapisać rekord.</p>';div.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>showStep(Number(b.dataset.go))));}
 function setupPhotoPreview(inputId,wrapId,label){const i=document.querySelector('#'+inputId);const w=document.querySelector('#'+wrapId);i?.addEventListener('change',()=>{w.innerHTML='';[...i.files].forEach(f=>{const d=document.createElement('div');d.className='photo-tile';d.innerHTML=`<img alt='${label}'><small>${label}</small>`;d.querySelector('img').src=URL.createObjectURL(f);w.appendChild(d);});});}
-function setupPercentSummaries(){const groups=[['nest',['nest-pct-sand','nest-pct-fine-gravel','nest-pct-coarse','nest-pct-shells','nest-pct-live-veg','nest-pct-dry-veg','nest-pct-organic','nest-pct-anthro']],['random',['random-pct-sand','random-pct-fine-gravel','random-pct-coarse','random-pct-shells','random-pct-live-veg','random-pct-dry-veg','random-pct-organic','random-pct-anthro']],['meso',['pct-sand','pct-gravel','pct-vegetation','pct-water']]];const upd=()=>groups.forEach(([name,ids])=>{const sum=ids.reduce((a,id)=>a+(Number(document.querySelector('#'+id)?.value)||0),0);const r=100-sum;const el=document.querySelector('#'+name+'-sum');if(el)el.textContent=`Suma: ${sum}% • Pozostało: ${r}% ${sum===100?'• OK':''} ${sum>100?'• Przekroczono 100%':''}`;el?.classList.toggle('bad',sum>100);});document.addEventListener('input',e=>{if(e.target.matches('input[type="number"]'))upd();});upd();}
-setupStepper();setupTiles();setupFieldMode();setupPhotoPreview('nest-photos','nest-photo-preview','gniazdo');setupPhotoPreview('random-photos','random-photo-preview','punkt losowy');setupPercentSummaries();updateCounts();showStep(1);
+const PERCENT_GROUPS = {
+  nest: ["nest-pct-sand","nest-pct-fine-gravel","nest-pct-coarse","nest-pct-shells","nest-pct-live-veg","nest-pct-dry-veg","nest-pct-organic","nest-pct-anthro"],
+  random: ["random-pct-sand","random-pct-fine-gravel","random-pct-coarse","random-pct-shells","random-pct-live-veg","random-pct-dry-veg","random-pct-organic","random-pct-anthro"],
+  meso: ["pct-sand","pct-gravel","pct-vegetation","pct-water"]
+};
+function percentGroupByInputId(id){ for (const [name, ids] of Object.entries(PERCENT_GROUPS)) if (ids.includes(id)) return {name, ids}; return null; }
+function groupSum(ids){ return ids.reduce((a,id)=>a + (Number(document.querySelector('#'+id)?.value)||0),0); }
+function setupPercentSummaries(){
+  const update=()=>Object.entries(PERCENT_GROUPS).forEach(([name,ids])=>{
+    const sum = groupSum(ids); const remaining = 100-sum; const el=document.querySelector('#'+name+'-sum');
+    if(!el) return;
+    let msg = `Suma: ${sum}% • Pozostało: ${Math.max(0,remaining)}%`;
+    if(sum===100) msg += ' • OK';
+    if(sum>100) msg += ` • Za dużo o ${sum-100}%`;
+    el.textContent = msg;
+    el.classList.toggle('bad', sum>100);
+  });
+  document.addEventListener('input',(e)=>{ if(e.target.matches('input[type="number"]')) update(); });
+  update();
+}
+function bindPctTools(){
+  document.querySelectorAll('.pct-tool').forEach((btn)=>btn.addEventListener('click',()=>{
+    const ids=PERCENT_GROUPS[btn.dataset.group]; if(!ids) return;
+    if(btn.dataset.action==='clear'){ ids.forEach(id=>{const el=document.querySelector('#'+id); if(el) el.value='0';}); }
+    if(btn.dataset.action==='fill-sand'){ const el=document.querySelector('#'+ids[0]); if(el){ el.value=String(Math.min(100,(Number(el.value)||0)+(100-groupSum(ids)))); }}
+    if(btn.dataset.action==='fill-fine'){ const el=document.querySelector('#'+ids[1]); if(el){ el.value=String(Math.min(100,(Number(el.value)||0)+(100-groupSum(ids)))); }}
+    if(btn.dataset.action==='fill-veg'){ const el=document.querySelector('#pct-vegetation'); if(el){ el.value=String(Math.min(100,(Number(el.value)||0)+(100-groupSum(ids)))); }}
+    document.dispatchEvent(new Event('input'));
+  }));
+}
+function setupAppViews(){
+  const home=document.querySelector('#home-screen'), formS=document.querySelector('#form-screen'), rec=document.querySelector('#records-screen');
+  if (rec && !rec.querySelector('.back-home')) { const b=document.createElement('button'); b.type='button'; b.className='back-home'; b.textContent='← Menu główne'; rec.prepend(b); }
+  if (formS && !formS.querySelector('.back-home')) { const b=document.createElement('button'); b.type='button'; b.className='back-home'; b.textContent='← Menu główne'; formS.prepend(b); }
+  const show=(v)=>{home.hidden=v!=='home'; formS.hidden=v!=='form'; rec.hidden=v!=='records';};
+  document.querySelector('#start-new')?.addEventListener('click',()=>{show('form'); showStep(1);});
+  document.querySelector('#go-records')?.addEventListener('click',()=>show('records'));
+  document.querySelector('#go-export')?.addEventListener('click',()=>document.querySelector('#export-csv')?.click());
+  document.querySelector('#go-instruction')?.addEventListener('click',()=>document.querySelector('#download-instruction-pdf')?.click());
+  document.querySelector('#go-settings')?.addEventListener('click',()=>openMenu());
+  document.querySelectorAll('.back-home,#menu-home').forEach(b=>b.addEventListener('click',()=>{show('home'); closeMenu();}));
+  document.querySelector('#menu-new')?.addEventListener('click',()=>{show('form');showStep(1);closeMenu();});
+  document.querySelector('#menu-records')?.addEventListener('click',()=>{show('records');closeMenu();});
+  show('home');
+}
+setupStepper();setupTiles();setupFieldMode();setupPhotoPreview('nest-photos','nest-photo-preview','gniazdo');setupPhotoPreview('random-photos','random-photo-preview','punkt losowy');setupPercentSummaries();bindPctTools();setupAppViews();updateCounts();showStep(1);
