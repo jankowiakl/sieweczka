@@ -1,5 +1,4 @@
 const STORAGE_KEY = "sieweczka-field-data-v2";
-const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
 
 const form = document.querySelector("#entry-form");
 const entriesList = document.querySelector("#entries-list");
@@ -18,18 +17,13 @@ const installBtn = document.querySelector("#install-app");
 const installHint = document.querySelector("#install-hint");
 const header = document.querySelector("#app-header");
 
-const syncEndpointInput = document.querySelector("#sync-endpoint");
-const syncTeamKeyInput = document.querySelector("#sync-team-key");
-const saveSyncConfigBtn = document.querySelector("#save-sync-config");
-const syncPullBtn = document.querySelector("#sync-pull");
-const syncPushBtn = document.querySelector("#sync-push");
-const syncStatus = document.querySelector("#sync-status");
-const openSheetBtn = document.querySelector("#open-sheet");
+const openSheetBtn = null;
 const openSheetInlineBtn = document.querySelector("#open-sheet-inline");
 const sheetPanel = document.querySelector("#sheet-panel");
 const sheetTableBody = document.querySelector("#sheet-table tbody");
 const sheetSaveBtn = document.querySelector("#sheet-save");
 const sheetCloseBtn = document.querySelector("#sheet-close");
+const exportBundleBtn = document.querySelector("#export-bundle");
 const editBanner = document.querySelector("#edit-banner");
 const editRecordLabel = document.querySelector("#edit-record-label");
 const cancelEditBtn = document.querySelector("#cancel-edit");
@@ -62,7 +56,6 @@ registerServiceWorker();
 setupInstallFlow();
 setupMenu();
 setupHeaderAutoHide();
-setupSyncControls();
 setupSheetEditor();
 setupRecordBrowser();
 
@@ -114,22 +107,70 @@ function loadRecordToForm(record) {
   editingUid = record.uid;
   editRecordLabel.textContent = `${record.nestId} (${record.obsDate})`;
   editBanner.hidden = false;
+  const setVal = (id, v) => { const el = document.querySelector(id); if (el) el.value = v ?? ""; };
 
-  document.querySelector("#nest-id").value = record.nestId || "";
-  document.querySelector("#species").value = record.species || "unknown";
-  document.querySelector("#obs-date").value = record.obsDate || "";
-  document.querySelector("#obs-time").value = record.obsTime || "";
-  document.querySelector("#sector").value = record.sector || "";
-  document.querySelector("#lat").value = record.lat ?? "";
-  document.querySelector("#lon").value = record.lon ?? "";
-  document.querySelector("#egg-count").value = record.eggCount ?? "";
-  document.querySelector("#nest-status").value = record.nestStatus || "unknown";
-  document.querySelector("#possible-renest").value = record.possibleRenest || "uncertain";
-  document.querySelector("#notes").value = record.notes || "";
-  document.querySelector("#notes-identification").value = record.moduleNotes?.identification || "";
-  document.querySelector("#notes-nest-micro").value = record.moduleNotes?.nestMicro || "";
-  document.querySelector("#notes-random-micro").value = record.moduleNotes?.randomMicro || "";
-  document.querySelector("#notes-meso").value = record.moduleNotes?.meso || "";
+  setVal("#nest-id", record.nestId);
+  setVal("#species", record.species || "unknown");
+  setVal("#obs-date", record.obsDate);
+  setVal("#obs-time", record.obsTime);
+  setVal("#sector", record.sector);
+  setVal("#lat", record.lat);
+  setVal("#lon", record.lon);
+  setVal("#egg-count", record.eggCount);
+  setVal("#nest-status", record.nestStatus || "unknown");
+  setVal("#possible-renest", record.possibleRenest || "uncertain");
+
+  setVal("#nest-substrate", record.nestMicro?.substrate);
+  setVal("#nest-dist-plant", record.nestMicro?.distPlantM);
+  setVal("#nest-height-plant", record.nestMicro?.heightPlantCm);
+  setVal("#nest-dist-object", record.nestMicro?.distObjectM);
+  setVal("#nest-height-object", record.nestMicro?.heightObjectCm);
+  setVal("#nest-slope", record.nestMicro?.slope);
+  setVal("#nest-pct-sand", record.nestMicro?.coverage?.pctSand);
+  setVal("#nest-pct-fine-gravel", record.nestMicro?.coverage?.pctFineGravel);
+  setVal("#nest-pct-coarse", record.nestMicro?.coverage?.pctCoarse);
+  setVal("#nest-pct-shells", record.nestMicro?.coverage?.pctShells);
+  setVal("#nest-pct-live-veg", record.nestMicro?.coverage?.pctLiveVeg);
+  setVal("#nest-pct-dry-veg", record.nestMicro?.coverage?.pctDryVeg);
+  setVal("#nest-pct-organic", record.nestMicro?.coverage?.pctOrganic);
+  setVal("#nest-pct-anthro", record.nestMicro?.coverage?.pctAnthro);
+
+  setVal("#random-azimuth", record.randomMicro?.azimuthDeg);
+  setVal("#random-lat", record.randomMicro?.lat);
+  setVal("#random-lon", record.randomMicro?.lon);
+  setVal("#random-substrate", record.randomMicro?.substrate);
+  setVal("#random-dist-plant", record.randomMicro?.distPlantM);
+  setVal("#random-height-plant", record.randomMicro?.heightPlantCm);
+  setVal("#random-dist-object", record.randomMicro?.distObjectM);
+  setVal("#random-height-object", record.randomMicro?.heightObjectCm);
+  setVal("#random-slope", record.randomMicro?.slope);
+  setVal("#random-pct-sand", record.randomMicro?.coverage?.pctSand);
+  setVal("#random-pct-fine-gravel", record.randomMicro?.coverage?.pctFineGravel);
+  setVal("#random-pct-coarse", record.randomMicro?.coverage?.pctCoarse);
+  setVal("#random-pct-shells", record.randomMicro?.coverage?.pctShells);
+  setVal("#random-pct-live-veg", record.randomMicro?.coverage?.pctLiveVeg);
+  setVal("#random-pct-dry-veg", record.randomMicro?.coverage?.pctDryVeg);
+  setVal("#random-pct-organic", record.randomMicro?.coverage?.pctOrganic);
+  setVal("#random-pct-anthro", record.randomMicro?.coverage?.pctAnthro);
+
+  setVal("#pct-sand", record.meso?.pctSand);
+  setVal("#pct-gravel", record.meso?.pctGravel);
+  setVal("#pct-vegetation", record.meso?.pctVegetation);
+  setVal("#pct-water", record.meso?.pctWater);
+  setVal("#meso-big-objects", record.meso?.bigObjects);
+  setVal("#dist-water", record.meso?.distWaterM);
+  setVal("#dist-veg-edge", record.meso?.distVegEdgeM);
+  setVal("#dist-vertical-structure", record.meso?.distVerticalStructureM);
+  setVal("#dist-fine-gravel-patch", record.meso?.distFineGravelPatchM);
+  setVal("#dist-coarse-gravel-patch", record.meso?.distCoarseGravelPatchM);
+  setVal("#dist-nearest-hiaticula", record.meso?.distNearestHiaticulaM);
+  setVal("#dist-nearest-dubius", record.meso?.distNearestDubiusM);
+
+  setVal("#notes", record.notes);
+  setVal("#notes-identification", record.moduleNotes?.identification);
+  setVal("#notes-nest-micro", record.moduleNotes?.nestMicro);
+  setVal("#notes-random-micro", record.moduleNotes?.randomMicro);
+  setVal("#notes-meso", record.moduleNotes?.meso);
 }
 
 function numberInput(id) {
@@ -467,7 +508,6 @@ function setupSheetEditor() {
     closeMenu();
   };
 
-  if (openSheetBtn) openSheetBtn.addEventListener("click", openSheet);
   if (openSheetInlineBtn) openSheetInlineBtn.addEventListener("click", openSheet);
 
   sheetCloseBtn.addEventListener("click", () => {
@@ -557,100 +597,6 @@ function renderSheetEditor() {
   }
 }
 
-function loadSyncConfig() {
-  try {
-    return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function saveSyncConfig(config) {
-  localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(config));
-}
-
-function setSyncStatus(message) {
-  syncStatus.textContent = `Sync: ${message}`;
-}
-
-function setupSyncControls() {
-  const cfg = loadSyncConfig();
-  syncEndpointInput.value = cfg.endpoint || "";
-  syncTeamKeyInput.value = cfg.teamKey || "";
-  setSyncStatus(cfg.endpoint ? "gotowe" : "nie skonfigurowano");
-
-  saveSyncConfigBtn.addEventListener("click", () => {
-    const endpoint = syncEndpointInput.value.trim();
-    const teamKey = syncTeamKeyInput.value.trim();
-    saveSyncConfig({ endpoint, teamKey });
-    setSyncStatus(endpoint ? "konfiguracja zapisana" : "brak URL");
-  });
-
-  syncPullBtn.addEventListener("click", async () => {
-    await syncWithDrive("pull");
-  });
-
-  syncPushBtn.addEventListener("click", async () => {
-    await syncWithDrive("push");
-  });
-}
-
-function mergeEntries(localEntries, remoteEntries) {
-  const map = new Map();
-  for (const record of normalizeEntries(localEntries)) {
-    map.set(record.uid, record);
-  }
-  for (const record of normalizeEntries(remoteEntries)) {
-    map.set(record.uid, record);
-  }
-  return Array.from(map.values()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-}
-
-async function syncWithDrive(mode) {
-  const cfg = loadSyncConfig();
-  if (!cfg.endpoint) {
-    alert("Najpierw podaj URL Google Apps Script i zapisz konfigurację.");
-    return;
-  }
-
-  setSyncStatus(mode === "push" ? "wysyłanie..." : "pobieranie...");
-  try {
-    const local = getEntries();
-    const payload = {
-      action: mode,
-      teamKey: cfg.teamKey || "default",
-      records: local,
-    };
-
-    const formBody = new URLSearchParams();
-    formBody.set("payload", JSON.stringify(payload));
-
-    const res = await fetch(cfg.endpoint, {
-      method: "POST",
-      body: formBody,
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (!data || data.ok === false) throw new Error(data?.error || "Błąd odpowiedzi serwera");
-
-    const remoteRecords = Array.isArray(data.records) ? data.records : [];
-    if (mode === "push") {
-      // po push aktualizujemy lokalnie tym, co zwróci serwer
-      setEntries(mergeEntries(local, remoteRecords));
-    } else {
-      setEntries(mergeEntries(local, remoteRecords));
-    }
-
-    renderEntries(recordSearchInput?.value || "");
-    setSyncStatus(`OK (${mode})`);
-    closeMenu();
-  } catch (error) {
-    setSyncStatus("błąd synchronizacji");
-    alert(`Błąd synchronizacji: ${error.message}`);
-  }
-}
-
 function downloadBlob(filename, mimeType, content) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -665,6 +611,22 @@ document.querySelector("#export-json").addEventListener("click", () => {
   downloadBlob(`sieweczka-gniazda-${Date.now()}.json`, "application/json", JSON.stringify(getEntries(), null, 2));
   closeMenu();
 });
+
+if (exportBundleBtn) {
+  exportBundleBtn.addEventListener("click", () => {
+    const rows = getEntries();
+    const payload = rows.map((r) => ({
+      uid: r.uid,
+      nestId: r.nestId,
+      photos: {
+        nest: r.nestMicro?.photos || [],
+        random: r.randomMicro?.photos || [],
+      },
+    }));
+    downloadBlob(`sieweczka-zdjecia-${Date.now()}.json`, "application/json", JSON.stringify(payload, null, 2));
+    closeMenu();
+  });
+}
 
 document.querySelector("#export-csv").addEventListener("click", () => {
   const rows = getEntries();
