@@ -51,5 +51,6 @@ Repo jest przygotowane pod PWABuilder:
 ## Eksport zdjęć
 
 W menu dostępne są:
-- **Eksport Excel (ze zdjęciami)** – plik `.xls` z osadzonymi obrazami przy rekordach,
+- **Eksport Excel (pełne kolumny + linki zdjęć)** – plik `.xls` ze wszystkimi kolumnami danych i nazwami plików zdjęć,
+- **Pobierz zdjęcia + arkusz linków** – pobiera CSV mapujący rekord→plik oraz same pliki zdjęć,
 - **Eksport pakietu (CSV+zdjęcia JSON)** – dodatkowy plik JSON z przypisaniem zdjęć (data URL) do każdego rekordu (`uid`, `nestId`).
