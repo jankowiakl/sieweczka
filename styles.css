@@ -273,3 +273,44 @@ details {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+.sheet-panel {
+  position: fixed;
+  inset: 0;
+  background: #ffffff;
+  z-index: 60;
+  padding: 0.8rem;
+  overflow: auto;
+}
+
+.sheet-head {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  padding-bottom: 0.6rem;
+}
+
+.sheet-wrap {
+  overflow: auto;
+}
+
+#sheet-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 920px;
+}
+
+#sheet-table th,
+#sheet-table td {
+  border: 1px solid var(--border);
+  padding: 0.35rem;
+}
+
+#sheet-table input,
+#sheet-table textarea,
+#sheet-table select {
+  min-width: 120px;
+  padding: 0.3rem;
+  font-size: 13px;
+}

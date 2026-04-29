@@ -24,6 +24,11 @@ const saveSyncConfigBtn = document.querySelector("#save-sync-config");
 const syncPullBtn = document.querySelector("#sync-pull");
 const syncPushBtn = document.querySelector("#sync-push");
 const syncStatus = document.querySelector("#sync-status");
+const openSheetBtn = document.querySelector("#open-sheet");
+const sheetPanel = document.querySelector("#sheet-panel");
+const sheetTableBody = document.querySelector("#sheet-table tbody");
+const sheetSaveBtn = document.querySelector("#sheet-save");
+const sheetCloseBtn = document.querySelector("#sheet-close");
 
 const speciesLabel = {
   "charadrius-hiaticula": "Sieweczka obrożna",
@@ -52,6 +57,7 @@ setupInstallFlow();
 setupMenu();
 setupHeaderAutoHide();
 setupSyncControls();
+setupSheetEditor();
 
 randomAzimuthBtn.addEventListener("click", () => {
   const value = Math.floor(Math.random() * 360);
@@ -391,6 +397,81 @@ gpsBtn.addEventListener("click", () => {
   );
 });
 
+
+
+function setupSheetEditor() {
+  openSheetBtn.addEventListener("click", () => {
+    renderSheetEditor();
+    sheetPanel.hidden = false;
+    closeMenu();
+  });
+
+  sheetCloseBtn.addEventListener("click", () => {
+    sheetPanel.hidden = true;
+  });
+
+  sheetSaveBtn.addEventListener("click", () => {
+    const rows = Array.from(sheetTableBody.querySelectorAll("tr"));
+    const current = getEntries();
+    const byUid = new Map(current.map((r) => [String(r.uid), r]));
+
+    for (const row of rows) {
+      const uid = row.dataset.uid;
+      const target = byUid.get(uid);
+      if (!target) continue;
+      target.nestId = row.querySelector('[data-col="nestId"]').value.trim();
+      target.species = row.querySelector('[data-col="species"]').value;
+      target.obsDate = row.querySelector('[data-col="obsDate"]').value;
+      target.obsTime = row.querySelector('[data-col="obsTime"]').value;
+      target.sector = row.querySelector('[data-col="sector"]').value.trim();
+      target.lat = Number(row.querySelector('[data-col="lat"]').value);
+      target.lon = Number(row.querySelector('[data-col="lon"]').value);
+      target.eggCount = Number(row.querySelector('[data-col="eggCount"]').value);
+      target.nestStatus = row.querySelector('[data-col="nestStatus"]').value;
+      target.notes = row.querySelector('[data-col="notes"]').value;
+    }
+
+    setEntries(Array.from(byUid.values()));
+    renderEntries();
+    sheetPanel.hidden = true;
+  });
+}
+
+function renderSheetEditor() {
+  const entries = getEntries();
+  sheetTableBody.innerHTML = "";
+
+  for (const entry of entries) {
+    const tr = document.createElement("tr");
+    tr.dataset.uid = String(entry.uid);
+    tr.innerHTML = `
+      <td>${entry.uid}</td>
+      <td><input data-col="nestId" value="${entry.nestId || ""}" /></td>
+      <td>
+        <select data-col="species">
+          <option value="charadrius-hiaticula" ${entry.species === "charadrius-hiaticula" ? "selected" : ""}>obrożna</option>
+          <option value="charadrius-dubius" ${entry.species === "charadrius-dubius" ? "selected" : ""}>rzeczna</option>
+          <option value="unknown" ${entry.species === "unknown" ? "selected" : ""}>unknown</option>
+        </select>
+      </td>
+      <td><input data-col="obsDate" type="date" value="${entry.obsDate || ""}" /></td>
+      <td><input data-col="obsTime" type="time" value="${entry.obsTime || ""}" /></td>
+      <td><input data-col="sector" value="${entry.sector || ""}" /></td>
+      <td><input data-col="lat" type="number" step="0.000001" value="${entry.lat ?? ""}" /></td>
+      <td><input data-col="lon" type="number" step="0.000001" value="${entry.lon ?? ""}" /></td>
+      <td><input data-col="eggCount" type="number" value="${entry.eggCount ?? ""}" /></td>
+      <td>
+        <select data-col="nestStatus">
+          <option value="fresh" ${entry.nestStatus === "fresh" ? "selected" : ""}>fresh</option>
+          <option value="incubated" ${entry.nestStatus === "incubated" ? "selected" : ""}>incubated</option>
+          <option value="unknown" ${entry.nestStatus === "unknown" ? "selected" : ""}>unknown</option>
+        </select>
+      </td>
+      <td><textarea data-col="notes">${entry.notes || ""}</textarea></td>
+    `;
+    sheetTableBody.appendChild(tr);
+  }
+}
 
 function loadSyncConfig() {
   try {
