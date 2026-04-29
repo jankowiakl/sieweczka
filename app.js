@@ -147,19 +147,19 @@ registerServiceWorker();
 setupInstallFlow();
 setupMenu();
 setupHeaderAutoHide();
-setupSheetEditor();
+
 setupRecordBrowser();
 setupFieldHelp();
 setupPercentSliders();
-setupSectionJumps();
+
 migrateLegacyDataUrlsToIdb();
 
-randomAzimuthBtn.addEventListener("click", () => {
+randomAzimuthBtn?.addEventListener("click", () => {
   const value = Math.floor(Math.random() * 360);
   document.querySelector("#random-azimuth").value = String(value);
 });
 
-randomGpsBtn.addEventListener("click", () => {
+randomGpsBtn?.addEventListener("click", () => {
   if (!navigator.geolocation) {
     randomGpsStatus.textContent = "GPS kontrolny: niedostępny";
     return;
@@ -544,7 +544,7 @@ function renderEntries(searchTerm = "") {
   }
 }
 
-form.addEventListener("submit", async (event) => {
+form?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const entries = getEntries();
@@ -648,7 +648,7 @@ form.addEventListener("submit", async (event) => {
   renderEntries(recordSearchInput?.value || "");
 });
 
-gpsBtn.addEventListener("click", () => {
+gpsBtn?.addEventListener("click", () => {
   if (!navigator.geolocation) {
     gpsStatus.textContent = "GPS: niedostępny";
     return;
@@ -820,7 +820,7 @@ function downloadBlob(filename, mimeType, content) {
 }
 
 
-document.querySelector("#export-csv").addEventListener("click", async () => {
+document.querySelector("#export-csv")?.addEventListener("click", async () => {
   const rows = getEntries();
 
   const header = [
@@ -975,9 +975,9 @@ function setupFieldHelp() {
     bubble.hidden = false;
   };
 
-  form.addEventListener("focusin", (e) => showHelp(e.target));
-  form.addEventListener("input", (e) => showHelp(e.target));
-  form.addEventListener("focusout", () => {
+  form?.addEventListener("focusin", (e) => showHelp(e.target));
+  form?.addEventListener("input", (e) => showHelp(e.target));
+  form?.addEventListener("focusout", () => {
     setTimeout(() => {
       const active = document.activeElement;
       if (!active || !form.contains(active)) bubble.hidden = true;
@@ -990,3 +990,17 @@ if (scrollTopBtn) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 }
+
+const steps=[...document.querySelectorAll('.step')];
+let currentStep=1;
+function showStep(n){currentStep=Math.max(1,Math.min(8,n));steps.forEach(el=>el.hidden=Number(el.dataset.step)!==currentStep);const t=document.querySelector('#step-title');const p=document.querySelector('#step-progress');const titles=['Start / identyfikacja','GPS i zdjęcie gniazda','Mikrohabitat gniazda','Punkt losowy 10 m','Mikrohabitat punktu losowego','Mezohabitat','Jakość i uwagi','Podsumowanie i zapis'];if(t)t.textContent=`Krok ${currentStep} z 8 — ${titles[currentStep-1]}`;if(p)p.style.width=`${(currentStep/8)*100}%`;document.querySelector('#step-next')?.toggleAttribute('hidden',currentStep===8);document.querySelector('#save-final')?.toggleAttribute('hidden',currentStep!==8);if(currentStep===8)renderValidationList();}
+function setupStepper(){document.querySelector('#start-new')?.addEventListener('click',()=>{document.querySelector('#home-screen').hidden=true;document.querySelector('#form-screen').hidden=false;showStep(1);});document.querySelector('#step-back')?.addEventListener('click',()=>showStep(currentStep-1));document.querySelector('#step-next')?.addEventListener('click',()=>showStep(currentStep+1));}
+function setupTiles(){document.querySelectorAll('.tile-group').forEach(g=>{g.addEventListener('click',e=>{const b=e.target.closest('.tile');if(!b)return;g.querySelectorAll('.tile').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');const inp=document.querySelector('#'+g.dataset.target);if(inp)inp.value=b.dataset.value;});});}
+function setupFieldMode(){const key='sieweczka-field-mode';const btn=document.querySelector('#field-mode-toggle');const apply=()=>{const on=localStorage.getItem(key)==='1';document.body.classList.toggle('field-mode',on);if(btn)btn.textContent='Tryb terenowy: '+(on?'włączony':'wyłączony');};btn?.addEventListener('click',()=>{localStorage.setItem(key,localStorage.getItem(key)==='1'?'0':'1');apply();});apply();}
+function gpsQuality(acc){if(acc<=5)return 'dobry';if(acc<=10)return 'średni';return 'słaby';}
+const oldGps=gpsBtn?.onclick;
+function updateCounts(){const e=getEntries();document.querySelector('#entry-count').textContent=e.length;const d=new Date().toISOString().slice(0,10);document.querySelector('#today-count').textContent=e.filter(x=>x.obsDate===d).length;document.querySelector('#offline-status').textContent='Status: '+(navigator.onLine?'online':'offline');}
+function renderValidationList(){const errs=[];if(!document.querySelector('#lat')?.value||!document.querySelector('#lon')?.value)errs.push([2,'Brakuje GPS gniazda']);if(!document.querySelector('#sector')?.value)errs.push([1,'Brakuje sektora']);const div=document.querySelector('#validation-list');if(!div)return;div.innerHTML=errs.map(([s,m])=>`<div class='val-item'>${m} <button type='button' data-go='${s}'>Przejdź do pola</button></div>`).join('')||'<p>Brak krytycznych braków. Możesz zapisać rekord.</p>';div.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>showStep(Number(b.dataset.go))));}
+function setupPhotoPreview(inputId,wrapId,label){const i=document.querySelector('#'+inputId);const w=document.querySelector('#'+wrapId);i?.addEventListener('change',()=>{w.innerHTML='';[...i.files].forEach(f=>{const d=document.createElement('div');d.className='photo-tile';d.innerHTML=`<img alt='${label}'><small>${label}</small>`;d.querySelector('img').src=URL.createObjectURL(f);w.appendChild(d);});});}
+function setupPercentSummaries(){const groups=[['nest',['nest-pct-sand','nest-pct-fine-gravel','nest-pct-coarse','nest-pct-shells','nest-pct-live-veg','nest-pct-dry-veg','nest-pct-organic','nest-pct-anthro']],['random',['random-pct-sand','random-pct-fine-gravel','random-pct-coarse','random-pct-shells','random-pct-live-veg','random-pct-dry-veg','random-pct-organic','random-pct-anthro']],['meso',['pct-sand','pct-gravel','pct-vegetation','pct-water']]];const upd=()=>groups.forEach(([name,ids])=>{const sum=ids.reduce((a,id)=>a+(Number(document.querySelector('#'+id)?.value)||0),0);const r=100-sum;const el=document.querySelector('#'+name+'-sum');if(el)el.textContent=`Suma: ${sum}% • Pozostało: ${r}% ${sum===100?'• OK':''} ${sum>100?'• Przekroczono 100%':''}`;el?.classList.toggle('bad',sum>100);});document.querySelectorAll('.pct-btn').forEach(b=>b.addEventListener('click',()=>{const i=document.querySelector('#'+b.dataset.id);if(!i)return;i.value=Math.max(0,Math.min(100,(Number(i.value)||0)+Number(b.dataset.delta)));upd();}));document.addEventListener('input',e=>{if(e.target.matches('input[type="number"]'))upd();});upd();}
+setupStepper();setupTiles();setupFieldMode();setupPhotoPreview('nest-photos','nest-photo-preview','gniazdo');setupPhotoPreview('random-photos','random-photo-preview','punkt losowy');setupPercentSummaries();updateCounts();showStep(1);
