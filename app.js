@@ -544,7 +544,7 @@ function setupSheetEditor() {
     renderSheetEditor();
   });
 
-  sheetSaveBtn.addEventListener("click", () => {
+  sheetSaveBtn.addEventListener("click", async () => {
     const rows = Array.from(sheetTableBody.querySelectorAll("tr"));
     const current = getEntries();
     const byUid = new Map(current.map((r) => [String(r.uid), r]));
@@ -563,6 +563,16 @@ function setupSheetEditor() {
       target.eggCount = Number(row.querySelector('[data-col="eggCount"]').value);
       target.nestStatus = row.querySelector('[data-col="nestStatus"]').value;
       target.notes = row.querySelector('[data-col="notes"]').value;
+
+      const nestUploadInput = row.querySelector('[data-col="nestPhotosUpload"]');
+      const randomUploadInput = row.querySelector('[data-col="randomPhotosUpload"]');
+      const newNestPhotos = nestUploadInput ? await filesToDataUrls(nestUploadInput.files, 4) : [];
+      const newRandomPhotos = randomUploadInput ? await filesToDataUrls(randomUploadInput.files, 4) : [];
+      if (!target.nestMicro) target.nestMicro = {};
+      if (!target.randomMicro) target.randomMicro = {};
+      target.nestMicro.photos = newNestPhotos.length ? newNestPhotos : (target.nestMicro.photos || []);
+      target.randomMicro.photos = newRandomPhotos.length ? newRandomPhotos : (target.randomMicro.photos || []);
+
       target.qualityControl = target.qualityControl || {};
       target.qualityControl.birdReaction = row.querySelector('[data-col="qcBirdReaction"]').value;
       target.qualityControl.timeAtNest = row.querySelector('[data-col="qcTimeAtNest"]').value;
@@ -621,6 +631,10 @@ function renderSheetEditor() {
         <div class="sheet-photo-grid">
           ${(entry.nestMicro?.photos || []).map((src) => `<img src="${src}" alt="nest photo"/>`).join("")}
           ${(entry.randomMicro?.photos || []).map((src) => `<img src="${src}" alt="random photo"/>`).join("")}
+        </div>
+        <div class="row-2">
+          <label>Nowe gniazdo foto <input data-col="nestPhotosUpload" type="file" accept="image/*" multiple /></label>
+          <label>Nowe losowy foto <input data-col="randomPhotosUpload" type="file" accept="image/*" multiple /></label>
         </div>
       </td>
       <td><button type="button" class="sheet-delete danger" data-uid="${entry.uid}">Usuń</button></td>
@@ -738,6 +752,33 @@ const fieldHelpMap = {
   "#lat": "Współrzędne GPS gniazda — podstawowa lokalizacja do analiz GIS.",
   "#lon": "Współrzędne GPS gniazda — podstawowa lokalizacja do analiz GIS.",
   "#nest-substrate": "Dominujący typ podłoża pod gniazdem; wybieraj klasę dominującą.",
+  "#nest-pct-sand": "Pokrycie 1 m²: udział piasku [%] w kwadracie wokół gniazda.",
+  "#nest-pct-fine-gravel": "Pokrycie 1 m²: udział drobnego żwiru [%].",
+  "#nest-pct-coarse": "Pokrycie 1 m²: udział grubego żwiru/kamieni [%].",
+  "#nest-pct-shells": "Pokrycie 1 m²: udział muszli [%], jeśli wyraźnie widoczne.",
+  "#nest-pct-live-veg": "Pokrycie 1 m²: udział żywej roślinności [%].",
+  "#nest-pct-dry-veg": "Pokrycie 1 m²: udział suchej roślinności [%].",
+  "#nest-pct-organic": "Pokrycie 1 m²: drewno/szczątki organiczne [%].",
+  "#nest-pct-anthro": "Pokrycie 1 m²: obiekty antropogeniczne [%].",
+  "#nest-dist-object": "Odległość od środka gniazda do najbliższej krawędzi obiektu (cm).",
+  "#nest-height-object": "Wysokość najbliższego obiektu nad podłożem (cm).",
+  "#random-pct-sand": "Punkt losowy 1 m²: udział piasku [%].",
+  "#random-pct-fine-gravel": "Punkt losowy 1 m²: udział drobnego żwiru [%].",
+  "#random-pct-coarse": "Punkt losowy 1 m²: udział grubego żwiru/kamieni [%].",
+  "#random-pct-shells": "Punkt losowy 1 m²: udział muszli [%].",
+  "#random-pct-live-veg": "Punkt losowy 1 m²: udział żywej roślinności [%].",
+  "#random-pct-dry-veg": "Punkt losowy 1 m²: udział suchej roślinności [%].",
+  "#random-pct-organic": "Punkt losowy 1 m²: drewno/szczątki organiczne [%].",
+  "#random-pct-anthro": "Punkt losowy 1 m²: obiekty antropogeniczne [%].",
+  "#random-dist-plant": "Punkt losowy: odległość do najbliższej rośliny (cm).",
+  "#random-height-plant": "Punkt losowy: wysokość najbliższej rośliny (cm).",
+  "#random-dist-object": "Punkt losowy: odległość do najbliższego obiektu (cm).",
+  "#random-height-object": "Punkt losowy: wysokość obiektu (cm).",
+  "#dist-veg-edge": "Najkrótsza odległość do początku zwartego płatu roślinności (m).",
+  "#dist-nearest-hiaticula": "Odległość do najbliższego znanego gniazda s. obrożnej (m).",
+  "#dist-nearest-dubius": "Odległość do najbliższego znanego gniazda s. rzecznej (m).",
+  "#notes": "Uwagi: zapisz niepewność klasy, pomiar 'na oko' albo odstępstwo od protokołu.",
+
   "#nest-dist-plant": "Odległość do najbliższej rośliny (cm) od gniazda.",
   "#nest-height-plant": "Wysokość najbliższej rośliny (cm).",
   "#random-azimuth": "Losowy azymut dla punktu oddalonego o 10 m od gniazda.",
