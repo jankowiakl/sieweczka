@@ -625,7 +625,7 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
     "pct_sand", "pct_gravel", "pct_vegetation", "pct_water", "meso_big_objects",
     "dist_water_m", "dist_veg_edge_m", "dist_vertical_structure_m", "dist_fine_gravel_patch_m", "dist_coarse_gravel_patch_m", "dist_nearest_hiaticula_m", "dist_nearest_dubius_m",
     "notes_identification", "notes_nest_micro", "notes_random_micro", "notes_meso", "notes",
-    "nest_photo_refs", "random_photo_refs", "all_photo_refs", "created_at"
+    "nest_photo_refs", "random_photo_refs", "all_photo_refs", "nest_photo_link", "random_photo_link", "created_at"
   ];
 
   const photoMap = [];
@@ -637,13 +637,13 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
         const randomRefs = [];
 
         (r.nestMicro?.photos || []).forEach((src, i) => {
-          const file = `photos/${r.uid}_nest_${i + 1}.jpg`;
+          const file = `${r.uid}_nest_${i + 1}.jpg`;
           nestRefs.push(file);
           photoMap.push({ file, src });
         });
 
         (r.randomMicro?.photos || []).forEach((src, i) => {
-          const file = `photos/${r.uid}_random_${i + 1}.jpg`;
+          const file = `${r.uid}_random_${i + 1}.jpg`;
           randomRefs.push(file);
           photoMap.push({ file, src });
         });
@@ -663,7 +663,12 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
           r.meso?.pctSand, r.meso?.pctGravel, r.meso?.pctVegetation, r.meso?.pctWater, r.meso?.bigObjects,
           r.meso?.distWaterM, r.meso?.distVegEdgeM, r.meso?.distVerticalStructureM, r.meso?.distFineGravelPatchM, r.meso?.distCoarseGravelPatchM, r.meso?.distNearestHiaticulaM, r.meso?.distNearestDubiusM,
           r.moduleNotes?.identification, r.moduleNotes?.nestMicro, r.moduleNotes?.randomMicro, r.moduleNotes?.meso, r.notes,
-          nestRefs.join(";"), randomRefs.join(";"), allRefs.join(";"), r.createdAt,
+          nestRefs.join(";"),
+          randomRefs.join(";"),
+          allRefs.join(";"),
+          nestRefs[0] ? `=HIPERŁĄCZE("${nestRefs[0]}";"picture_nest")` : "",
+          randomRefs[0] ? `=HIPERŁĄCZE("${randomRefs[0]}";"picture_random")` : "",
+          r.createdAt,
         ]
           .map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`)
           .join(",");
@@ -677,14 +682,13 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
     try {
       const res = await fetch(item.src);
       const blob = await res.blob();
-      const name = item.file.replace("photos/", "");
-      downloadBlob(name, blob.type || "image/jpeg", blob);
+      downloadBlob(item.file, blob.type || "image/jpeg", blob);
     } catch {
       // ignore single photo download failure
     }
   }
 
-  alert("Pobrano CSV i zdjęcia. Umieść zdjęcia w folderze 'photos' obok pliku CSV.");
+  alert("Pobrano CSV i zdjęcia.");
   closeMenu();
 });
 

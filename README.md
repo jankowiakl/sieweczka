@@ -53,15 +53,5 @@ Repo jest przygotowane pod PWABuilder:
 W aplikacji jest jeden główny eksport: **Eksport CSV + zdjęcia**.
 
 Co dostajesz:
-1. plik CSV z pełnym zestawem kolumn (1:1 jak w arkuszu/Excel), w tym `nest_photo_refs`, `random_photo_refs`, `all_photo_refs`,
+1. plik CSV z pełnym zestawem kolumn (1:1 jak w arkuszu/Excel), w tym `nest_photo_refs`, `random_photo_refs`, `all_photo_refs`, oraz gotowe formuły `nest_photo_link` i `random_photo_link` (`HIPERŁĄCZE`) do użycia w Excelu,
 2. pobrane zdjęcia jako osobne pliki JPG.
-
-### Jak ułożyć pliki, żeby linki działały
-
-To samo podejście stosują aplikacje terenowe (CSV + osobne pliki mediów):
-- utwórz folder projektu, np. `wynik_exportu/`,
-- umieść w nim plik CSV,
-- utwórz podfolder `photos/`,
-- przenieś wszystkie pobrane zdjęcia do `photos/`.
-
-Wtedy ścieżki z `photo_refs` będą poprawne (np. `photos/abc123_nest_1.jpg`).
