@@ -9,6 +9,8 @@ Mobilna aplikacja terenowa (offline w przeglądarce telefonu) do szybkiego zbier
 - menu opcji pod ikoną `☰` (instalacja i eksport danych),
 - automatyczne chowanie górnej belki przy przewijaniu w dół,
 - gotowość do instalacji PWA (manifest + service worker + instalacja z poziomu aplikacji),
+- notatki per moduł (Identyfikacja / Mikro gniazdo / Mikro punkt losowy / Mezohabitat),
+- możliwość usuwania pojedynczych rekordów z listy,
 - pełny zestaw zmiennych mikro/mezo:
   - 8 kategorii % pokrycia z foto 1 m² dla gniazda i punktu losowego,
   - odległości/wysokości roślin i obiektów osłony,

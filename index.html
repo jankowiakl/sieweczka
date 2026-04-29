@@ -94,6 +94,9 @@
                 <option value="uncertain">Niepewne</option>
               </select>
             </label>
+                      <label>Notatki identyfikacja
+              <textarea id="notes-identification" rows="2" placeholder="Uwagi do identyfikacji"></textarea>
+            </label>
           </fieldset>
 
           <fieldset>
@@ -144,6 +147,9 @@
                 <option value="moderate">Umiarkowany spadek</option>
                 <option value="steep">Wyraźny spadek</option>
               </select>
+            </label>
+            <label>Notatki mikrohabitat gniazdo
+              <textarea id="notes-nest-micro" rows="2" placeholder="Uwagi do mikrohabitatu gniazda"></textarea>
             </label>
           </fieldset>
 
@@ -208,6 +214,9 @@
                 <option value="steep">Wyraźny spadek</option>
               </select>
             </label>
+            <label>Notatki mikrohabitat punkt losowy
+              <textarea id="notes-random-micro" rows="2" placeholder="Uwagi do punktu losowego"></textarea>
+            </label>
           </fieldset>
 
           <fieldset>
@@ -241,9 +250,12 @@
               <label>Odległość do najbliższego gniazda obrożnej [m] <input id="dist-nearest-hiaticula" type="number" min="0" step="0.1" required /></label>
             </div>
             <label>Odległość do najbliższego gniazda rzecznej [m] <input id="dist-nearest-dubius" type="number" min="0" step="0.1" required /></label>
+            <label>Notatki mezohabitat
+              <textarea id="notes-meso" rows="2" placeholder="Uwagi do mezohabitatu"></textarea>
+            </label>
           </fieldset>
 
-          <label>Dodatkowe notatki <textarea id="notes" rows="3" placeholder="Szybka notatka terenowa"></textarea></label>
+          <label>Dodatkowe notatki ogólne <textarea id="notes" rows="3" placeholder="Szybka notatka terenowa"></textarea></label>
           <button type="submit" class="primary">Zapisz gniazdo</button>
         </form>
       </section>
@@ -265,6 +277,7 @@
         </div>
         <div class="muted meta"></div>
         <div class="muted coords"></div>
+        <button type="button" class="delete-entry danger">Usuń rekord</button>
         <details>
           <summary>Szczegóły protokołu</summary>
           <p class="summary"></p>

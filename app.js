@@ -260,10 +260,12 @@ function renderEntries() {
     item.querySelector(".meta").textContent = `${entry.obsDate} ${entry.obsTime} • ${entry.sector} • jaja: ${entry.eggCount} • renest: ${yesNoLabel[entry.possibleRenest]}`;
     item.querySelector(".coords").textContent = `${entry.lat.toFixed(6)}, ${entry.lon.toFixed(6)}`;
 
+    const notesCount = Object.values(entry.moduleNotes || {}).filter(Boolean).length;
     item.querySelector(".summary").textContent =
       `Mikro(gniazdo): ${substrateLabel[entry.nestMicro.substrate]}, osłona ${entry.nestMicro.distObjectM} m.` +
       ` Mikro(punkt losowy): azymut ${entry.randomMicro.azimuthDeg}°, ${substrateLabel[entry.randomMicro.substrate]}.` +
-      ` Mezo: piasek ${entry.meso.pctSand}%, żwir ${entry.meso.pctGravel}%, roślinność ${entry.meso.pctVegetation}%, woda ${entry.meso.pctWater}%.`;
+      ` Mezo: piasek ${entry.meso.pctSand}%, żwir ${entry.meso.pctGravel}%, roślinność ${entry.meso.pctVegetation}%, woda ${entry.meso.pctWater}%.` +
+      ` Notatki modułów: ${notesCount}.`;
 
     const photoWrap = item.querySelector(".photos");
     const allPhotos = [...entry.nestMicro.photos, ...entry.randomMicro.photos];
@@ -277,6 +279,15 @@ function renderEntries() {
     } else {
       photoWrap.textContent = "Brak zdjęć.";
     }
+
+
+    const deleteBtn = item.querySelector(".delete-entry");
+    deleteBtn.addEventListener("click", () => {
+      if (!confirm(`Usunąć rekord ${entry.nestId}?`)) return;
+      const current = getEntries().filter((r) => r.uid !== entry.uid);
+      setEntries(current);
+      renderEntries();
+    });
 
     entriesList.appendChild(item);
   }
@@ -332,6 +343,12 @@ form.addEventListener("submit", async (event) => {
       distCoarseGravelPatchM: numberInput("#dist-coarse-gravel-patch"),
       distNearestHiaticulaM: numberInput("#dist-nearest-hiaticula"),
       distNearestDubiusM: numberInput("#dist-nearest-dubius"),
+    },
+    moduleNotes: {
+      identification: document.querySelector("#notes-identification").value.trim(),
+      nestMicro: document.querySelector("#notes-nest-micro").value.trim(),
+      randomMicro: document.querySelector("#notes-random-micro").value.trim(),
+      meso: document.querySelector("#notes-meso").value.trim(),
     },
     notes: document.querySelector("#notes").value.trim(),
     uid: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -494,7 +511,7 @@ document.querySelector("#export-csv").addEventListener("click", () => {
     "random_dist_plant_m", "random_height_plant_cm", "random_dist_object_m", "random_height_object_cm", "random_slope",
     "pct_sand", "pct_gravel", "pct_vegetation", "pct_water", "meso_big_objects",
     "dist_water_m", "dist_veg_edge_m", "dist_vertical_structure_m", "dist_fine_gravel_patch_m", "dist_coarse_gravel_patch_m", "dist_nearest_hiaticula_m", "dist_nearest_dubius_m",
-    "notes", "created_at"
+    "notes_identification", "notes_nest_micro", "notes_random_micro", "notes_meso", "notes", "created_at"
   ];
 
   const csv = [header.join(",")]
@@ -513,7 +530,7 @@ document.querySelector("#export-csv").addEventListener("click", () => {
           r.meso.pctSand, r.meso.pctGravel, r.meso.pctVegetation, r.meso.pctWater, r.meso.bigObjects,
           r.meso.distWaterM, r.meso.distVegEdgeM, r.meso.distVerticalStructureM, r.meso.distFineGravelPatchM, r.meso.distCoarseGravelPatchM,
           r.meso.distNearestHiaticulaM, r.meso.distNearestDubiusM,
-          (r.notes || "").replaceAll('"', '""'), r.createdAt,
+          (r.moduleNotes?.identification || "").replaceAll('"', '""'), (r.moduleNotes?.nestMicro || "").replaceAll('"', '""'), (r.moduleNotes?.randomMicro || "").replaceAll('"', '""'), (r.moduleNotes?.meso || "").replaceAll('"', '""'), (r.notes || "").replaceAll('"', '""'), r.createdAt,
         ]
           .map((value) => `"${String(value)}"`)
           .join(",")
