@@ -31,6 +31,8 @@ const editRecordLabel = document.querySelector("#edit-record-label");
 const cancelEditBtn = document.querySelector("#cancel-edit");
 const recordSearchInput = document.querySelector("#record-search");
 const sheetAddBtn = document.querySelector("#sheet-add");
+const jumpButtons = document.querySelectorAll("[data-jump]");
+const scrollTopBtn = document.querySelector("#scroll-top");
 
 const PERCENT_IDS = [
   "nest-pct-sand","nest-pct-fine-gravel","nest-pct-coarse","nest-pct-shells","nest-pct-live-veg","nest-pct-dry-veg","nest-pct-organic","nest-pct-anthro",
@@ -150,6 +152,7 @@ setupSheetEditor();
 setupRecordBrowser();
 setupFieldHelp();
 setupPercentSliders();
+setupSectionJumps();
 migrateLegacyDataUrlsToIdb();
 
 randomAzimuthBtn.addEventListener("click", () => {
@@ -981,4 +984,20 @@ function setupFieldHelp() {
       if (!active || !form.contains(active)) bubble.hidden = true;
     }, 0);
   });
+}
+
+function setupSectionJumps() {
+  jumpButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = document.getElementById(btn.dataset.jump || "");
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  if (scrollTopBtn) {
+    scrollTopBtn.addEventListener("click", () => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
 }
