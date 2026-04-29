@@ -57,6 +57,7 @@ setupMenu();
 setupHeaderAutoHide();
 setupSheetEditor();
 setupRecordBrowser();
+setupFieldHelp();
 
 randomAzimuthBtn.addEventListener("click", () => {
   const value = Math.floor(Math.random() * 360);
@@ -729,3 +730,49 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
   closeMenu();
 });
 
+
+
+const fieldHelpMap = {
+  "#nest-id": "ID gniazda: unikalny identyfikator rekordu dla jednego gniazda.",
+  "#species": "Gatunek: SO = sieweczka obrożna, SR = sieweczka rzeczna.",
+  "#lat": "Współrzędne GPS gniazda — podstawowa lokalizacja do analiz GIS.",
+  "#lon": "Współrzędne GPS gniazda — podstawowa lokalizacja do analiz GIS.",
+  "#nest-substrate": "Dominujący typ podłoża pod gniazdem; wybieraj klasę dominującą.",
+  "#nest-dist-plant": "Odległość do najbliższej rośliny (cm) od gniazda.",
+  "#nest-height-plant": "Wysokość najbliższej rośliny (cm).",
+  "#random-azimuth": "Losowy azymut dla punktu oddalonego o 10 m od gniazda.",
+  "#random-substrate": "Dominujący typ podłoża w punkcie losowym.",
+  "#dist-water": "Odległość od gniazda do najbliższej linii wody (m).",
+  "#pct-sand": "Bufor 15 m: udział piasku [%] w mezohabitatcie.",
+  "#pct-gravel": "Bufor 15 m: udział żwiru/kamieni [%] w mezohabitatcie.",
+  "#pct-vegetation": "Bufor 15 m: udział roślinności [%] w mezohabitatcie.",
+  "#pct-water": "Bufor 15 m: udział wody/podmokłości [%] w mezohabitatcie.",
+  "#qc-bird-reaction": "Reakcja ptaków podczas podejścia: słaba/umiarkowana/silna.",
+  "#qc-time-at-nest": "Czas przebywania przy gnieździe: dążymy do możliwie krótkiego.",
+  "#qc-aborted": "Czy pomiar przerwano z powodu niepokoju lub ryzyka dla lęgu.",
+  "#qc-tracks": "Czy były ślady drapieżnika/człowieka w pobliżu gniazda.",
+};
+
+function setupFieldHelp() {
+  const bubble = document.createElement("div");
+  bubble.id = "field-help-bubble";
+  bubble.hidden = true;
+  document.body.appendChild(bubble);
+
+  const showHelp = (el) => {
+    if (!el) return;
+    const msg = fieldHelpMap[`#${el.id}`];
+    if (!msg) return;
+    bubble.textContent = msg;
+    bubble.hidden = false;
+  };
+
+  form.addEventListener("focusin", (e) => showHelp(e.target));
+  form.addEventListener("input", (e) => showHelp(e.target));
+  form.addEventListener("focusout", () => {
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (!active || !form.contains(active)) bubble.hidden = true;
+    }, 0);
+  });
+}

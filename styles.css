@@ -343,3 +343,32 @@ details {
   border-radius: 6px;
   border: 1px solid var(--border);
 }
+
+
+#download-instruction-pdf {
+  display: block;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #e6fffb;
+  color: #0f766e;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+#field-help-bubble {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  box-shadow: 0 6px 24px rgba(0,0,0,.25);
+  z-index: 9999;
+}
+
+#field-help-bubble[hidden] { display:none; }

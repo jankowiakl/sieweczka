@@ -55,3 +55,11 @@ W aplikacji jest jeden główny eksport: **Eksport CSV + zdjęcia**.
 Co dostajesz:
 1. plik CSV z pełnym zestawem kolumn (1:1 jak w arkuszu/Excel), w tym `nest_photo_refs`, `random_photo_refs`, `all_photo_refs`, oraz gotowe formuły `nest_photo_link` i `random_photo_link` (`HIPERŁĄCZE`) do użycia w Excelu,
 2. jeden plik ZIP zawierający CSV i wszystkie zdjęcia JPG.
+
+
+## Instrukcja PDF
+
+Aplikacja pokazuje w menu przycisk pobrania instrukcji PDF z pliku:
+`instrukcja_terenowa_sieweczka.pdf`
+
+Umieść ten plik w katalogu głównym repo (obok `index.html`), aby link działał na GitHub Pages.
