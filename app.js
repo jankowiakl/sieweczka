@@ -24,6 +24,7 @@ const sheetTableBody = document.querySelector("#sheet-table tbody");
 const sheetSaveBtn = document.querySelector("#sheet-save");
 const sheetCloseBtn = document.querySelector("#sheet-close");
 const exportBundleBtn = document.querySelector("#export-bundle");
+const exportExcelBtn = document.querySelector("#export-excel");
 const editBanner = document.querySelector("#edit-banner");
 const editRecordLabel = document.querySelector("#edit-record-label");
 const cancelEditBtn = document.querySelector("#cancel-edit");
@@ -611,6 +612,67 @@ document.querySelector("#export-json").addEventListener("click", () => {
   downloadBlob(`sieweczka-gniazda-${Date.now()}.json`, "application/json", JSON.stringify(getEntries(), null, 2));
   closeMenu();
 });
+
+
+if (exportExcelBtn) {
+  exportExcelBtn.addEventListener("click", () => {
+    const rows = getEntries();
+    const escapeHtml = (v) => String(v ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+
+    const tr = rows
+      .map((r) => {
+        const nestImgs = (r.nestMicro?.photos || [])
+          .map((src) => `<img src="${src}" width="90" height="90" style="object-fit:cover;margin:2px;"/>`)
+          .join("");
+        const randomImgs = (r.randomMicro?.photos || [])
+          .map((src) => `<img src="${src}" width="90" height="90" style="object-fit:cover;margin:2px;"/>`)
+          .join("");
+
+        return `<tr>
+          <td>${escapeHtml(r.uid)}</td>
+          <td>${escapeHtml(r.nestId)}</td>
+          <td>${escapeHtml(r.species)}</td>
+          <td>${escapeHtml(r.obsDate)}</td>
+          <td>${escapeHtml(r.obsTime)}</td>
+          <td>${escapeHtml(r.sector)}</td>
+          <td>${escapeHtml(r.lat)}</td>
+          <td>${escapeHtml(r.lon)}</td>
+          <td>${escapeHtml(r.notes || "")}</td>
+          <td>${nestImgs || "-"}</td>
+          <td>${randomImgs || "-"}</td>
+        </tr>`;
+      })
+      .join("\n");
+
+    const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid #999; padding: 4px; vertical-align: top; }
+</style>
+</head>
+<body>
+<table>
+  <thead>
+    <tr>
+      <th>uid</th><th>nest_id</th><th>species</th><th>obs_date</th><th>obs_time</th><th>sector</th><th>lat</th><th>lon</th><th>notes</th><th>nest_photos</th><th>random_photos</th>
+    </tr>
+  </thead>
+  <tbody>${tr}</tbody>
+</table>
+</body>
+</html>`;
+
+    downloadBlob(`sieweczka-raport-${Date.now()}.xls`, "application/vnd.ms-excel", html);
+    closeMenu();
+  });
+}
 
 if (exportBundleBtn) {
   exportBundleBtn.addEventListener("click", () => {
