@@ -27,6 +27,13 @@ const editBanner = document.querySelector("#edit-banner");
 const editRecordLabel = document.querySelector("#edit-record-label");
 const cancelEditBtn = document.querySelector("#cancel-edit");
 const recordSearchInput = document.querySelector("#record-search");
+const sheetAddBtn = document.querySelector("#sheet-add");
+
+const PERCENT_IDS = [
+  "nest-pct-sand","nest-pct-fine-gravel","nest-pct-coarse","nest-pct-shells","nest-pct-live-veg","nest-pct-dry-veg","nest-pct-organic","nest-pct-anthro",
+  "random-pct-sand","random-pct-fine-gravel","random-pct-coarse","random-pct-shells","random-pct-live-veg","random-pct-dry-veg","random-pct-organic","random-pct-anthro",
+  "pct-sand","pct-gravel","pct-vegetation","pct-water"
+];
 
 const speciesLabel = {
   "charadrius-hiaticula": "Sieweczka obrożna",
@@ -58,6 +65,7 @@ setupHeaderAutoHide();
 setupSheetEditor();
 setupRecordBrowser();
 setupFieldHelp();
+setupPercentSliders();
 
 randomAzimuthBtn.addEventListener("click", () => {
   const value = Math.floor(Math.random() * 360);
@@ -215,6 +223,51 @@ function sumCoverage(cov) {
   );
 }
 
+function setupPercentSliders() {
+  for (const id of PERCENT_IDS) {
+    const numberInputEl = document.querySelector(`#${id}`);
+    if (!numberInputEl) continue;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "percent-control";
+    const range = document.createElement("input");
+    range.type = "range";
+    range.min = "0";
+    range.max = "100";
+    range.step = "1";
+    range.className = "percent-slider";
+    range.value = numberInputEl.value || "0";
+
+    const badge = document.createElement("span");
+    badge.className = "percent-badge";
+    numberInputEl.readOnly = true;
+    numberInputEl.classList.add("percent-number");
+
+    numberInputEl.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      numberInputEl.readOnly = false;
+      numberInputEl.focus();
+    });
+    numberInputEl.addEventListener("blur", () => {
+      numberInputEl.readOnly = true;
+    });
+
+    const sync = (value) => {
+      const val = Math.max(0, Math.min(100, Number(value) || 0));
+      numberInputEl.value = String(val);
+      range.value = String(val);
+      badge.textContent = `${val}%`;
+    };
+
+    numberInputEl.addEventListener("input", () => sync(numberInputEl.value));
+    range.addEventListener("input", () => sync(range.value));
+
+    numberInputEl.parentElement?.appendChild(wrapper);
+    wrapper.append(range, badge);
+    sync(numberInputEl.value || 0);
+  }
+}
+
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
@@ -313,7 +366,13 @@ function getEntries() {
 }
 
 function setEntries(entries) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeEntries(entries)));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeEntries(entries)));
+    return true;
+  } catch (error) {
+    alert("Nie udało się zapisać danych (pamięć telefonu jest pełna). Zmniejsz liczbę/rozmiar zdjęć i spróbuj ponownie.");
+    return false;
+  }
 }
 
 async function filesToDataUrls(fileList, maxFiles = 4) {
@@ -352,7 +411,7 @@ function renderEntries(searchTerm = "") {
   entryCount.textContent = String(entries.length);
   entriesList.innerHTML = "";
 
-  const query = String(searchTerm || "").trim().toLowerCase();
+  const query = String(recordSearchInput?.value || "").trim().toLowerCase();
   const visible = !query ? entries : entries.filter((entry) => {
     const hay = `${entry.nestId || ""} ${entry.sector || ""} ${speciesLabel[entry.species] || entry.species || ""}`.toLowerCase();
     return hay.includes(query);
@@ -491,7 +550,7 @@ form.addEventListener("submit", async (event) => {
   } else {
     entries.unshift(record);
   }
-  setEntries(entries);
+  if (!setEntries(entries)) return;
 
   clearEditMode();
   renderEntries(recordSearchInput?.value || "");
@@ -526,6 +585,12 @@ function setupSheetEditor() {
   };
 
   if (openSheetInlineBtn) openSheetInlineBtn.addEventListener("click", openSheet);
+  if (sheetAddBtn) sheetAddBtn.addEventListener("click", () => {
+    sheetPanel.hidden = true;
+    clearEditMode();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    document.querySelector("#nest-id")?.focus();
+  });
 
   sheetCloseBtn.addEventListener("click", () => {
     sheetPanel.hidden = true;
@@ -539,7 +604,7 @@ function setupSheetEditor() {
     const target = records.find((r) => String(r.uid) === String(uid));
     if (!target) return;
     if (!confirm(`Usunąć rekord ${target.nestId}?`)) return;
-    setEntries(records.filter((r) => String(r.uid) !== String(uid)));
+    if (!setEntries(records.filter((r) => String(r.uid) !== String(uid)))) return;
     renderEntries(recordSearchInput?.value || "");
     renderSheetEditor();
   });
@@ -580,7 +645,7 @@ function setupSheetEditor() {
       target.qualityControl.tracksVisible = row.querySelector('[data-col="qcTracksVisible"]').value;
     }
 
-    setEntries(Array.from(byUid.values()));
+    if (!setEntries(Array.from(byUid.values()))) return;
     renderEntries(recordSearchInput?.value || "");
     sheetPanel.hidden = true;
   });
@@ -590,7 +655,7 @@ function renderSheetEditor() {
   const entries = getEntries();
   sheetTableBody.innerHTML = "";
 
-  const query = String(searchTerm || "").trim().toLowerCase();
+  const query = String(recordSearchInput?.value || "").trim().toLowerCase();
   const visible = !query ? entries : entries.filter((entry) => {
     const hay = `${entry.nestId || ""} ${entry.sector || ""} ${speciesLabel[entry.species] || entry.species || ""}`.toLowerCase();
     return hay.includes(query);

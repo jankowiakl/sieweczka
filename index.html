@@ -91,7 +91,7 @@
 
           <fieldset>
             <legend>Mikrohabitat (gniazdo)</legend>
-            <label>Zdjęcie 1 m² (gniazdo) <input id="nest-photos" type="file" accept="image/*" capture="environment" multiple /></label>
+            <label>Zdjęcie 1 m² (gniazdo) <input id="nest-photos" type="file" accept="image/*" multiple /></label>
             <label>
               Dominujące podłoże
               <select id="nest-substrate" required>
@@ -157,7 +157,7 @@
               <button type="button" id="random-gps-btn">Pobierz GPS punktu kontrolnego</button>
               <small id="random-gps-status">GPS kontrolny: brak</small>
             </div>
-            <label>Zdjęcie 1 m² (punkt losowy) <input id="random-photos" type="file" accept="image/*" capture="environment" multiple /></label>
+            <label>Zdjęcie 1 m² (punkt losowy) <input id="random-photos" type="file" accept="image/*" multiple /></label>
             <label>
               Dominujące podłoże
               <select id="random-substrate" required>
@@ -322,6 +322,7 @@
         <div class="row-2">
           <button id="sheet-save" type="button">Zapisz zmiany</button>
           <button id="sheet-close" type="button" class="danger">Zamknij</button>
+          <button id="sheet-add" type="button">Dodaj nowy rekord</button>
         </div>
       </div>
       <div class="sheet-wrap">
