@@ -618,7 +618,14 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
 
   const header = [
     "uid", "nest_id", "species", "obs_date", "obs_time", "sector", "lat", "lon", "egg_count", "nest_status", "possible_renest",
-    "photo_refs", "notes"
+    "nest_substrate", "nest_pct_sand", "nest_pct_fine_gravel", "nest_pct_coarse", "nest_pct_shells", "nest_pct_live_veg", "nest_pct_dry_veg", "nest_pct_organic", "nest_pct_anthro",
+    "nest_dist_plant_m", "nest_height_plant_cm", "nest_dist_object_m", "nest_height_object_cm", "nest_slope",
+    "random_azimuth_deg", "random_lat", "random_lon", "random_substrate", "random_pct_sand", "random_pct_fine_gravel", "random_pct_coarse", "random_pct_shells", "random_pct_live_veg", "random_pct_dry_veg", "random_pct_organic", "random_pct_anthro",
+    "random_dist_plant_m", "random_height_plant_cm", "random_dist_object_m", "random_height_object_cm", "random_slope",
+    "pct_sand", "pct_gravel", "pct_vegetation", "pct_water", "meso_big_objects",
+    "dist_water_m", "dist_veg_edge_m", "dist_vertical_structure_m", "dist_fine_gravel_patch_m", "dist_coarse_gravel_patch_m", "dist_nearest_hiaticula_m", "dist_nearest_dubius_m",
+    "notes_identification", "notes_nest_micro", "notes_random_micro", "notes_meso", "notes",
+    "nest_photo_refs", "random_photo_refs", "all_photo_refs", "created_at"
   ];
 
   const photoMap = [];
@@ -626,24 +633,39 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
   const csv = [header.join(",")]
     .concat(
       rows.map((r) => {
-        const refs = [];
+        const nestRefs = [];
+        const randomRefs = [];
+
         (r.nestMicro?.photos || []).forEach((src, i) => {
           const file = `photos/${r.uid}_nest_${i + 1}.jpg`;
-          refs.push(file);
-          photoMap.push({ file, src });
-        });
-        (r.randomMicro?.photos || []).forEach((src, i) => {
-          const file = `photos/${r.uid}_random_${i + 1}.jpg`;
-          refs.push(file);
+          nestRefs.push(file);
           photoMap.push({ file, src });
         });
 
+        (r.randomMicro?.photos || []).forEach((src, i) => {
+          const file = `photos/${r.uid}_random_${i + 1}.jpg`;
+          randomRefs.push(file);
+          photoMap.push({ file, src });
+        });
+
+        const allRefs = [...nestRefs, ...randomRefs];
+
         return [
           r.uid, r.nestId, r.species, r.obsDate, r.obsTime, r.sector, r.lat, r.lon, r.eggCount, r.nestStatus, r.possibleRenest,
-          refs.join(";"),
-          (r.notes || "").replaceAll('"', '""'),
+          r.nestMicro?.substrate,
+          r.nestMicro?.coverage?.pctSand, r.nestMicro?.coverage?.pctFineGravel, r.nestMicro?.coverage?.pctCoarse, r.nestMicro?.coverage?.pctShells,
+          r.nestMicro?.coverage?.pctLiveVeg, r.nestMicro?.coverage?.pctDryVeg, r.nestMicro?.coverage?.pctOrganic, r.nestMicro?.coverage?.pctAnthro,
+          r.nestMicro?.distPlantM, r.nestMicro?.heightPlantCm, r.nestMicro?.distObjectM, r.nestMicro?.heightObjectCm, r.nestMicro?.slope,
+          r.randomMicro?.azimuthDeg, r.randomMicro?.lat, r.randomMicro?.lon, r.randomMicro?.substrate,
+          r.randomMicro?.coverage?.pctSand, r.randomMicro?.coverage?.pctFineGravel, r.randomMicro?.coverage?.pctCoarse, r.randomMicro?.coverage?.pctShells,
+          r.randomMicro?.coverage?.pctLiveVeg, r.randomMicro?.coverage?.pctDryVeg, r.randomMicro?.coverage?.pctOrganic, r.randomMicro?.coverage?.pctAnthro,
+          r.randomMicro?.distPlantM, r.randomMicro?.heightPlantCm, r.randomMicro?.distObjectM, r.randomMicro?.heightObjectCm, r.randomMicro?.slope,
+          r.meso?.pctSand, r.meso?.pctGravel, r.meso?.pctVegetation, r.meso?.pctWater, r.meso?.bigObjects,
+          r.meso?.distWaterM, r.meso?.distVegEdgeM, r.meso?.distVerticalStructureM, r.meso?.distFineGravelPatchM, r.meso?.distCoarseGravelPatchM, r.meso?.distNearestHiaticulaM, r.meso?.distNearestDubiusM,
+          r.moduleNotes?.identification, r.moduleNotes?.nestMicro, r.moduleNotes?.randomMicro, r.moduleNotes?.meso, r.notes,
+          nestRefs.join(";"), randomRefs.join(";"), allRefs.join(";"), r.createdAt,
         ]
-          .map((value) => `"${String(value)}"`)
+          .map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`)
           .join(",");
       })
     )

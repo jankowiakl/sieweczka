@@ -53,7 +53,7 @@ Repo jest przygotowane pod PWABuilder:
 W aplikacji jest jeden główny eksport: **Eksport CSV + zdjęcia**.
 
 Co dostajesz:
-1. plik CSV z kolumną `photo_refs` (lista nazw plików zdjęć),
+1. plik CSV z pełnym zestawem kolumn (1:1 jak w arkuszu/Excel), w tym `nest_photo_refs`, `random_photo_refs`, `all_photo_refs`,
 2. pobrane zdjęcia jako osobne pliki JPG.
 
 ### Jak ułożyć pliki, żeby linki działały
