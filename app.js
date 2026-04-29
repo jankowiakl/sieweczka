@@ -170,6 +170,11 @@ function loadRecordToForm(record) {
   setVal("#notes-nest-micro", record.moduleNotes?.nestMicro);
   setVal("#notes-random-micro", record.moduleNotes?.randomMicro);
   setVal("#notes-meso", record.moduleNotes?.meso);
+  setVal("#qc-bird-reaction", record.qualityControl?.birdReaction);
+  setVal("#qc-time-at-nest", record.qualityControl?.timeAtNest);
+  setVal("#qc-aborted", record.qualityControl?.aborted);
+  setVal("#qc-tracks", record.qualityControl?.tracksVisible);
+  setVal("#qc-tracks-notes", record.qualityControl?.tracksNotes);
 }
 
 function numberInput(id) {
@@ -456,6 +461,13 @@ form.addEventListener("submit", async (event) => {
       randomMicro: document.querySelector("#notes-random-micro").value.trim(),
       meso: document.querySelector("#notes-meso").value.trim(),
     },
+    qualityControl: {
+      birdReaction: document.querySelector("#qc-bird-reaction").value,
+      timeAtNest: document.querySelector("#qc-time-at-nest").value,
+      aborted: document.querySelector("#qc-aborted").value,
+      tracksVisible: document.querySelector("#qc-tracks").value,
+      tracksNotes: document.querySelector("#qc-tracks-notes").value.trim(),
+    },
     notes: document.querySelector("#notes").value.trim(),
     uid: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     createdAt: new Date().toISOString(),
@@ -550,6 +562,11 @@ function setupSheetEditor() {
       target.eggCount = Number(row.querySelector('[data-col="eggCount"]').value);
       target.nestStatus = row.querySelector('[data-col="nestStatus"]').value;
       target.notes = row.querySelector('[data-col="notes"]').value;
+      target.qualityControl = target.qualityControl || {};
+      target.qualityControl.birdReaction = row.querySelector('[data-col="qcBirdReaction"]').value;
+      target.qualityControl.timeAtNest = row.querySelector('[data-col="qcTimeAtNest"]').value;
+      target.qualityControl.aborted = row.querySelector('[data-col="qcAborted"]').value;
+      target.qualityControl.tracksVisible = row.querySelector('[data-col="qcTracksVisible"]').value;
     }
 
     setEntries(Array.from(byUid.values()));
@@ -595,6 +612,10 @@ function renderSheetEditor() {
         </select>
       </td>
       <td><textarea data-col="notes">${entry.notes || ""}</textarea></td>
+      <td><input data-col="qcBirdReaction" value="${entry.qualityControl?.birdReaction || ""}" /></td>
+      <td><input data-col="qcTimeAtNest" value="${entry.qualityControl?.timeAtNest || ""}" /></td>
+      <td><input data-col="qcAborted" value="${entry.qualityControl?.aborted || ""}" /></td>
+      <td><input data-col="qcTracksVisible" value="${entry.qualityControl?.tracksVisible || ""}" /></td>
       <td>
         <div class="sheet-photo-grid">
           ${(entry.nestMicro?.photos || []).map((src) => `<img src="${src}" alt="nest photo"/>`).join("")}
@@ -630,6 +651,7 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
     "pct_sand", "pct_gravel", "pct_vegetation", "pct_water", "meso_big_objects",
     "dist_water_m", "dist_veg_edge_m", "dist_vertical_structure_m", "dist_fine_gravel_patch_m", "dist_coarse_gravel_patch_m", "dist_nearest_hiaticula_m", "dist_nearest_dubius_m",
     "notes_identification", "notes_nest_micro", "notes_random_micro", "notes_meso", "notes",
+    "qc_bird_reaction", "qc_time_at_nest", "qc_aborted", "qc_tracks_visible", "qc_tracks_notes",
     "nest_photo_refs", "random_photo_refs", "all_photo_refs", "nest_photo_link", "random_photo_link", "created_at"
   ];
 
@@ -668,6 +690,7 @@ document.querySelector("#export-csv").addEventListener("click", async () => {
           r.meso?.pctSand, r.meso?.pctGravel, r.meso?.pctVegetation, r.meso?.pctWater, r.meso?.bigObjects,
           r.meso?.distWaterM, r.meso?.distVegEdgeM, r.meso?.distVerticalStructureM, r.meso?.distFineGravelPatchM, r.meso?.distCoarseGravelPatchM, r.meso?.distNearestHiaticulaM, r.meso?.distNearestDubiusM,
           r.moduleNotes?.identification, r.moduleNotes?.nestMicro, r.moduleNotes?.randomMicro, r.moduleNotes?.meso, r.notes,
+          r.qualityControl?.birdReaction, r.qualityControl?.timeAtNest, r.qualityControl?.aborted, r.qualityControl?.tracksVisible, r.qualityControl?.tracksNotes,
           nestRefs.join(";"),
           randomRefs.join(";"),
           allRefs.join(";"),

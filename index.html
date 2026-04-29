@@ -244,9 +244,62 @@
             </label>
           </fieldset>
 
+
+          <fieldset>
+            <legend>E. Kontrola jakości i uwagi</legend>
+            <div class="row-2">
+              <label>Reakcja ptaków
+                <select id="qc-bird-reaction" required>
+                  <option value="weak">słaba</option>
+                  <option value="moderate">umiarkowana</option>
+                  <option value="strong">silna</option>
+                </select>
+              </label>
+              <label>Czas przy gnieździe
+                <select id="qc-time-at-nest" required>
+                  <option value="lt1">&lt; 1 min</option>
+                  <option value="1to3">1–3 min</option>
+                  <option value="gt3">&gt; 3 min</option>
+                </select>
+              </label>
+            </div>
+            <div class="row-2">
+              <label>Czy przerwano pomiar?
+                <select id="qc-aborted" required>
+                  <option value="no">nie</option>
+                  <option value="yes">tak</option>
+                </select>
+              </label>
+              <label>Ślady drapieżnika/człowieka?
+                <select id="qc-tracks" required>
+                  <option value="no">nie</option>
+                  <option value="yes">tak</option>
+                </select>
+              </label>
+            </div>
+            <label>Opis śladów / uwagi jakości
+              <textarea id="qc-tracks-notes" rows="2"></textarea>
+            </label>
+          </fieldset>
+
           <label>Dodatkowe notatki ogólne <textarea id="notes" rows="3" placeholder="Szybka notatka terenowa"></textarea></label>
           <button type="submit" class="primary">Zapisz gniazdo</button>
         </form>
+      </section>
+
+
+      <section class="card">
+        <details>
+          <summary><strong>Instrukcja obsługi (teren)</strong></summary>
+          <ul>
+            <li>Priorytet: bezpieczeństwo lęgu, krótkie podejście i minimum niepokoju.</li>
+            <li>Jedno gniazdo = jeden rekord + jeden punkt losowy 10 m (losowy azymut).</li>
+            <li>W jednym wejściu: potwierdzenie, GPS, zdjęcie, mikrohabitat, punkt losowy.</li>
+            <li>Jeśli punkt losowy wypada w wodzie/poza siedliskiem lęgowym, losuj ponownie.</li>
+            <li>Kluczowe pola: podłoże, pokrycie 1 m², dystanse do roślinności i wody, bufor 15 m.</li>
+            <li>Nalot dronem wykonuj później sektorowo (preferowany pułap 40–50 m AGL), nie punktowo nad czynnym gniazdem.</li>
+          </ul>
+        </details>
       </section>
 
       <section class="card">
@@ -285,6 +338,10 @@
               <th>egg_count</th>
               <th>nest_status</th>
               <th>notes</th>
+              <th>qc_reakcja</th>
+              <th>qc_czas</th>
+              <th>qc_przerwano</th>
+              <th>qc_slady</th>
               <th>zdjęcia</th>
               <th>akcja</th>
             </tr>
