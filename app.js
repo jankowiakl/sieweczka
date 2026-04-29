@@ -379,13 +379,7 @@ async function filesToDataUrls(fileList, maxFiles = 4) {
   const files = Array.from(fileList).slice(0, maxFiles);
   const urls = [];
   for (const file of files) {
-    const url = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error(`Błąd odczytu pliku ${file.name}`));
-      reader.readAsDataURL(file);
-    });
-    urls.push(url);
+    urls.push(await fileToDataUrlOptimized(file));
   }
   return urls;
 }
