@@ -1,5 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Sieweczka">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect width="512" height="512" rx="96" fill="#0f766e"/>
-  <rect x="132" y="132" width="248" height="248" rx="42" fill="#ffffff"/>
-  <path d="M126 196c48 0 96 28 130 76 34-48 82-76 130-76-49 16-88 52-110 101l-20 44-20-44c-22-49-61-85-110-101z" fill="#0f766e"/>
+  <circle cx="262" cy="240" r="112" fill="#fef3c7"/>
+  <path d="M145 273c58 64 159 71 231 26-38 70-148 104-230 35-33-28-44-66-31-97 6 13 16 25 30 36z" fill="#0f172a"/>
+  <circle cx="298" cy="215" r="13" fill="#0f172a"/>
+  <path d="M352 232l78 20-78 22z" fill="#f59e0b"/>
+  <path d="M168 330c66 37 132 35 197 0" stroke="#fff" stroke-width="24" stroke-linecap="round" fill="none"/>
 </svg>

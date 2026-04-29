@@ -1,30 +1,533 @@
 <!doctype html>
 <html lang="pl">
-<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Sieweczka Field App</title><link rel="manifest" href="manifest.webmanifest" /><link rel="stylesheet" href="styles.css" />
-<meta name="theme-color" content="#0f766e" />
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Sieweczka Field App</title>
+  <meta name="theme-color" content="#0f766e" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<header id="app-header"><div class="header-row"><h1>Sieweczka Field App</h1><button id="menu-toggle" class="menu-toggle" aria-label="Otwórz menu">☰</button></div></header>
-<div id="menu-overlay" class="menu-overlay" hidden></div>
-<aside id="app-menu" class="app-menu" aria-hidden="true"><h3>Opcje</h3><button id="install-app" type="button">Zainstaluj aplikację</button><button id="export-csv" type="button">Eksport CSV + zdjęcia</button><a id="download-instruction-pdf" href="instrukcja_terenowa_sieweczka.pdf" download>📄 Pobierz instrukcję PDF</a><button id="field-mode-toggle" type="button">Tryb terenowy: wyłączony</button></aside>
-<main>
-<section id="home-screen" class="card"><h2>Sieweczka Field App</h2><p>Dzisiaj: <strong id="today-count">0</strong> rekordów</p><p>Łącznie: <strong id="entry-count">0</strong> rekordów</p><p id="offline-status" class="muted">Status: online</p><div class="home-actions"><button id="start-new" type="button">+ Nowe gniazdo</button><button id="go-records" type="button">Zapisane rekordy</button><button id="go-export" type="button">Eksport danych</button><button id="go-instruction" type="button">Instrukcja</button></div></section>
-<section id="form-screen" class="card" hidden>
-<div class="progress-wrap"><p id="step-title">Krok 1 z 8 — Start / identyfikacja</p><div class="progress"><div id="step-progress"></div></div></div>
-<div id="edit-banner" class="edit-banner" hidden><strong>Tryb edycji:</strong><span id="edit-record-label"></span><button id="cancel-edit" class="danger" type="button">Anuluj</button></div>
-<form id="entry-form" novalidate>
-<div class="step" data-step="1"><fieldset id="identyfikacja"><legend>Start / identyfikacja</legend><label>ID gniazda<input id="nest-id" type="text" required></label><label>Gatunek</label><div class="tile-group" data-target="species"><button type="button" class="tile" data-value="charadrius-hiaticula">Sieweczka obrożna</button><button type="button" class="tile" data-value="charadrius-dubius">Sieweczka rzeczna</button><button type="button" class="tile" data-value="unknown">Nieokreślony</button></div><input id="species" type="hidden" value="unknown"><div class="row-2"><label>Data<input id="obs-date" type="date" required></label><label>Godzina<input id="obs-time" type="time" required></label></div><label>Sektor<input id="sector" type="text" required></label><label>Notatki identyfikacja<textarea id="notes-identification"></textarea></label><label>Liczba jaj</label><div class="tile-group" data-target="egg-count"><button type="button" class="tile" data-value="0">0</button><button type="button" class="tile" data-value="1">1</button><button type="button" class="tile" data-value="2">2</button><button type="button" class="tile" data-value="3">3</button><button type="button" class="tile" data-value="4">4</button><button type="button" class="tile" data-value="5">5+</button></div><input id="egg-count" type="hidden" value=""><label>Status gniazda</label><div class="tile-group" data-target="nest-status"><button type="button" class="tile" data-value="fresh">Świeże</button><button type="button" class="tile" data-value="incubated">Inkubowane</button><button type="button" class="tile" data-value="unknown">Nieznany</button></div><input id="nest-status" type="hidden" value="unknown"><label>Renest</label><div class="tile-group" data-target="possible-renest"><button type="button" class="tile" data-value="no">Nie</button><button type="button" class="tile" data-value="yes">Tak</button><button type="button" class="tile" data-value="uncertain">Niepewne</button></div><input id="possible-renest" type="hidden" value="uncertain"></fieldset></div>
-<div class="step" data-step="2" hidden><fieldset><legend>GPS i zdjęcie gniazda</legend><div class="gps-panel"><button type="button" id="gps-btn" aria-label="Pobierz GPS gniazda">Pobierz GPS gniazda</button><p id="gps-status">GPS: brak</p><div class="row-2"><label>GPS lat<input id="lat" type="number" step="0.000001" required></label><label>GPS lon<input id="lon" type="number" step="0.000001" required></label></div></div><label class="photo-input"><span>+ Zrób/dodaj zdjęcie gniazda</span><input id="nest-photos" type="file" accept="image/*" capture="environment" multiple></label><div id="nest-photo-preview" class="photo-preview"></div></fieldset></div>
-<div class="step" data-step="3" hidden><fieldset id="mikro-gniazdo"><legend>Mikrohabitat gniazda</legend><label>Dominujące podłoże<select id="nest-substrate" required><option value="sand">Piasek</option><option value="fine-gravel">Drobny żwir</option><option value="coarse-gravel">Grubszy żwir / otoczaki</option><option value="shells">Muszle</option><option value="mixed">Mieszane</option></select></label><p id="nest-sum" class="sum-box"></p><div class="row-2"><label>% piasek<div class="pct-row"><button type="button" class="pct-btn" data-id="nest-pct-sand" data-delta="-5">−</button><input id="nest-pct-sand" type="number" min="0" max="100" required><button type="button" class="pct-btn" data-id="nest-pct-sand" data-delta="5">+</button></div></label><label>% drobny żwir<div class="pct-row"><button type="button" class="pct-btn" data-id="nest-pct-fine-gravel" data-delta="-5">−</button><input id="nest-pct-fine-gravel" type="number" min="0" max="100" required><button type="button" class="pct-btn" data-id="nest-pct-fine-gravel" data-delta="5">+</button></div></label><label>% gruby żwir<div class="pct-row"><button type="button" class="pct-btn" data-id="nest-pct-coarse" data-delta="-5">−</button><input id="nest-pct-coarse" type="number" min="0" max="100" required><button type="button" class="pct-btn" data-id="nest-pct-coarse" data-delta="5">+</button></div></label><label>% muszle<div class="pct-row"><button type="button" class="pct-btn" data-id="nest-pct-shells" data-delta="-5">−</button><input id="nest-pct-shells" type="number" min="0" max="100" required><button type="button" class="pct-btn" data-id="nest-pct-shells" data-delta="5">+</button></div></label><label>% roślinność żywa<div class="pct-row"><button type="button" class="pct-btn" data-id="nest-pct-live-veg" data-delta="-5">−</button><input id="nest-pct-live-veg" type="number" min="0" max="100" required><button type="button" class="pct-btn" data-id="nest-pct-live-veg" data-delta="5">+</button></div></label><label>% roślinność sucha<div class="pct-row"><button type="button" class="pct-btn" data-id="nest-pct-dry-veg" data-delta="-5">−</button><input id="nest-pct-dry-veg" type="number" min="0" max="100" required><button type="button" class="pct-btn" data-id="nest-pct-dry-veg" data-delta="5">+</button></div></label><label>% organiczne<div class="pct-row"><button type="button" class="pct-btn" data-id="nest-pct-organic" data-delta="-5">−</button><input id="nest-pct-organic" type="number" min="0" max="100" required><button type="button" class="pct-btn" data-id="nest-pct-organic" data-delta="5">+</button></div></label><label>% antropogeniczne<div class="pct-row"><button type="button" class="pct-btn" data-id="nest-pct-anthro" data-delta="-5">−</button><input id="nest-pct-anthro" type="number" min="0" max="100" required><button type="button" class="pct-btn" data-id="nest-pct-anthro" data-delta="5">+</button></div></label></div><div class="row-2"><label>Odległość do rośliny [cm]<input id="nest-dist-plant" type="number" min="0" step="0.1" required></label><label>Wysokość rośliny [cm]<input id="nest-height-plant" type="number" min="0" step="1" required></label><label>Odległość do obiektu osłony [cm]<input id="nest-dist-object" type="number" min="0" step="0.1" required></label><label>Wysokość obiektu [cm]<input id="nest-height-object" type="number" min="0" step="1" required></label></div><label>Nachylenie<select id="nest-slope" required><option value="flat">Płasko</option><option value="slight">Lekki spadek</option><option value="moderate">Umiarkowany</option><option value="steep">Wyraźny</option></select></label><label>Notatki mikrohabitat gniazdo<textarea id="notes-nest-micro"></textarea></label></fieldset></div>
-<div class="step" data-step="4" hidden><fieldset id="mikro-losowy"><legend>Punkt losowy 10 m</legend><div class="row-2"><label>Azymut [°]<input id="random-azimuth" type="number" min="0" max="359" required></label><button type="button" id="random-azimuth-btn">Losuj azymut</button></div><div class="gps-panel"><button type="button" id="random-gps-btn">Pobierz GPS punktu losowego</button><p id="random-gps-status">GPS kontrolny: brak</p><div class="row-2"><label>lat<input id="random-lat" type="number" step="0.000001"></label><label>lon<input id="random-lon" type="number" step="0.000001"></label></div></div><label class="photo-input"><span>+ Zrób/dodaj zdjęcie punktu losowego</span><input id="random-photos" type="file" accept="image/*" capture="environment" multiple></label><div id="random-photo-preview" class="photo-preview"></div></fieldset></div>
-<div class="step" data-step="5" hidden><fieldset><legend>Mikrohabitat punktu losowego</legend><label>Dominujące podłoże<select id="random-substrate" required><option value="sand">Piasek</option><option value="fine-gravel">Drobny żwir</option><option value="coarse-gravel">Grubszy żwir / otoczaki</option><option value="shells">Muszle</option><option value="mixed">Mieszane</option></select></label><p id="random-sum" class="sum-box"></p><div class="row-2"><label>% piasek<input id="random-pct-sand" type="number" min="0" max="100" required></label><label>% drobny żwir<input id="random-pct-fine-gravel" type="number" min="0" max="100" required></label><label>% gruby żwir<input id="random-pct-coarse" type="number" min="0" max="100" required></label><label>% muszle<input id="random-pct-shells" type="number" min="0" max="100" required></label><label>% roślinność żywa<input id="random-pct-live-veg" type="number" min="0" max="100" required></label><label>% roślinność sucha<input id="random-pct-dry-veg" type="number" min="0" max="100" required></label><label>% organiczne<input id="random-pct-organic" type="number" min="0" max="100" required></label><label>% antropogeniczne<input id="random-pct-anthro" type="number" min="0" max="100" required></label></div><div class="row-2"><label>Odległość do rośliny [cm]<input id="random-dist-plant" type="number" min="0" step="0.1" required></label><label>Wysokość rośliny [cm]<input id="random-height-plant" type="number" min="0" step="1" required></label><label>Odległość do obiektu osłony [cm]<input id="random-dist-object" type="number" min="0" step="0.1" required></label><label>Wysokość obiektu [cm]<input id="random-height-object" type="number" min="0" step="1" required></label></div><label>Nachylenie<select id="random-slope" required><option value="flat">Płasko</option><option value="slight">Lekki spadek</option><option value="moderate">Umiarkowany</option><option value="steep">Wyraźny</option></select></label><label>Notatki mikrohabitat punkt losowy<textarea id="notes-random-micro"></textarea></label></fieldset></div>
-<div class="step" data-step="6" hidden><fieldset id="mezohabitat"><legend>Mezohabitat</legend><p id="meso-sum" class="sum-box"></p><div class="row-2"><label>% piasek<input id="pct-sand" type="number" required></label><label>% żwir<input id="pct-gravel" type="number" required></label><label>% roślinność<input id="pct-vegetation" type="number" required></label><label>% woda<input id="pct-water" type="number" required></label></div><label>Duże obiekty w 15 m?<select id="meso-big-objects" required><option value="none">Brak</option><option value="present">Obecne</option><option value="unknown">Nieokreślone</option></select></label><details><summary>Dodatkowe pomiary</summary><div class="row-2"><label>Odległość do wody [m]<input id="dist-water" type="number" required></label><label>Odległość do krawędzi roślinności [m]<input id="dist-veg-edge" type="number" required></label><label>Najbliższy wysoki obiekt [m]<input id="dist-vertical-structure" type="number" required></label><label>Odległość do płatu drobnego żwiru [m]<input id="dist-fine-gravel-patch" type="number" required></label><label>Odległość do płatu grubszego żwiru [m]<input id="dist-coarse-gravel-patch" type="number" required></label><label>Najbliższe gniazdo obrożnej [m]<input id="dist-nearest-hiaticula" type="number" required></label><label>Najbliższe gniazdo rzecznej [m]<input id="dist-nearest-dubius" type="number" required></label></div></details><label>Notatki mezohabitat<textarea id="notes-meso"></textarea></label></fieldset></div>
-<div class="step" data-step="7" hidden><fieldset id="jakosc"><legend>Jakość i uwagi</legend><label>Reakcja ptaków<select id="qc-bird-reaction" required><option value="weak">Słaba</option><option value="moderate">Umiarkowana</option><option value="strong">Silna</option></select></label><label>Czas przy gnieździe<select id="qc-time-at-nest" required><option value="lt1">&lt; 1 min</option><option value="1to3">1–3 min</option><option value="gt3">&gt; 3 min</option></select></label><label>Czy przerwano pomiar?<select id="qc-aborted" required><option value="no">Nie</option><option value="yes">Tak</option></select></label><label>Ślady drapieżnika/człowieka?<select id="qc-tracks" required><option value="no">Nie</option><option value="yes">Tak</option></select></label><label>Uwagi jakości<textarea id="qc-tracks-notes"></textarea></label><label>Notatki ogólne<textarea id="notes"></textarea></label></fieldset></div>
-<div class="step" data-step="8" hidden><fieldset><legend>Podsumowanie i zapis</legend><div id="validation-list"></div></fieldset></div>
-<div class="sticky-actions"><button type="button" id="step-back">Wstecz</button><button type="button" id="save-draft">Zapisz szkic</button><button type="button" id="step-next" class="primary">Dalej</button><button type="button" id="save-final" class="primary" hidden>Zapisz rekord</button></div></form></section>
-<section class="card" id="records-screen"><h2>Zapisane rekordy</h2><input id="record-search" type="search" placeholder="Szukaj"><ul id="entries-list"></ul></section>
-<template id="entry-item-template"><li class="entry-item"><div class="entry-head"><strong class="entry-id"></strong><span class="pill species"></span><span class="pill status"></span></div><div class="muted meta"></div><div class="actions"></div><details><summary>Szczegóły</summary><p class="summary"></p><div class="photos"></div></details></li></template>
-</main>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script><script src="app.js"></script><script src="sieweczka-hotfix.js"></script>
-</body></html>
+  <header class="app-header">
+    <div class="header-inner">
+      <button id="home-shortcut" type="button" class="ghost small">Menu</button>
+      <h1>Sieweczka Field App</h1>
+      <button id="field-mode-toggle" type="button" class="ghost small">Tryb terenowy</button>
+    </div>
+  </header>
+
+  <main id="app">
+    <section id="home-screen" class="screen card">
+      <h2>Menu główne</h2>
+      <p class="lead">Zbieranie danych terenowych przy gniazdach sieweczek.</p>
+
+      <div class="stats-grid">
+        <div class="stat"><span>Dzisiaj</span><strong id="today-count">0</strong></div>
+        <div class="stat"><span>Łącznie</span><strong id="entry-count">0</strong></div>
+        <div class="stat wide"><span>Status</span><strong id="offline-status">online</strong></div>
+      </div>
+
+      <div class="home-actions">
+        <button id="start-new" type="button" class="primary big">+ Nowe gniazdo</button>
+        <button id="open-records" type="button" class="big">Zapisane rekordy</button>
+        <button id="export-csv" type="button" class="big">Eksport CSV</button>
+        <button id="export-json" type="button" class="big">Eksport JSON</button>
+        <button id="export-zip" type="button" class="big">Eksport ZIP + zdjęcia</button>
+        <a class="button-like big" href="instrukcja_terenowa_sieweczka.pdf" download>Instrukcja terenowa PDF</a>
+      </div>
+
+      <p class="hint">Wersja czysta: formularz krokowy, bezpieczny zapis i edycja, pełny zestaw pól z arkusza terenowego.</p>
+    </section>
+
+    <section id="records-screen" class="screen card" hidden>
+      <div class="screen-head">
+        <button type="button" class="back-home">← Menu główne</button>
+        <h2>Zapisane rekordy</h2>
+      </div>
+      <input id="record-search" type="search" placeholder="Szukaj po ID, sektorze, gatunku lub obserwatorze" />
+      <div id="entries-list" class="entries-list"></div>
+    </section>
+
+    <section id="form-screen" class="screen card" hidden>
+      <div class="screen-head">
+        <button type="button" class="back-home">← Menu główne</button>
+        <h2 id="form-mode-title">Nowe gniazdo</h2>
+      </div>
+
+      <div id="edit-banner" class="edit-banner" hidden>
+        <strong>Tryb edycji:</strong> <span id="edit-record-label"></span>
+        <button id="cancel-edit" type="button" class="danger small">Anuluj edycję</button>
+      </div>
+
+      <div class="progress-wrap">
+        <p id="step-title">Krok 1 z 8 — Identyfikacja</p>
+        <div class="progress"><div id="step-progress"></div></div>
+      </div>
+
+      <form id="entry-form" novalidate>
+        <section class="step" data-step="1">
+          <fieldset>
+            <legend>Identyfikacja gniazda</legend>
+
+            <label>ID gniazda
+              <input id="nest-id" type="text" autocomplete="off" placeholder="np. SO-2026-001" />
+            </label>
+
+            <div class="row-2">
+              <label>Sezon
+                <input id="season" type="text" inputmode="numeric" placeholder="2026" />
+              </label>
+              <label>Obserwator
+                <input id="observer" type="text" autocomplete="name" placeholder="imię i nazwisko" />
+              </label>
+            </div>
+
+            <div class="row-2">
+              <label>Data
+                <input id="obs-date" type="date" />
+              </label>
+              <label>Godzina
+                <input id="obs-time" type="time" />
+              </label>
+            </div>
+
+            <label>Sektor / część wyspy
+              <input id="sector" type="text" autocomplete="off" />
+            </label>
+
+            <div class="field-block">
+              <p class="field-label">Gatunek</p>
+              <div class="tile-group" data-target="species">
+                <button type="button" class="tile" data-value="charadrius-hiaticula">Sieweczka obrożna</button>
+                <button type="button" class="tile" data-value="charadrius-dubius">Sieweczka rzeczna</button>
+                <button type="button" class="tile" data-value="unknown">Nieokreślony</button>
+              </div>
+              <input id="species" type="hidden" value="unknown" />
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Liczba jaj</p>
+              <div class="tile-group compact" data-target="egg-count">
+                <button type="button" class="tile" data-value="0">0</button>
+                <button type="button" class="tile" data-value="1">1</button>
+                <button type="button" class="tile" data-value="2">2</button>
+                <button type="button" class="tile" data-value="3">3</button>
+                <button type="button" class="tile" data-value="4">4</button>
+                <button type="button" class="tile" data-value="5">5+</button>
+              </div>
+              <input id="egg-count" type="hidden" value="" />
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Status gniazda</p>
+              <div class="tile-group" data-target="nest-status">
+                <button type="button" class="tile" data-value="incubated">Znalezione podczas inkubacji</button>
+                <button type="button" class="tile" data-value="fresh">Świeże zniesienie</button>
+                <button type="button" class="tile" data-value="unknown">Nieznane</button>
+              </div>
+              <input id="nest-status" type="hidden" value="unknown" />
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Czy możliwy renest?</p>
+              <div class="tile-group compact" data-target="possible-renest">
+                <button type="button" class="tile" data-value="yes">Tak</button>
+                <button type="button" class="tile" data-value="no">Nie</button>
+                <button type="button" class="tile" data-value="unknown">Nie wiem</button>
+              </div>
+              <input id="possible-renest" type="hidden" value="unknown" />
+            </div>
+
+            <div class="row-2">
+              <label>Czy wykonano zdjęcie dokumentacyjne?
+                <select id="doc-photo-done">
+                  <option value="unknown">Nie wiem</option>
+                  <option value="yes">Tak</option>
+                  <option value="no">Nie</option>
+                </select>
+              </label>
+              <label>Czy wykonano zdjęcie 1 m² nad gniazdem?
+                <select id="nest-one-m-photo-done">
+                  <option value="unknown">Nie wiem</option>
+                  <option value="yes">Tak</option>
+                  <option value="no">Nie</option>
+                </select>
+              </label>
+            </div>
+
+            <label>Czy wyznaczono punkt losowy 10 m?
+              <select id="random-point-done">
+                <option value="unknown">Nie wiem</option>
+                <option value="yes">Tak</option>
+                <option value="no">Nie</option>
+              </select>
+            </label>
+
+            <label>Notatki identyfikacyjne
+              <textarea id="notes-identification" rows="2"></textarea>
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="step" data-step="2" hidden>
+          <fieldset>
+            <legend>GPS i zdjęcia gniazda</legend>
+
+            <div class="gps-panel" id="nest-gps-panel">
+              <button type="button" id="gps-btn" class="primary">Pobierz GPS gniazda</button>
+              <p id="gps-status">GPS: brak</p>
+              <div class="row-2">
+                <label>GPS lat
+                  <input id="lat" type="number" step="0.000001" inputmode="decimal" />
+                </label>
+                <label>GPS lon
+                  <input id="lon" type="number" step="0.000001" inputmode="decimal" />
+                </label>
+              </div>
+              <input id="gps-accuracy" type="hidden" value="" />
+            </div>
+
+            <label class="photo-input">
+              <span>+ Zrób/dodaj zdjęcie gniazda</span>
+              <input id="nest-photos" type="file" accept="image/*" capture="environment" multiple />
+            </label>
+            <div id="nest-photo-preview" class="photo-preview"></div>
+          </fieldset>
+        </section>
+
+        <section class="step" data-step="3" hidden>
+          <fieldset>
+            <legend>Mikrohabitat gniazda</legend>
+
+            <div class="field-block">
+              <p class="field-label">Dominujący typ podłoża pod gniazdem</p>
+              <div class="tile-group" data-target="nest-substrate">
+                <button type="button" class="tile" data-value="sand">Piasek</button>
+                <button type="button" class="tile" data-value="fine-gravel">Drobny żwir</button>
+                <button type="button" class="tile" data-value="coarse-gravel">Gruby żwir</button>
+                <button type="button" class="tile" data-value="stones">Kamienie</button>
+                <button type="button" class="tile" data-value="mixed">Mieszane</button>
+              </div>
+              <input id="nest-substrate" type="hidden" value="sand" />
+            </div>
+
+            <div class="percent-group" data-group="nest">
+              <h3>Pokrycie w kwadracie 1 m²</h3>
+              <p id="nest-sum" class="sum-box">Suma: 0%</p>
+              <div class="percent-rows"></div>
+              <div class="pct-tools">
+                <button type="button" class="pct-tool" data-group="nest" data-action="clear">Wyczyść</button>
+                <button type="button" class="pct-tool" data-group="nest" data-action="fill" data-target="nest-pct-sand">Dopełnij piaskiem</button>
+                <button type="button" class="pct-tool" data-group="nest" data-action="fill" data-target="nest-pct-fine-gravel">Dopełnij drobnym żwirem</button>
+              </div>
+            </div>
+
+            <div class="row-2">
+              <label>Odległość do najbliższej rośliny [cm]
+                <input id="nest-dist-plant" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+              <label>Wysokość najbliższej rośliny [cm]
+                <input id="nest-height-plant" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+              <label>Odległość do najbliższego obiektu/osłony [cm]
+                <input id="nest-dist-object" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+              <label>Wysokość najbliższego obiektu [cm]
+                <input id="nest-height-object" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Nachylenie</p>
+              <div class="tile-group compact" data-target="nest-slope">
+                <button type="button" class="tile" data-value="flat">Płasko</button>
+                <button type="button" class="tile" data-value="slight">Lekki spadek</button>
+                <button type="button" class="tile" data-value="steep">Wyraźny spadek</button>
+              </div>
+              <input id="nest-slope" type="hidden" value="flat" />
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Mikrorzeźba</p>
+              <div class="tile-group" data-target="nest-microrelief">
+                <button type="button" class="tile" data-value="flat">Płaskie</button>
+                <button type="button" class="tile" data-value="depression">Lekkie zagłębienie</button>
+                <button type="button" class="tile" data-value="ridge">Grzbiet/garb</button>
+                <button type="button" class="tile" data-value="between-stones">Między kamieniami</button>
+              </div>
+              <input id="nest-microrelief" type="hidden" value="flat" />
+            </div>
+
+            <label>Notatki mikrohabitat gniazda
+              <textarea id="notes-nest-micro" rows="2"></textarea>
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="step" data-step="4" hidden>
+          <fieldset>
+            <legend>Punkt losowy 10 m</legend>
+
+            <div class="row-2">
+              <label>Azymut punktu losowego [°]
+                <input id="random-azimuth" type="number" min="0" max="359" step="1" inputmode="numeric" />
+              </label>
+              <button type="button" id="random-azimuth-btn">Losuj azymut</button>
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Czy punkt losowy był powtórnie losowany?</p>
+              <div class="tile-group compact" data-target="random-rerolled">
+                <button type="button" class="tile" data-value="no">Nie</button>
+                <button type="button" class="tile" data-value="yes">Tak</button>
+                <button type="button" class="tile" data-value="unknown">Nie wiem</button>
+              </div>
+              <input id="random-rerolled" type="hidden" value="no" />
+            </div>
+
+            <label>Powód ponownego losowania
+              <select id="random-reroll-reason">
+                <option value="none">Nie dotyczy</option>
+                <option value="water">Woda</option>
+                <option value="dense-vegetation">Roślinność zwarta</option>
+                <option value="outside-habitat">Poza dostępnym siedliskiem</option>
+                <option value="other">Inne</option>
+              </select>
+            </label>
+
+            <div class="gps-panel" id="random-gps-panel">
+              <button type="button" id="random-gps-btn" class="primary">Pobierz GPS punktu losowego</button>
+              <p id="random-gps-status">GPS punktu losowego: brak</p>
+              <div class="row-2">
+                <label>GPS punktu lat
+                  <input id="random-lat" type="number" step="0.000001" inputmode="decimal" />
+                </label>
+                <label>GPS punktu lon
+                  <input id="random-lon" type="number" step="0.000001" inputmode="decimal" />
+                </label>
+              </div>
+              <input id="random-gps-accuracy" type="hidden" value="" />
+            </div>
+
+            <label class="photo-input">
+              <span>+ Zrób/dodaj zdjęcie punktu losowego</span>
+              <input id="random-photos" type="file" accept="image/*" capture="environment" multiple />
+            </label>
+            <div id="random-photo-preview" class="photo-preview"></div>
+          </fieldset>
+        </section>
+
+        <section class="step" data-step="5" hidden>
+          <fieldset>
+            <legend>Mikrohabitat punktu losowego</legend>
+
+            <div class="field-block">
+              <p class="field-label">Dominujący typ podłoża</p>
+              <div class="tile-group" data-target="random-substrate">
+                <button type="button" class="tile" data-value="sand">Piasek</button>
+                <button type="button" class="tile" data-value="fine-gravel">Drobny żwir</button>
+                <button type="button" class="tile" data-value="coarse-gravel">Gruby żwir</button>
+                <button type="button" class="tile" data-value="stones">Kamienie</button>
+                <button type="button" class="tile" data-value="mixed">Mieszane</button>
+              </div>
+              <input id="random-substrate" type="hidden" value="sand" />
+            </div>
+
+            <div class="percent-group" data-group="random">
+              <h3>Pokrycie w kwadracie 1 m²</h3>
+              <p id="random-sum" class="sum-box">Suma: 0%</p>
+              <div class="percent-rows"></div>
+              <div class="pct-tools">
+                <button type="button" class="pct-tool" data-group="random" data-action="clear">Wyczyść</button>
+                <button type="button" class="pct-tool" data-group="random" data-action="fill" data-target="random-pct-sand">Dopełnij piaskiem</button>
+                <button type="button" class="pct-tool" data-group="random" data-action="fill" data-target="random-pct-fine-gravel">Dopełnij drobnym żwirem</button>
+              </div>
+            </div>
+
+            <div class="row-2">
+              <label>Odległość do najbliższej rośliny [cm]
+                <input id="random-dist-plant" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+              <label>Wysokość najbliższej rośliny [cm]
+                <input id="random-height-plant" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+              <label>Odległość do najbliższego obiektu/osłony [cm]
+                <input id="random-dist-object" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+              <label>Wysokość najbliższego obiektu [cm]
+                <input id="random-height-object" type="number" min="0" step="1" inputmode="decimal" />
+              </label>
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Nachylenie</p>
+              <div class="tile-group compact" data-target="random-slope">
+                <button type="button" class="tile" data-value="flat">Płasko</button>
+                <button type="button" class="tile" data-value="slight">Lekki spadek</button>
+                <button type="button" class="tile" data-value="steep">Wyraźny spadek</button>
+              </div>
+              <input id="random-slope" type="hidden" value="flat" />
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Mikrorzeźba</p>
+              <div class="tile-group" data-target="random-microrelief">
+                <button type="button" class="tile" data-value="flat">Płaskie</button>
+                <button type="button" class="tile" data-value="depression">Lekkie zagłębienie</button>
+                <button type="button" class="tile" data-value="ridge">Grzbiet/garb</button>
+                <button type="button" class="tile" data-value="between-stones">Między kamieniami</button>
+              </div>
+              <input id="random-microrelief" type="hidden" value="flat" />
+            </div>
+
+            <label>Notatki mikrohabitat punktu losowego
+              <textarea id="notes-random-micro" rows="2"></textarea>
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="step" data-step="6" hidden>
+          <fieldset>
+            <legend>Mezohabitat i kontekst przestrzenny</legend>
+
+            <div class="percent-group" data-group="meso">
+              <h3>Bufor 15 m — udział klas pokrycia</h3>
+              <p id="meso-sum" class="sum-box">Suma: 0%</p>
+              <div class="percent-rows"></div>
+              <div class="pct-tools">
+                <button type="button" class="pct-tool" data-group="meso" data-action="clear">Wyczyść</button>
+                <button type="button" class="pct-tool" data-group="meso" data-action="fill" data-target="pct-sand">Dopełnij piaskiem</button>
+                <button type="button" class="pct-tool" data-group="meso" data-action="fill" data-target="pct-other">Dopełnij jako inne</button>
+              </div>
+            </div>
+
+            <label>Sposób oceny buforu 15 m
+              <select id="meso-assessment-method">
+                <option value="unknown">Nieokreślone</option>
+                <option value="field">Teren / klasy szacunkowe</option>
+                <option value="gis">Ortofotomapa / GIS</option>
+              </select>
+            </label>
+
+            <div class="row-2">
+              <label>Odległość do najbliższej linii wody [m]
+                <input id="dist-water" type="number" min="0" step="0.1" inputmode="decimal" />
+              </label>
+              <label>Odległość do krawędzi zwartej roślinności [m]
+                <input id="dist-veg-edge" type="number" min="0" step="0.1" inputmode="decimal" />
+              </label>
+              <label>Odległość do najbliższego wyższego obiektu [m]
+                <input id="dist-vertical-structure" type="number" min="0" step="0.1" inputmode="decimal" />
+              </label>
+              <label>Najbliższe gniazdo s. obrożnej [m]
+                <input id="dist-nearest-hiaticula" type="number" min="0" step="0.1" inputmode="decimal" />
+              </label>
+              <label>Najbliższe gniazdo s. rzecznej [m]
+                <input id="dist-nearest-dubius" type="number" min="0" step="0.1" inputmode="decimal" />
+              </label>
+              <label>Duże obiekty w 15 m?
+                <select id="meso-big-objects">
+                  <option value="unknown">Nieokreślone</option>
+                  <option value="none">Brak</option>
+                  <option value="present">Obecne</option>
+                </select>
+              </label>
+            </div>
+
+            <details>
+              <summary>Dodatkowe pomiary, jeśli potrzebne</summary>
+              <div class="row-2">
+                <label>Odległość do płatu drobnego żwiru [m]
+                  <input id="dist-fine-gravel-patch" type="number" min="0" step="0.1" inputmode="decimal" />
+                </label>
+                <label>Odległość do płatu grubszego żwiru [m]
+                  <input id="dist-coarse-gravel-patch" type="number" min="0" step="0.1" inputmode="decimal" />
+                </label>
+              </div>
+            </details>
+
+            <label>Uwagi przestrzenne
+              <textarea id="meso-spatial-notes" rows="2" placeholder="np. skraj łachy, środek żwirowiska, przy starorzeczu, przy ścieżce"></textarea>
+            </label>
+
+            <label>Notatki mezohabitat
+              <textarea id="notes-meso" rows="2"></textarea>
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="step" data-step="7" hidden>
+          <fieldset>
+            <legend>Kontrola jakości i uwagi</legend>
+
+            <div class="field-block">
+              <p class="field-label">Reakcja ptaków podczas podejścia</p>
+              <div class="tile-group compact" data-target="qc-bird-reaction">
+                <button type="button" class="tile" data-value="weak">Słaba</button>
+                <button type="button" class="tile" data-value="moderate">Umiarkowana</button>
+                <button type="button" class="tile" data-value="strong">Silna</button>
+              </div>
+              <input id="qc-bird-reaction" type="hidden" value="weak" />
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Czas przy gnieździe</p>
+              <div class="tile-group compact" data-target="qc-time-at-nest">
+                <button type="button" class="tile" data-value="lt1">&lt; 1 min</button>
+                <button type="button" class="tile" data-value="1to3">1–3 min</button>
+                <button type="button" class="tile" data-value="gt3">&gt; 3 min</button>
+              </div>
+              <input id="qc-time-at-nest" type="hidden" value="lt1" />
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Czy przerwano pomiar z powodu niepokoju ptaków?</p>
+              <div class="tile-group compact" data-target="qc-aborted">
+                <button type="button" class="tile" data-value="no">Nie</button>
+                <button type="button" class="tile" data-value="yes">Tak</button>
+              </div>
+              <input id="qc-aborted" type="hidden" value="no" />
+            </div>
+
+            <div class="field-block">
+              <p class="field-label">Czy widoczne były ślady drapieżnika / człowieka?</p>
+              <div class="tile-group compact" data-target="qc-tracks">
+                <button type="button" class="tile" data-value="no">Nie</button>
+                <button type="button" class="tile" data-value="yes">Tak</button>
+              </div>
+              <input id="qc-tracks" type="hidden" value="no" />
+            </div>
+
+            <label>Opis śladów / uwagi jakości
+              <textarea id="qc-tracks-notes" rows="2"></textarea>
+            </label>
+
+            <label>Uwagi dodatkowe
+              <textarea id="notes" rows="3"></textarea>
+            </label>
+          </fieldset>
+        </section>
+
+        <section class="step" data-step="8" hidden>
+          <fieldset>
+            <legend>Podsumowanie i zapis</legend>
+            <div id="validation-list" class="validation-list"></div>
+            <div id="record-preview" class="record-preview"></div>
+          </fieldset>
+        </section>
+
+        <div class="sticky-actions">
+          <button type="button" id="step-back">Wstecz</button>
+          <button type="button" id="save-draft">Zapisz szkic</button>
+          <button type="button" id="step-next" class="primary">Dalej</button>
+          <button type="button" id="save-final" class="primary" hidden>Zapisz rekord</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

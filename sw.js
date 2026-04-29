@@ -1,10 +1,9 @@
-const CACHE_NAME = "sieweczka-pwa-v3";
+const CACHE_NAME = "sieweczka-clean-v1";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
-  "./sieweczka-hotfix.js",
   "./manifest.webmanifest",
   "./icons/icon.svg"
 ];
@@ -23,23 +22,18 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-
   const isNavigation = event.request.mode === "navigate";
-
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse;
-
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
       return fetch(event.request)
-        .then((networkResponse) => {
-          const cloned = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
-          return networkResponse;
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
         })
         .catch(() => {
-          if (isNavigation) {
-            return caches.match("./index.html");
-          }
+          if (isNavigation) return caches.match("./index.html");
           return new Response("Offline", { status: 503, statusText: "Offline" });
         });
     })
