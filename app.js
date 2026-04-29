@@ -1,4 +1,5 @@
 const STORAGE_KEY = "sieweczka-field-data-v2";
+const DRAFT_KEY = "sieweczka-field-draft-v1";
 const PHOTO_DB = "sieweczka-photo-db";
 const PHOTO_STORE = "photos";
 const photoUrlCache = new Map();
@@ -518,111 +519,38 @@ function renderEntries(searchTerm = "") {
   }
 }
 
-form?.addEventListener("submit", async (event) => {
-  event.preventDefault();
+form?.addEventListener("submit", (event) => event.preventDefault());
 
+
+function getVal(id){ return document.querySelector(id)?.value ?? ""; }
+async function buildRecord(){
   const entries = getEntries();
   const existingRecord = editingUid ? entries.find((r) => String(r.uid) === String(editingUid)) : null;
-
-  let newNestPhotos = [];
-  let newRandomPhotos = [];
-  try {
-    newNestPhotos = await filesToPhotoRefs(document.querySelector("#nest-photos").files, 4);
-    newRandomPhotos = await filesToPhotoRefs(document.querySelector("#random-photos").files, 4);
-  } catch {
-    return;
-  }
-
-  const record = {
-    nestId: document.querySelector("#nest-id").value.trim(),
-    species: document.querySelector("#species").value,
-    obsDate: document.querySelector("#obs-date").value,
-    obsTime: document.querySelector("#obs-time").value,
-    sector: document.querySelector("#sector").value.trim(),
-    lat: numberInput("#lat"),
-    lon: numberInput("#lon"),
-    eggCount: numberInput("#egg-count"),
-    nestStatus: document.querySelector("#nest-status").value,
-    possibleRenest: document.querySelector("#possible-renest").value,
-    nestMicro: {
-      photos: newNestPhotos.length ? newNestPhotos : (existingRecord?.nestMicro?.photos || []),
-      substrate: document.querySelector("#nest-substrate").value,
-      coverage: readCoverage("nest"),
-      distPlantM: numberInput("#nest-dist-plant"),
-      heightPlantCm: numberInput("#nest-height-plant"),
-      distObjectM: numberInput("#nest-dist-object"),
-      heightObjectCm: numberInput("#nest-height-object"),
-      slope: document.querySelector("#nest-slope").value,
-    },
-    randomMicro: {
-      azimuthDeg: numberInput("#random-azimuth"),
-      lat: optionalNumberInput("#random-lat"),
-      lon: optionalNumberInput("#random-lon"),
-      photos: newRandomPhotos.length ? newRandomPhotos : (existingRecord?.randomMicro?.photos || []),
-      substrate: document.querySelector("#random-substrate").value,
-      coverage: readCoverage("random"),
-      distPlantM: numberInput("#random-dist-plant"),
-      heightPlantCm: numberInput("#random-height-plant"),
-      distObjectM: numberInput("#random-dist-object"),
-      heightObjectCm: numberInput("#random-height-object"),
-      slope: document.querySelector("#random-slope").value,
-    },
-    meso: {
-      pctSand: numberInput("#pct-sand"),
-      pctGravel: numberInput("#pct-gravel"),
-      pctVegetation: numberInput("#pct-vegetation"),
-      pctWater: numberInput("#pct-water"),
-      bigObjects: document.querySelector("#meso-big-objects").value,
-      distWaterM: numberInput("#dist-water"),
-      distVegEdgeM: numberInput("#dist-veg-edge"),
-      distVerticalStructureM: numberInput("#dist-vertical-structure"),
-      distFineGravelPatchM: numberInput("#dist-fine-gravel-patch"),
-      distCoarseGravelPatchM: numberInput("#dist-coarse-gravel-patch"),
-      distNearestHiaticulaM: numberInput("#dist-nearest-hiaticula"),
-      distNearestDubiusM: numberInput("#dist-nearest-dubius"),
-    },
-    moduleNotes: {
-      identification: document.querySelector("#notes-identification").value.trim(),
-      nestMicro: document.querySelector("#notes-nest-micro").value.trim(),
-      randomMicro: document.querySelector("#notes-random-micro").value.trim(),
-      meso: document.querySelector("#notes-meso").value.trim(),
-    },
-    qualityControl: {
-      birdReaction: document.querySelector("#qc-bird-reaction").value,
-      timeAtNest: document.querySelector("#qc-time-at-nest").value,
-      aborted: document.querySelector("#qc-aborted").value,
-      tracksVisible: document.querySelector("#qc-tracks").value,
-      tracksNotes: document.querySelector("#qc-tracks-notes").value.trim(),
-    },
-    notes: document.querySelector("#notes").value.trim(),
-    uid: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    createdAt: new Date().toISOString(),
+  const newNestPhotos = await filesToPhotoRefs(document.querySelector("#nest-photos")?.files || [], 4);
+  const newRandomPhotos = await filesToPhotoRefs(document.querySelector("#random-photos")?.files || [], 4);
+  return {
+    protocolVersion: "field-sheet-v4",
+    nestId: getVal("#nest-id").trim(), season: getVal("#season").trim(), observer: getVal("#observer").trim(),
+    species: getVal("#species") || "unknown", obsDate: getVal("#obs-date"), obsTime: getVal("#obs-time"), sector: getVal("#sector").trim(),
+    lat: optionalNumberInput("#lat"), lon: optionalNumberInput("#lon"), eggCount: (getVal("#egg-count")==='5'?5:Number(getVal("#egg-count"))),
+    nestStatus: getVal("#nest-status"), possibleRenest: getVal("#possible-renest"), docPhotoDone: "unknown", nestOneMPhotoDone:"unknown", randomPointDone:"unknown",
+    nestMicro:{photos:newNestPhotos.length?newNestPhotos:(existingRecord?.nestMicro?.photos||[]),substrate:getVal("#nest-substrate"),coverage:readCoverage("nest"),distPlantCm:optionalNumberInput("#nest-dist-plant"),heightPlantCm:optionalNumberInput("#nest-height-plant"),distObjectCm:optionalNumberInput("#nest-dist-object"),heightObjectCm:optionalNumberInput("#nest-height-object"),slope:getVal("#nest-slope"),microrelief:getVal("#nest-microrelief")||"unknown"},
+    randomMicro:{azimuthDeg:optionalNumberInput("#random-azimuth"),wasRerolled:getVal("#random-rerolled")||"unknown",rerollReason:getVal("#random-reroll-reason")||"",lat:optionalNumberInput("#random-lat"),lon:optionalNumberInput("#random-lon"),photos:newRandomPhotos.length?newRandomPhotos:(existingRecord?.randomMicro?.photos||[]),substrate:getVal("#random-substrate"),coverage:readCoverage("random"),distPlantCm:optionalNumberInput("#random-dist-plant"),heightPlantCm:optionalNumberInput("#random-height-plant"),distObjectCm:optionalNumberInput("#random-dist-object"),heightObjectCm:optionalNumberInput("#random-height-object"),slope:getVal("#random-slope"),microrelief:getVal("#random-microrelief")||"unknown"},
+    meso:{pctSand:optionalNumberInput("#pct-sand")||0,pctGravel:optionalNumberInput("#pct-gravel")||0,pctVegetation:optionalNumberInput("#pct-vegetation")||0,pctWater:optionalNumberInput("#pct-water")||0,pctOther:optionalNumberInput("#pct-other")||0,assessmentMethod:getVal("#meso-assessment-method")||"",bigObjects:getVal("#meso-big-objects"),distWaterM:optionalNumberInput("#dist-water"),distVegEdgeM:optionalNumberInput("#dist-veg-edge"),distVerticalStructureM:optionalNumberInput("#dist-vertical-structure"),distFineGravelPatchM:optionalNumberInput("#dist-fine-gravel-patch"),distCoarseGravelPatchM:optionalNumberInput("#dist-coarse-gravel-patch"),distNearestHiaticulaM:optionalNumberInput("#dist-nearest-hiaticula"),distNearestDubiusM:optionalNumberInput("#dist-nearest-dubius"),spatialNotes:getVal("#notes-meso").trim()},
+    qualityControl:{birdReaction:getVal("#qc-bird-reaction"),timeAtNest:getVal("#qc-time-at-nest"),aborted:getVal("#qc-aborted"),tracksVisible:getVal("#qc-tracks"),tracksNotes:getVal("#qc-tracks-notes").trim()},
+    moduleNotes:{identification:getVal("#notes-identification").trim(),nestMicro:getVal("#notes-nest-micro").trim(),randomMicro:getVal("#notes-random-micro").trim(),meso:getVal("#notes-meso").trim()},
+    notes:getVal("#notes").trim(), uid: editingUid || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`), createdAt: new Date().toISOString()
   };
-
-  if (!record.nestId || !record.sector || Number.isNaN(record.lat) || Number.isNaN(record.lon)) {
-    alert("Uzupełnij pola identyfikacji i GPS.");
-    return;
-  }
-  if (!validatePercentages(record)) return;
-
-  if (editingUid) {
-    const idx = entries.findIndex((r) => String(r.uid) === String(editingUid));
-    if (idx >= 0) {
-      record.uid = editingUid;
-      entries[idx] = record;
-    } else {
-      entries.unshift(record);
-    }
-  } else {
-    entries.unshift(record);
-  }
-  if (!setEntries(entries)) return;
-
-  clearEditMode();
-  renderEntries(recordSearchInput?.value || "");
-  updateCounts();
-});
-
+}
+function validateRecord(record){const e=[]; const req=[[1,'nestId','ID gniazda'],[1,'obsDate','data'],[1,'obsTime','godzina'],[1,'observer','obserwator'],[1,'species','gatunek'],[1,'sector','sektor'],[2,'lat','GPS gniazda'],[2,'lon','GPS gniazda'],[1,'eggCount','liczba jaj'],[1,'nestStatus','status gniazda'],[1,'possibleRenest','renest'],[4,'randomMicro.azimuthDeg','azymut'],[6,'qualityControl.birdReaction','kontrola jakości']];
+for(const [step,key,msg] of req){ const v=key.split('.').reduce((a,k)=>a?.[k],record); if(v===''||v==null||Number.isNaN(v)) e.push({step,fieldId:key,message:`Brakuje: ${msg}`}); }
+if(sumCoverage(record.nestMicro.coverage)!==100)e.push({step:3,fieldId:'nest-pct-sand',message:'Mikrohabitat gniazda musi dawać 100%'});
+if(sumCoverage(record.randomMicro.coverage)!==100)e.push({step:5,fieldId:'random-pct-sand',message:'Mikrohabitat punktu losowego musi dawać 100%'});
+if((record.meso.pctSand+record.meso.pctGravel+record.meso.pctVegetation+record.meso.pctWater+record.meso.pctOther)!==100)e.push({step:6,fieldId:'pct-sand',message:'Mezohabitat musi dawać 100%'});
+return e;}
+function renderValidationList(errors=[]){const div=document.querySelector('#validation-list'); if(!div) return; if(!errors.length){div.innerHTML='<p>Brak krytycznych braków. Możesz zapisać rekord.</p>';return;} div.innerHTML=errors.map((x,i)=>`<div class="val-item">${i+1}. ${x.message} <button type="button" data-step="${x.step}">Przejdź</button></div>`).join(''); div.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>showStep(Number(b.dataset.step))));}
+async function saveFinalRecord(){try{ const record=await buildRecord(); const errors=validateRecord(record); renderValidationList(errors); if(errors.length){showStep(8); return;} const entries=getEntries(); const idx=entries.findIndex((r)=>String(r.uid)===String(record.uid)); if(idx>=0) entries[idx]=record; else entries.unshift(record); if(!setEntries(entries)){alert('Nie udało się zapisać rekordu.'); return;} localStorage.removeItem(DRAFT_KEY); clearEditMode(); form?.reset(); setDefaultDateTime(); showStep(1); alert('Rekord zapisany'); renderEntries(recordSearchInput?.value||''); updateCounts(); document.querySelector('#form-screen').hidden=true; document.querySelector('#records-screen').hidden=false; document.querySelector('#home-screen').hidden=true;}catch(err){alert(`Zapis nie powiódł się: ${err?.message||'błąd'}`);}}
+function saveDraft(){buildRecord().then((r)=>{localStorage.setItem(DRAFT_KEY,JSON.stringify(r)); alert('Szkic zapisany');}).catch(()=>alert('Nie udało się zapisać szkicu.'));}
 gpsBtn?.addEventListener("click", () => {
   if (!navigator.geolocation) {
     gpsStatus.textContent = "GPS: niedostępny";
@@ -980,7 +908,6 @@ function setupFieldMode(){const key='sieweczka-field-mode';const btn=document.qu
 function gpsQuality(acc){if(acc<=5)return 'dobry';if(acc<=10)return 'średni';return 'słaby';}
 const oldGps=gpsBtn?.onclick;
 function updateCounts(){const e=getEntries();document.querySelector('#entry-count').textContent=e.length;const d=new Date().toISOString().slice(0,10);document.querySelector('#today-count').textContent=e.filter(x=>x.obsDate===d).length;document.querySelector('#offline-status').textContent='Status: '+(navigator.onLine?'online':'offline'); const fm=localStorage.getItem('sieweczka-field-mode')==='1'?'włączony':'wyłączony'; const fms=document.querySelector('#field-mode-status'); if(fms) fms.textContent='Tryb terenowy: '+fm;}
-function renderValidationList(){const errs=[];if(!document.querySelector('#lat')?.value||!document.querySelector('#lon')?.value)errs.push([2,'Brakuje GPS gniazda']);if(!document.querySelector('#sector')?.value)errs.push([1,'Brakuje sektora']);const div=document.querySelector('#validation-list');if(!div)return;div.innerHTML=errs.map(([s,m])=>`<div class='val-item'>${m} <button type='button' data-go='${s}'>Przejdź do pola</button></div>`).join('')||'<p>Brak krytycznych braków. Możesz zapisać rekord.</p>';div.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>showStep(Number(b.dataset.go))));}
 function setupPhotoPreview(inputId,wrapId,label){const i=document.querySelector('#'+inputId);const w=document.querySelector('#'+wrapId);i?.addEventListener('change',()=>{w.innerHTML='';[...i.files].forEach(f=>{const d=document.createElement('div');d.className='photo-tile';d.innerHTML=`<img alt='${label}'><small>${label}</small>`;d.querySelector('img').src=URL.createObjectURL(f);w.appendChild(d);});});}
 const PERCENT_GROUPS = {
   nest: ["nest-pct-sand","nest-pct-fine-gravel","nest-pct-coarse","nest-pct-shells","nest-pct-live-veg","nest-pct-dry-veg","nest-pct-organic","nest-pct-anthro"],
@@ -1028,3 +955,6 @@ function setupAppViews(){
   show('home');
 }
 setupStepper();setupTiles();setupFieldMode();setupPhotoPreview('nest-photos','nest-photo-preview','gniazdo');setupPhotoPreview('random-photos','random-photo-preview','punkt losowy');setupPercentSummaries();bindPctTools();setupAppViews();updateCounts();showStep(1);
+
+document.querySelector("#save-final")?.addEventListener("click", saveFinalRecord);
+document.querySelector("#save-draft")?.addEventListener("click", saveDraft);
