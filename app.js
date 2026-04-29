@@ -646,6 +646,7 @@ form?.addEventListener("submit", async (event) => {
 
   clearEditMode();
   renderEntries(recordSearchInput?.value || "");
+  updateCounts();
 });
 
 gpsBtn?.addEventListener("click", () => {
@@ -972,6 +973,11 @@ function setupFieldHelp() {
     const msg = fieldHelpMap[`#${el.id}`];
     if (!msg) return;
     bubble.textContent = msg;
+    const r = el.getBoundingClientRect();
+    bubble.style.position = "fixed";
+    bubble.style.left = "12px";
+    bubble.style.right = "12px";
+    bubble.style.top = `${Math.min(window.innerHeight - 140, r.bottom + 8)}px`;
     bubble.hidden = false;
   };
 
