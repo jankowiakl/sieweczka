@@ -328,3 +328,18 @@ details {
   border-radius: 0.6rem;
   margin-bottom: 0.6rem;
 }
+
+
+.sheet-photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sheet-photo-grid img {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}

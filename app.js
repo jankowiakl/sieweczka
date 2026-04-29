@@ -593,6 +593,12 @@ function renderSheetEditor() {
         </select>
       </td>
       <td><textarea data-col="notes">${entry.notes || ""}</textarea></td>
+      <td>
+        <div class="sheet-photo-grid">
+          ${(entry.nestMicro?.photos || []).map((src) => `<img src="${src}" alt="nest photo"/>`).join("")}
+          ${(entry.randomMicro?.photos || []).map((src) => `<img src="${src}" alt="random photo"/>`).join("")}
+        </div>
+      </td>
       <td><button type="button" class="sheet-delete danger" data-uid="${entry.uid}">Usuń</button></td>
     `;
     sheetTableBody.appendChild(tr);

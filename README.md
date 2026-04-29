@@ -54,3 +54,17 @@ W menu dostępne są:
 - **Eksport Excel (pełne kolumny + linki zdjęć)** – plik `.xls` ze wszystkimi kolumnami danych i nazwami plików zdjęć,
 - **Pobierz zdjęcia + arkusz linków** – pobiera CSV mapujący rekord→plik oraz same pliki zdjęć,
 - **Eksport pakietu (CSV+zdjęcia JSON)** – dodatkowy plik JSON z przypisaniem zdjęć (data URL) do każdego rekordu (`uid`, `nestId`).
+
+
+## Jak inne aplikacje rozwiązują eksport danych + zdjęć
+
+Najczęstszy i najprostszy wzorzec (np. AppSheet/Ona/Kobo):
+1. **CSV/Excel z metadanymi** (w tym `photo_file_name`),
+2. **osobny folder/archiwum zdjęć** z dokładnie tymi samymi nazwami plików,
+3. opcjonalnie trzeci plik mapujący `record_id -> photo_file_name`.
+
+W tej aplikacji najbliższy temu workflow to:
+- **Eksport Excel (pełne kolumny + linki zdjęć)**,
+- **Pobierz zdjęcia + arkusz linków**.
+
+To podejście jest najbardziej kompatybilne z analizą w R/Excel/QGIS i łatwe do przekazania między osobami.
