@@ -25,6 +25,7 @@ const syncPullBtn = document.querySelector("#sync-pull");
 const syncPushBtn = document.querySelector("#sync-push");
 const syncStatus = document.querySelector("#sync-status");
 const openSheetBtn = document.querySelector("#open-sheet");
+const openSheetInlineBtn = document.querySelector("#open-sheet-inline");
 const sheetPanel = document.querySelector("#sheet-panel");
 const sheetTableBody = document.querySelector("#sheet-table tbody");
 const sheetSaveBtn = document.querySelector("#sheet-save");
@@ -286,15 +287,6 @@ function renderEntries() {
       photoWrap.textContent = "Brak zdjęć.";
     }
 
-
-    const deleteBtn = item.querySelector(".delete-entry");
-    deleteBtn.addEventListener("click", () => {
-      if (!confirm(`Usunąć rekord ${entry.nestId}?`)) return;
-      const current = getEntries().filter((r) => r.uid !== entry.uid);
-      setEntries(current);
-      renderEntries();
-    });
-
     entriesList.appendChild(item);
   }
 }
@@ -400,14 +392,30 @@ gpsBtn.addEventListener("click", () => {
 
 
 function setupSheetEditor() {
-  openSheetBtn.addEventListener("click", () => {
+  const openSheet = () => {
     renderSheetEditor();
     sheetPanel.hidden = false;
     closeMenu();
-  });
+  };
+
+  if (openSheetBtn) openSheetBtn.addEventListener("click", openSheet);
+  if (openSheetInlineBtn) openSheetInlineBtn.addEventListener("click", openSheet);
 
   sheetCloseBtn.addEventListener("click", () => {
     sheetPanel.hidden = true;
+  });
+
+  sheetTableBody.addEventListener("click", (event) => {
+    const btn = event.target.closest(".sheet-delete");
+    if (!btn) return;
+    const uid = btn.dataset.uid;
+    const records = getEntries();
+    const target = records.find((r) => String(r.uid) === String(uid));
+    if (!target) return;
+    if (!confirm(`Usunąć rekord ${target.nestId}?`)) return;
+    setEntries(records.filter((r) => String(r.uid) !== String(uid)));
+    renderEntries();
+    renderSheetEditor();
   });
 
   sheetSaveBtn.addEventListener("click", () => {
@@ -468,6 +476,7 @@ function renderSheetEditor() {
         </select>
       </td>
       <td><textarea data-col="notes">${entry.notes || ""}</textarea></td>
+      <td><button type="button" class="sheet-delete danger" data-uid="${entry.uid}">Usuń</button></td>
     `;
     sheetTableBody.appendChild(tr);
   }

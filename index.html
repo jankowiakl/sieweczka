@@ -265,6 +265,7 @@
         <h2>Zapisane rekordy</h2>
         <p><strong id="entry-count">0</strong> gniazd w pamięci telefonu.</p>
         <p class="muted">Opcje eksportu i czyszczenia danych są w menu ☰.</p>
+        <button id="open-sheet-inline" type="button">Przeglądaj rekordy (arkusz)</button>
         <ul id="entries-list"></ul>
       </section>
     </main>
@@ -293,6 +294,7 @@
               <th>egg_count</th>
               <th>nest_status</th>
               <th>notes</th>
+              <th>akcja</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -309,8 +311,7 @@
         </div>
         <div class="muted meta"></div>
         <div class="muted coords"></div>
-        <button type="button" class="delete-entry danger">Usuń rekord</button>
-        <details>
+                <details>
           <summary>Szczegóły protokołu</summary>
           <p class="summary"></p>
           <div class="photos"></div>
