@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v7-xlsx-appjs-direct";
+const CACHE_NAME = "sieweczka-clean-v8-xlsx-dictionary";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -12,80 +12,59 @@ const APP_SHELL = [
 const XLSX_EXPORT_PATCH_JS = String.raw`
 (() => {
   "use strict";
-  if (window.__sieweczkaXlsxExportPatchV7) return;
-  window.__sieweczkaXlsxExportPatchV7 = true;
+  if (window.__sieweczkaXlsxExportPatchV8) return;
+  window.__sieweczkaXlsxExportPatchV8 = true;
 
   const STORAGE_KEYS = ["sieweczka-field-data-v3", "sieweczka-field-data-v2"];
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
-
-  const HEIGHT_FIELDS = [
-    ["nest-height-plant", 1, "cm"],
-    ["nest-height-object", 1, "cm"],
-    ["random-height-plant", 1, "cm"],
-    ["random-height-object", 1, "cm"]
-  ];
-
-  function injectHeightStepperStyles() {
-    if (document.getElementById("height-stepper-styles")) return;
-    const style = document.createElement("style");
-    style.id = "height-stepper-styles";
-    style.textContent = ".height-stepper-row{display:grid;grid-template-columns:minmax(0,1fr) 52px;gap:.45rem;align-items:stretch}.height-stepper-row input{min-width:0}.height-stepper-buttons{display:grid;grid-template-rows:1fr 1fr;gap:.25rem}.height-stepper-buttons button{min-height:23px;height:23px;padding:0;border-radius:9px;font-size:.85rem;line-height:1;font-weight:900}.height-stepper-unit{color:var(--muted);font-size:.86rem;font-weight:650;margin-top:.15rem}.field-mode .height-stepper-buttons button{border:2px solid #000}";
-    document.head.appendChild(style);
-  }
-
-  function stepHeightInput(input, delta) {
-    const raw = input.value;
-    const current = raw === "" || raw == null ? null : Number(raw);
-    const next = current == null || Number.isNaN(current) ? (delta > 0 ? delta : 0) : Math.max(0, current + delta);
-    input.value = String(Math.max(0, Math.round(next)));
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  }
-
-  function enhanceHeightField(id, step, unit) {
-    const input = document.getElementById(id);
-    if (!input || input.dataset.heightStepperEnhanced === "1" || input.closest(".distance-stepper-row") || input.closest(".height-stepper-row")) return;
-    input.dataset.heightStepperEnhanced = "1";
-    input.step = String(step);
-    input.min = "0";
-    const row = document.createElement("div");
-    row.className = "height-stepper-row";
-    const buttons = document.createElement("div");
-    buttons.className = "height-stepper-buttons";
-    buttons.innerHTML = '<button type="button" aria-label="Zwiększ wysokość">▲</button><button type="button" aria-label="Zmniejsz wysokość">▼</button>';
-    buttons.children[0].addEventListener("click", () => stepHeightInput(input, step));
-    buttons.children[1].addEventListener("click", () => stepHeightInput(input, -step));
-    input.parentNode.insertBefore(row, input);
-    row.appendChild(input);
-    row.appendChild(buttons);
-    const note = document.createElement("div");
-    note.className = "height-stepper-unit";
-    note.textContent = "Strzałki zmieniają wysokość co " + step + " " + unit + "; pole może pozostać puste.";
-    row.insertAdjacentElement("afterend", note);
-  }
+  const BASE_COLUMNS = [["uid","uid","Techniczny identyfikator rekordu nadany przez aplikację.","tekst"],["protocol_version","protocolVersion","Wersja protokołu lub formularza, z której pochodzi rekord.","tekst"],["created_at","createdAt","Data i czas pierwszego utworzenia rekordu w aplikacji.","ISO datetime"],["updated_at","updatedAt","Data i czas ostatniej aktualizacji rekordu.","ISO datetime"],["nest_id","nestId","Unikalny terenowy identyfikator gniazda.","tekst"],["season","season","Sezon lub rok badań.","rok/tekst"],["observer","observer","Osoba wykonująca obserwację lub pomiar.","tekst"],["obs_date","obsDate","Data obserwacji terenowej.","RRRR-MM-DD"],["obs_time","obsTime","Godzina obserwacji terenowej.","HH:MM"],["species","species","Oznaczony gatunek sieweczki.","charadrius-hiaticula = sieweczka obrożna; charadrius-dubius = sieweczka rzeczna; unknown = nieokreślony"],["sector","sector","Sektor, część wyspy, łachy lub stanowiska.","tekst"],["lat","lat","Szerokość geograficzna gniazda.","WGS84, stopnie dziesiętne"],["lon","lon","Długość geograficzna gniazda.","WGS84, stopnie dziesiętne"],["gps_accuracy_m","gpsAccuracyM","Deklarowana dokładność pomiaru GPS gniazda.","metry"],["nest_status","nestStatus","Status gniazda w momencie znalezienia.","incubated = inkubacja; fresh = świeże zniesienie; unknown = nieznane"],["egg_count","eggCount","Liczba jaj widoczna w gnieździe.","liczba"],["possible_renest","possibleRenest","Czy gniazdo może być ponownym zniesieniem po stracie wcześniejszego lęgu.","yes/no/unknown"],["doc_photo_done","docPhotoDone","Czy wykonano zdjęcie dokumentacyjne gniazda.","yes/no/unknown"],["nest_one_m_photo_done","nestOneMPhotoDone","Czy wykonano zdjęcie kwadratu 1 m² nad gniazdem.","yes/no/unknown"],["random_point_done","randomPointDone","Czy wyznaczono punkt losowy 10 m od gniazda.","yes/no/unknown"],["nest_substrate","nestMicro.substrate","Dominujący typ podłoża bezpośrednio przy gnieździe.","sand/fine-gravel/coarse-gravel/stones/mixed"],["nest_pct_sand","nestMicro.coverage.pctSand","Udział piasku w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_fine_gravel","nestMicro.coverage.pctFineGravel","Udział drobnego żwiru w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_coarse","nestMicro.coverage.pctCoarse","Udział grubego żwiru lub kamieni w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_shells","nestMicro.coverage.pctShells","Udział muszli lub fragmentów skorup w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_live_veg","nestMicro.coverage.pctLiveVeg","Udział żywej roślinności w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_dry_veg","nestMicro.coverage.pctDryVeg","Udział suchej lub martwej roślinności w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_organic","nestMicro.coverage.pctOrganic","Udział drewna, szczątków organicznych lub detrytusu w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_anthro","nestMicro.coverage.pctAnthro","Udział elementów antropogenicznych w kwadracie 1 m² przy gnieździe.","%"],["nest_dist_plant_cm","nestMicro.distPlantCm","Odległość od środka gniazda do najbliższej rośliny lub kępy.","cm"],["nest_height_plant_cm","nestMicro.heightPlantCm","Wysokość najbliższej rośliny lub kępy przy gnieździe.","cm"],["nest_dist_object_cm","nestMicro.distObjectCm","Odległość od środka gniazda do najbliższego obiektu lub osłony niebędącej rośliną.","cm"],["nest_height_object_cm","nestMicro.heightObjectCm","Wysokość najbliższego obiektu lub osłony przy gnieździe.","cm"],["nest_slope","nestMicro.slope","Nachylenie powierzchni przy gnieździe.","flat/slight/steep"],["nest_microrelief","nestMicro.microrelief","Mikrorzeźba powierzchni przy gnieździe.","flat/depression/ridge/between-stones"],["random_azimuth_deg","randomMicro.azimuthDeg","Azymut użyty do wyznaczenia punktu losowego 10 m od gniazda.","stopnie 0-359"],["random_rerolled","randomMicro.wasRerolled","Czy punkt losowy był ponownie losowany.","yes/no/unknown"],["random_reroll_reason","randomMicro.rerollReason","Powód ponownego losowania punktu losowego.","none/water/dense-vegetation/outside-habitat/other"],["random_lat","randomMicro.lat","Szerokość geograficzna punktu losowego.","WGS84, stopnie dziesiętne"],["random_lon","randomMicro.lon","Długość geograficzna punktu losowego.","WGS84, stopnie dziesiętne"],["random_gps_accuracy_m","randomMicro.gpsAccuracyM","Deklarowana dokładność pomiaru GPS punktu losowego.","metry"],["random_substrate","randomMicro.substrate","Dominujący typ podłoża w punkcie losowym.","sand/fine-gravel/coarse-gravel/stones/mixed"],["random_pct_sand","randomMicro.coverage.pctSand","Udział piasku w kwadracie 1 m² punktu losowego.","%"],["random_pct_fine_gravel","randomMicro.coverage.pctFineGravel","Udział drobnego żwiru w kwadracie 1 m² punktu losowego.","%"],["random_pct_coarse","randomMicro.coverage.pctCoarse","Udział grubego żwiru lub kamieni w kwadracie 1 m² punktu losowego.","%"],["random_pct_shells","randomMicro.coverage.pctShells","Udział muszli lub fragmentów skorup w kwadracie 1 m² punktu losowego.","%"],["random_pct_live_veg","randomMicro.coverage.pctLiveVeg","Udział żywej roślinności w kwadracie 1 m² punktu losowego.","%"],["random_pct_dry_veg","randomMicro.coverage.pctDryVeg","Udział suchej lub martwej roślinności w kwadracie 1 m² punktu losowego.","%"],["random_pct_organic","randomMicro.coverage.pctOrganic","Udział drewna, szczątków organicznych lub detrytusu w kwadracie 1 m² punktu losowego.","%"],["random_pct_anthro","randomMicro.coverage.pctAnthro","Udział elementów antropogenicznych w kwadracie 1 m² punktu losowego.","%"],["random_dist_plant_cm","randomMicro.distPlantCm","Odległość od punktu losowego do najbliższej rośliny lub kępy.","cm"],["random_height_plant_cm","randomMicro.heightPlantCm","Wysokość najbliższej rośliny lub kępy przy punkcie losowym.","cm"],["random_dist_object_cm","randomMicro.distObjectCm","Odległość od punktu losowego do najbliższego obiektu lub osłony niebędącej rośliną.","cm"],["random_height_object_cm","randomMicro.heightObjectCm","Wysokość najbliższego obiektu lub osłony przy punkcie losowym.","cm"],["random_slope","randomMicro.slope","Nachylenie powierzchni w punkcie losowym.","flat/slight/steep"],["random_microrelief","randomMicro.microrelief","Mikrorzeźba powierzchni w punkcie losowym.","flat/depression/ridge/between-stones"],["meso_pct_sand","meso.pctSand","Udział piasku w buforze 15 m wokół gniazda.","%"],["meso_pct_gravel","meso.pctGravel","Udział żwiru lub kamieni w buforze 15 m wokół gniazda.","%"],["meso_pct_vegetation","meso.pctVegetation","Udział roślinności w buforze 15 m wokół gniazda.","%"],["meso_pct_water","meso.pctWater","Udział wody lub podmokłości w buforze 15 m wokół gniazda.","%"],["meso_pct_other","meso.pctOther","Udział innych klas pokrycia w buforze 15 m wokół gniazda.","%"],["meso_assessment_method","meso.assessmentMethod","Sposób oceny buforu 15 m.","field = teren; gis = ortofotomapa/GIS; unknown = nieokreślone"],["meso_big_objects","meso.bigObjects","Obecność dużych obiektów w promieniu 15 m.","none/present/unknown"],["dist_water_m","meso.distWaterM","Odległość od gniazda do najbliższej linii wody.","m"],["dist_veg_edge_m","meso.distVegEdgeM","Odległość od gniazda do krawędzi zwartej roślinności.","m"],["dist_vertical_structure_m","meso.distVerticalStructureM","Odległość od gniazda do najbliższego wyższego obiektu lub struktury pionowej.","m"],["dist_fine_gravel_patch_m","meso.distFineGravelPatchM","Odległość od gniazda do płatu drobnego żwiru.","m"],["dist_coarse_gravel_patch_m","meso.distCoarseGravelPatchM","Odległość od gniazda do płatu grubszego żwiru lub kamieni.","m"],["dist_nearest_hiaticula_m","meso.distNearestHiaticulaM","Odległość do najbliższego znanego gniazda sieweczki obrożnej.","m"],["dist_nearest_dubius_m","meso.distNearestDubiusM","Odległość do najbliższego znanego gniazda sieweczki rzecznej.","m"],["meso_spatial_notes","meso.spatialNotes","Opis położenia i kontekstu przestrzennego gniazda.","tekst"],["qc_bird_reaction","qualityControl.birdReaction","Reakcja ptaków podczas podejścia do gniazda.","weak/moderate/strong"],["qc_time_at_nest","qualityControl.timeAtNest","Czas bezpośredniej obecności przy gnieździe.","lt1/1to3/gt3"],["qc_aborted","qualityControl.aborted","Czy przerwano pomiar z powodu niepokoju ptaków lub ryzyka terenowego.","yes/no"],["qc_tracks_visible","qualityControl.tracksVisible","Czy widoczne były ślady drapieżnika lub człowieka.","yes/no"],["qc_tracks_notes","qualityControl.tracksNotes","Opis śladów, zakłóceń lub uwag jakościowych.","tekst"],["notes_identification","moduleNotes.identification","Notatki dotyczące identyfikacji gniazda lub gatunku.","tekst"],["notes_nest_micro","moduleNotes.nestMicro","Notatki dotyczące mikrohabitatu gniazda.","tekst"],["notes_random_micro","moduleNotes.randomMicro","Notatki dotyczące mikrohabitatu punktu losowego.","tekst"],["notes_meso","moduleNotes.meso","Notatki dotyczące mezohabitatu i buforu 15 m.","tekst"],["notes","notes","Uwagi dodatkowe do całego rekordu.","tekst"]];
 
   function bootHeightSteppers() {
-    injectHeightStepperStyles();
-    HEIGHT_FIELDS.forEach((args) => enhanceHeightField(args[0], args[1], args[2]));
-    setTimeout(() => HEIGHT_FIELDS.forEach((args) => enhanceHeightField(args[0], args[1], args[2])), 250);
+    const fields = [["nest-height-plant",1,"cm"],["nest-height-object",1,"cm"],["random-height-plant",1,"cm"],["random-height-object",1,"cm"]];
+    if (!document.getElementById("height-stepper-styles")) {
+      const style = document.createElement("style");
+      style.id = "height-stepper-styles";
+      style.textContent = ".height-stepper-row{display:grid;grid-template-columns:minmax(0,1fr) 52px;gap:.45rem;align-items:stretch}.height-stepper-row input{min-width:0}.height-stepper-buttons{display:grid;grid-template-rows:1fr 1fr;gap:.25rem}.height-stepper-buttons button{min-height:23px;height:23px;padding:0;border-radius:9px;font-size:.85rem;line-height:1;font-weight:900}.height-stepper-unit{color:var(--muted);font-size:.86rem;font-weight:650;margin-top:.15rem}.field-mode .height-stepper-buttons button{border:2px solid #000}";
+      document.head.appendChild(style);
+    }
+    function stepInput(input, delta) {
+      const raw = input.value;
+      const current = raw === "" || raw == null ? null : Number(raw);
+      const next = current == null || Number.isNaN(current) ? (delta > 0 ? delta : 0) : Math.max(0, current + delta);
+      input.value = String(Math.max(0, Math.round(next)));
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    fields.forEach((args) => {
+      const input = document.getElementById(args[0]);
+      if (!input || input.dataset.heightStepperEnhanced === "1" || input.closest(".distance-stepper-row") || input.closest(".height-stepper-row")) return;
+      input.dataset.heightStepperEnhanced = "1";
+      input.step = String(args[1]);
+      input.min = "0";
+      const row = document.createElement("div");
+      row.className = "height-stepper-row";
+      const buttons = document.createElement("div");
+      buttons.className = "height-stepper-buttons";
+      buttons.innerHTML = '<button type="button" aria-label="Zwiększ wysokość">▲</button><button type="button" aria-label="Zmniejsz wysokość">▼</button>';
+      buttons.children[0].addEventListener("click", () => stepInput(input, args[1]));
+      buttons.children[1].addEventListener("click", () => stepInput(input, -args[1]));
+      input.parentNode.insertBefore(row, input);
+      row.appendChild(input);
+      row.appendChild(buttons);
+      const note = document.createElement("div");
+      note.className = "height-stepper-unit";
+      note.textContent = "Strzałki zmieniają wysokość co " + args[1] + " " + args[2] + "; pole może pozostać puste.";
+      row.insertAdjacentElement("afterend", note);
+    });
   }
 
   function xmlEscape(value) {
-    return String(value == null ? "" : value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
-
   function formulaEscape(value) {
     return String(value == null ? "" : value).replace(/"/g, '""');
   }
-
-  function csvEscape(value) {
-    return '"' + String(value == null ? "" : value).replace(/"/g, '""') + '"';
-  }
-
   function colName(index) {
     let name = "";
     let n = index;
@@ -96,16 +75,10 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
     }
     return name;
   }
-
   function sanitizeFileName(value, fallback) {
-    const clean = String(value || fallback || "plik")
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-zA-Z0-9._-]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 120);
+    const clean = String(value || fallback || "plik").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120);
     return clean || fallback || "plik";
   }
-
   function extensionFromType(type) {
     const t = String(type || "").toLowerCase();
     if (t.includes("jpeg") || t.includes("jpg")) return "jpg";
@@ -115,7 +88,6 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
     if (t.includes("heif")) return "heif";
     return "jpg";
   }
-
   function dataUrlToBlob(dataUrl) {
     const text = String(dataUrl || "");
     const comma = text.indexOf(",");
@@ -130,12 +102,10 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
       bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
     } else {
-      const decoded = decodeURIComponent(data);
-      bytes = new TextEncoder().encode(decoded);
+      bytes = new TextEncoder().encode(decodeURIComponent(data));
     }
     return new Blob([bytes], { type: mime });
   }
-
   function openPhotoDb() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(PHOTO_DB, 1);
@@ -147,47 +117,25 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
       req.onerror = () => reject(req.error);
     });
   }
-
   async function getPhotoBlob(ref) {
     if (!ref) return null;
     const text = String(ref);
     if (text.startsWith("data:")) return dataUrlToBlob(text);
     if (!text.startsWith("idb:")) return null;
-    const id = text.slice(4);
     const db = await openPhotoDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(PHOTO_STORE, "readonly");
-      const req = tx.objectStore(PHOTO_STORE).get(id);
+      const req = tx.objectStore(PHOTO_STORE).get(text.slice(4));
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => reject(req.error);
     });
   }
-
-  function safeArray(value) {
-    return Array.isArray(value) ? value : [];
-  }
-
-  function safeObj(value) {
-    return value && typeof value === "object" ? value : {};
-  }
-
+  function safeArray(value) { return Array.isArray(value) ? value : []; }
+  function safeObj(value) { return value && typeof value === "object" ? value : {}; }
   function normalizeEntry(entry) {
-    const e = safeObj(entry);
-    const nestMicro = safeObj(e.nestMicro);
-    const randomMicro = safeObj(e.randomMicro);
-    const meso = safeObj(e.meso);
-    const qualityControl = safeObj(e.qualityControl);
-    const moduleNotes = safeObj(e.moduleNotes);
-    return {
-      ...e,
-      nestMicro: { ...nestMicro, coverage: safeObj(nestMicro.coverage), photos: safeArray(nestMicro.photos) },
-      randomMicro: { ...randomMicro, coverage: safeObj(randomMicro.coverage), photos: safeArray(randomMicro.photos) },
-      meso,
-      qualityControl,
-      moduleNotes
-    };
+    const e = safeObj(entry), nm = safeObj(e.nestMicro), rm = safeObj(e.randomMicro), meso = safeObj(e.meso), qc = safeObj(e.qualityControl), notes = safeObj(e.moduleNotes);
+    return { ...e, nestMicro: { ...nm, coverage: safeObj(nm.coverage), photos: safeArray(nm.photos) }, randomMicro: { ...rm, coverage: safeObj(rm.coverage), photos: safeArray(rm.photos) }, meso, qualityControl: qc, moduleNotes: notes };
   }
-
   function loadEntries() {
     for (const key of STORAGE_KEYS) {
       try {
@@ -206,199 +154,64 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
       return [];
     }
   }
-
-  function valueAt(path) {
-    return (row) => path.split(".").reduce((acc, part) => (acc == null ? "" : acc[part]), row) ?? "";
+  function getPath(row, path) {
+    return String(path || "").split(".").reduce((acc, part) => (acc == null ? "" : acc[part]), row) ?? "";
   }
-
-  const BASE_COLUMNS = [
-    ["uid", valueAt("uid")],
-    ["protocol_version", valueAt("protocolVersion")],
-    ["created_at", valueAt("createdAt")],
-    ["updated_at", valueAt("updatedAt")],
-    ["nest_id", valueAt("nestId")],
-    ["season", valueAt("season")],
-    ["observer", valueAt("observer")],
-    ["obs_date", valueAt("obsDate")],
-    ["obs_time", valueAt("obsTime")],
-    ["species", valueAt("species")],
-    ["sector", valueAt("sector")],
-    ["lat", valueAt("lat")],
-    ["lon", valueAt("lon")],
-    ["gps_accuracy_m", valueAt("gpsAccuracyM")],
-    ["nest_status", valueAt("nestStatus")],
-    ["egg_count", valueAt("eggCount")],
-    ["possible_renest", valueAt("possibleRenest")],
-    ["doc_photo_done", valueAt("docPhotoDone")],
-    ["nest_one_m_photo_done", valueAt("nestOneMPhotoDone")],
-    ["random_point_done", valueAt("randomPointDone")],
-    ["nest_substrate", valueAt("nestMicro.substrate")],
-    ["nest_pct_sand", valueAt("nestMicro.coverage.pctSand")],
-    ["nest_pct_fine_gravel", valueAt("nestMicro.coverage.pctFineGravel")],
-    ["nest_pct_coarse", valueAt("nestMicro.coverage.pctCoarse")],
-    ["nest_pct_shells", valueAt("nestMicro.coverage.pctShells")],
-    ["nest_pct_live_veg", valueAt("nestMicro.coverage.pctLiveVeg")],
-    ["nest_pct_dry_veg", valueAt("nestMicro.coverage.pctDryVeg")],
-    ["nest_pct_organic", valueAt("nestMicro.coverage.pctOrganic")],
-    ["nest_pct_anthro", valueAt("nestMicro.coverage.pctAnthro")],
-    ["nest_dist_plant_cm", valueAt("nestMicro.distPlantCm")],
-    ["nest_height_plant_cm", valueAt("nestMicro.heightPlantCm")],
-    ["nest_dist_object_cm", valueAt("nestMicro.distObjectCm")],
-    ["nest_height_object_cm", valueAt("nestMicro.heightObjectCm")],
-    ["nest_slope", valueAt("nestMicro.slope")],
-    ["nest_microrelief", valueAt("nestMicro.microrelief")],
-    ["random_azimuth_deg", valueAt("randomMicro.azimuthDeg")],
-    ["random_rerolled", valueAt("randomMicro.wasRerolled")],
-    ["random_reroll_reason", valueAt("randomMicro.rerollReason")],
-    ["random_lat", valueAt("randomMicro.lat")],
-    ["random_lon", valueAt("randomMicro.lon")],
-    ["random_gps_accuracy_m", valueAt("randomMicro.gpsAccuracyM")],
-    ["random_substrate", valueAt("randomMicro.substrate")],
-    ["random_pct_sand", valueAt("randomMicro.coverage.pctSand")],
-    ["random_pct_fine_gravel", valueAt("randomMicro.coverage.pctFineGravel")],
-    ["random_pct_coarse", valueAt("randomMicro.coverage.pctCoarse")],
-    ["random_pct_shells", valueAt("randomMicro.coverage.pctShells")],
-    ["random_pct_live_veg", valueAt("randomMicro.coverage.pctLiveVeg")],
-    ["random_pct_dry_veg", valueAt("randomMicro.coverage.pctDryVeg")],
-    ["random_pct_organic", valueAt("randomMicro.coverage.pctOrganic")],
-    ["random_pct_anthro", valueAt("randomMicro.coverage.pctAnthro")],
-    ["random_dist_plant_cm", valueAt("randomMicro.distPlantCm")],
-    ["random_height_plant_cm", valueAt("randomMicro.heightPlantCm")],
-    ["random_dist_object_cm", valueAt("randomMicro.distObjectCm")],
-    ["random_height_object_cm", valueAt("randomMicro.heightObjectCm")],
-    ["random_slope", valueAt("randomMicro.slope")],
-    ["random_microrelief", valueAt("randomMicro.microrelief")],
-    ["meso_pct_sand", valueAt("meso.pctSand")],
-    ["meso_pct_gravel", valueAt("meso.pctGravel")],
-    ["meso_pct_vegetation", valueAt("meso.pctVegetation")],
-    ["meso_pct_water", valueAt("meso.pctWater")],
-    ["meso_pct_other", valueAt("meso.pctOther")],
-    ["meso_assessment_method", valueAt("meso.assessmentMethod")],
-    ["meso_big_objects", valueAt("meso.bigObjects")],
-    ["dist_water_m", valueAt("meso.distWaterM")],
-    ["dist_veg_edge_m", valueAt("meso.distVegEdgeM")],
-    ["dist_vertical_structure_m", valueAt("meso.distVerticalStructureM")],
-    ["dist_fine_gravel_patch_m", valueAt("meso.distFineGravelPatchM")],
-    ["dist_coarse_gravel_patch_m", valueAt("meso.distCoarseGravelPatchM")],
-    ["dist_nearest_hiaticula_m", valueAt("meso.distNearestHiaticulaM")],
-    ["dist_nearest_dubius_m", valueAt("meso.distNearestDubiusM")],
-    ["meso_spatial_notes", valueAt("meso.spatialNotes")],
-    ["qc_bird_reaction", valueAt("qualityControl.birdReaction")],
-    ["qc_time_at_nest", valueAt("qualityControl.timeAtNest")],
-    ["qc_aborted", valueAt("qualityControl.aborted")],
-    ["qc_tracks_visible", valueAt("qualityControl.tracksVisible")],
-    ["qc_tracks_notes", valueAt("qualityControl.tracksNotes")],
-    ["notes_identification", valueAt("moduleNotes.identification")],
-    ["notes_nest_micro", valueAt("moduleNotes.nestMicro")],
-    ["notes_random_micro", valueAt("moduleNotes.randomMicro")],
-    ["notes_meso", valueAt("moduleNotes.meso")],
-    ["notes", valueAt("notes")]
-  ];
-
   async function collectRowsAndPhotos(entries, outerZip) {
     const exportRows = [];
-    let maxNestPhotos = 0;
-    let maxRandomPhotos = 0;
-
+    let maxNestPhotos = 0, maxRandomPhotos = 0;
     for (let rowIndex = 0; rowIndex < entries.length; rowIndex += 1) {
       const entry = entries[rowIndex];
       const baseName = sanitizeFileName(entry.nestId || entry.uid || "rekord_" + (rowIndex + 1), "rekord_" + (rowIndex + 1));
       const item = { entry, nestPhotoFiles: [], randomPhotoFiles: [] };
-
-      const groups = [
-        ["gniazdo", safeArray(entry.nestMicro.photos), item.nestPhotoFiles],
-        ["punkt_losowy", safeArray(entry.randomMicro.photos), item.randomPhotoFiles]
-      ];
-
+      const groups = [["gniazdo", safeArray(entry.nestMicro.photos), item.nestPhotoFiles], ["punkt_losowy", safeArray(entry.randomMicro.photos), item.randomPhotoFiles]];
       for (const group of groups) {
-        const refs = group[1];
-        const target = group[2];
-        for (let i = 0; i < refs.length; i += 1) {
-          const blob = await getPhotoBlob(refs[i]);
-          if (!blob) {
-            target.push("");
-            continue;
-          }
-          const ext = extensionFromType(blob.type);
-          const fileName = baseName + "__" + group[0] + "_" + (i + 1) + "." + ext;
+        for (let i = 0; i < group[1].length; i += 1) {
+          const blob = await getPhotoBlob(group[1][i]);
+          if (!blob) { group[2].push(""); continue; }
+          const fileName = baseName + "__" + group[0] + "_" + (i + 1) + "." + extensionFromType(blob.type);
           const zipPath = "photos/" + fileName;
           outerZip.file(zipPath, blob);
-          target.push(zipPath);
+          group[2].push(zipPath);
         }
       }
-
       maxNestPhotos = Math.max(maxNestPhotos, item.nestPhotoFiles.length);
       maxRandomPhotos = Math.max(maxRandomPhotos, item.randomPhotoFiles.length);
       exportRows.push(item);
     }
-
     return { exportRows, maxNestPhotos, maxRandomPhotos };
   }
-
   function cellXml(rowIndex, colIndex, value) {
     const ref = colName(colIndex) + rowIndex;
     if (value && typeof value === "object" && value.hyperlink) {
-      const target = formulaEscape(value.hyperlink);
-      const label = formulaEscape(value.label || value.hyperlink);
-      const formula = 'HYPERLINK("' + target + '","' + label + '")';
+      const formula = 'HYPERLINK("' + formulaEscape(value.hyperlink) + '","' + formulaEscape(value.label || value.hyperlink) + '")';
       return '<c r="' + ref + '" t="str"><f>' + xmlEscape(formula) + '</f><v>' + xmlEscape(value.label || value.hyperlink) + '</v></c>';
     }
     return '<c r="' + ref + '" t="inlineStr"><is><t>' + xmlEscape(value) + '</t></is></c>';
   }
-
   function buildSheetXml(headers, bodyRows) {
-    const rows = [];
-    rows.push('<row r="1">' + headers.map((header, idx) => cellXml(1, idx + 1, header)).join("") + '</row>');
-    bodyRows.forEach((row, rowOffset) => {
-      const r = rowOffset + 2;
-      rows.push('<row r="' + r + '">' + row.map((value, idx) => cellXml(r, idx + 1, value)).join("") + '</row>');
+    const rows = ['<row r="1">' + headers.map((h, i) => cellXml(1, i + 1, h)).join("") + '</row>'];
+    bodyRows.forEach((row, offset) => {
+      const r = offset + 2;
+      rows.push('<row r="' + r + '">' + row.map((v, i) => cellXml(r, i + 1, v)).join("") + '</row>');
     });
     const lastCell = colName(headers.length) + Math.max(1, bodyRows.length + 1);
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-      '<dimension ref="A1:' + lastCell + '"/>' +
-      '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
-      '<sheetFormatPr defaultRowHeight="15"/>' +
-      '<sheetData>' + rows.join("") + '</sheetData>' +
-      '<autoFilter ref="A1:' + lastCell + '"/>' +
-      '</worksheet>';
+      '<dimension ref="A1:' + lastCell + '"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+      '<sheetFormatPr defaultRowHeight="15"/><sheetData>' + rows.join("") + '</sheetData><autoFilter ref="A1:' + lastCell + '"/></worksheet>';
   }
-
-  async function buildXlsxBlob(headers, rows) {
+  async function buildXlsxBlob(dataHeaders, dataRows, dictionaryRows) {
     const zip = new JSZip();
-    zip.file("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
-      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-      '<Default Extension="xml" ContentType="application/xml"/>' +
-      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
-      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
-      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
-      '</Types>');
-    zip.folder("_rels").file(".rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
-      '</Relationships>');
-    zip.folder("xl").file("workbook.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-      '<sheets><sheet name="Dane" sheetId="1" r:id="rId1"/></sheets>' +
-      '</workbook>');
-    zip.folder("xl").folder("_rels").file("workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
-      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
-      '</Relationships>');
-    zip.folder("xl").file("styles.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-      '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>' +
-      '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>' +
-      '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
-      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-      '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>' +
-      '</styleSheet>');
-    zip.folder("xl").folder("worksheets").file("sheet1.xml", buildSheetXml(headers, rows));
+    zip.file("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
+    zip.folder("_rels").file(".rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+    zip.folder("xl").file("workbook.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Dane" sheetId="1" r:id="rId1"/><sheet name="Opis zmiennych" sheetId="2" r:id="rId2"/></sheets></workbook>');
+    zip.folder("xl").folder("_rels").file("workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+    zip.folder("xl").file("styles.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>');
+    zip.folder("xl").folder("worksheets").file("sheet1.xml", buildSheetXml(dataHeaders, dataRows));
+    zip.folder("xl").folder("worksheets").file("sheet2.xml", buildSheetXml(["zmienna", "opis", "wartosci_lub_jednostka"], dictionaryRows));
     return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   }
-
   function downloadBlob(filename, blob) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -409,36 +222,30 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }
-
   async function exportZipWithExcel() {
-    if (!window.JSZip) {
-      alert("Nie można utworzyć ZIP/XLSX, bo biblioteka JSZip nie jest załadowana. Otwórz aplikację online i spróbuj ponownie.");
-      return;
-    }
-
+    if (!window.JSZip) { alert("Nie można utworzyć ZIP/XLSX, bo biblioteka JSZip nie jest załadowana. Otwórz aplikację online i spróbuj ponownie."); return; }
     const entries = loadEntries();
-    if (!entries.length) {
-      alert("Brak zapisanych rekordów do eksportu.");
-      return;
-    }
-
+    if (!entries.length) { alert("Brak zapisanych rekordów do eksportu."); return; }
     const button = document.getElementById("export-zip");
     const originalText = button ? button.textContent : "";
-    if (button) {
-      button.disabled = true;
-      button.textContent = "Tworzę XLSX + zdjęcia...";
-    }
-
+    if (button) { button.disabled = true; button.textContent = "Tworzę Excel + zdjęcia..."; }
     try {
       const outerZip = new JSZip();
       const collected = await collectRowsAndPhotos(entries, outerZip);
       const headers = BASE_COLUMNS.map((col) => col[0]);
-
-      for (let i = 1; i <= collected.maxNestPhotos; i += 1) headers.push("nest_photo_" + i);
-      for (let i = 1; i <= collected.maxRandomPhotos; i += 1) headers.push("random_photo_" + i);
-
+      const dictionaryRows = BASE_COLUMNS.map((col) => [col[0], col[2] || "", col[3] || ""]);
+      for (let i = 1; i <= collected.maxNestPhotos; i += 1) {
+        const name = "nest_photo_" + i;
+        headers.push(name);
+        dictionaryRows.push([name, "Hiperłącze do zdjęcia gniazda numer " + i + " zapisanego w folderze photos w tej samej paczce ZIP.", "ścieżka względna do pliku zdjęcia"]);
+      }
+      for (let i = 1; i <= collected.maxRandomPhotos; i += 1) {
+        const name = "random_photo_" + i;
+        headers.push(name);
+        dictionaryRows.push([name, "Hiperłącze do zdjęcia punktu losowego numer " + i + " zapisanego w folderze photos w tej samej paczce ZIP.", "ścieżka względna do pliku zdjęcia"]);
+      }
       const sheetRows = collected.exportRows.map((item) => {
-        const row = BASE_COLUMNS.map((col) => col[1](item.entry));
+        const row = BASE_COLUMNS.map((col) => getPath(item.entry, col[1]));
         for (let i = 0; i < collected.maxNestPhotos; i += 1) {
           const path = item.nestPhotoFiles[i] || "";
           row.push(path ? { hyperlink: path, label: path.split("/").pop() } : "");
@@ -449,48 +256,44 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
         }
         return row;
       });
-
-      const xlsxBlob = await buildXlsxBlob(headers, sheetRows);
-      const csv = [headers.map(csvEscape).join(",")].concat(
-        sheetRows.map((row) => row.map((value) => csvEscape(value && typeof value === "object" ? value.hyperlink : value)).join(","))
-      ).join("\n");
+      const xlsxBlob = await buildXlsxBlob(headers, sheetRows, dictionaryRows);
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
       outerZip.file("records.xlsx", xlsxBlob);
-      outerZip.file("records.csv", csv);
-      outerZip.file("records.json", JSON.stringify(entries, null, 2));
-      outerZip.file("README.txt", "Eksport Sieweczka Field App.\n\nNajważniejszy plik: records.xlsx. Kolumny nest_photo_1, nest_photo_2 itd. oraz random_photo_1, random_photo_2 itd. zawierają hiperłącza do plików w folderze photos.\n\nPo rozpakowaniu ZIP zostaw records.xlsx i folder photos w tym samym katalogu, aby hiperłącza działały.\n");
+      outerZip.file("README.txt", "Eksport Sieweczka Field App.\n\nPlik records.xlsx ma dwa arkusze:\n1. Dane - rekordy terenowe.\n2. Opis zmiennych - słownik kolumn i jednostek.\n\nKolumny nest_photo_1, nest_photo_2 itd. oraz random_photo_1, random_photo_2 itd. zawierają hiperłącza do plików w folderze photos.\nPo rozpakowaniu ZIP zostaw records.xlsx i folder photos w tym samym katalogu, aby hiperłącza działały.\n");
       const zipBlob = await outerZip.generateAsync({ type: "blob", mimeType: "application/zip" });
-      downloadBlob("sieweczka-eksport-xlsx-" + stamp + ".zip", zipBlob);
+      downloadBlob("sieweczka-eksport-excel-zdjecia-" + stamp + ".zip", zipBlob);
     } catch (error) {
       console.error(error);
-      alert("Nie udało się przygotować eksportu XLSX ze zdjęciami. Szczegóły są w konsoli przeglądarki.");
+      alert("Nie udało się przygotować eksportu Excel ze zdjęciami. Szczegóły są w konsoli przeglądarki.");
     } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = originalText || "Eksport ZIP + Excel + zdjęcia";
-      }
+      if (button) { button.disabled = false; button.textContent = originalText || "Eksport Excel + zdjęcia"; }
     }
   }
-
+  function removeOldExportButtons() {
+    const csvButton = document.getElementById("export-csv");
+    const jsonButton = document.getElementById("export-json");
+    if (csvButton) csvButton.remove();
+    if (jsonButton) jsonButton.remove();
+  }
   function bootExportPatch() {
+    removeOldExportButtons();
     const button = document.getElementById("export-zip");
-    if (!button || button.dataset.xlsxPhotoPatchV7 === "1") return;
-    button.dataset.xlsxPhotoPatchV7 = "1";
-    button.textContent = "Eksport ZIP + Excel + zdjęcia (XLSX)";
+    if (!button) return;
+    button.textContent = "Eksport Excel + zdjęcia";
+    if (button.dataset.xlsxPhotoPatchV8 === "1") return;
+    button.dataset.xlsxPhotoPatchV8 = "1";
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
       exportZipWithExcel();
     }, true);
   }
-
   function boot() {
     bootHeightSteppers();
     bootExportPatch();
     setTimeout(bootExportPatch, 300);
     setTimeout(bootExportPatch, 1000);
   }
-
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
 })();
@@ -515,7 +318,7 @@ async function appJsResponse(request) {
   if (!response) return new Response("Offline", { status: 503, statusText: "Offline" });
 
   const source = await response.clone().text();
-  const patched = source.includes("__sieweczkaXlsxExportPatchV7") ? source : source + "\n\n" + XLSX_EXPORT_PATCH_JS + "\n";
+  const patched = source.includes("__sieweczkaXlsxExportPatchV8") ? source : source + "\n\n" + XLSX_EXPORT_PATCH_JS + "\n";
   return new Response(patched, {
     status: 200,
     statusText: "OK",
