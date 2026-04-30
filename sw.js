@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v6-xlsx-photo-links";
+const CACHE_NAME = "sieweczka-clean-v7-xlsx-appjs-direct";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -9,10 +9,11 @@ const APP_SHELL = [
   "./icons/icon.svg"
 ];
 
-const PATCH_INJECTION = `
-<script id="sieweczka-export-xlsx-patch">
+const XLSX_EXPORT_PATCH_JS = String.raw`
 (() => {
   "use strict";
+  if (window.__sieweczkaXlsxExportPatchV7) return;
+  window.__sieweczkaXlsxExportPatchV7 = true;
 
   const STORAGE_KEYS = ["sieweczka-field-data-v3", "sieweczka-field-data-v2"];
   const PHOTO_DB = "sieweczka-photo-db";
@@ -33,15 +34,11 @@ const PATCH_INJECTION = `
     document.head.appendChild(style);
   }
 
-  function formatHeightValue(value) {
-    return String(Math.max(0, Math.round(value)));
-  }
-
   function stepHeightInput(input, delta) {
     const raw = input.value;
     const current = raw === "" || raw == null ? null : Number(raw);
     const next = current == null || Number.isNaN(current) ? (delta > 0 ? delta : 0) : Math.max(0, current + delta);
-    input.value = formatHeightValue(next);
+    input.value = String(Math.max(0, Math.round(next)));
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }
@@ -71,7 +68,7 @@ const PATCH_INJECTION = `
   function bootHeightSteppers() {
     injectHeightStepperStyles();
     HEIGHT_FIELDS.forEach((args) => enhanceHeightField(args[0], args[1], args[2]));
-    setTimeout(() => HEIGHT_FIELDS.forEach((args) => enhanceHeightField(args[0], args[1], args[2])), 200);
+    setTimeout(() => HEIGHT_FIELDS.forEach((args) => enhanceHeightField(args[0], args[1], args[2])), 250);
   }
 
   function xmlEscape(value) {
@@ -83,6 +80,10 @@ const PATCH_INJECTION = `
 
   function formulaEscape(value) {
     return String(value == null ? "" : value).replace(/"/g, '""');
+  }
+
+  function csvEscape(value) {
+    return '"' + String(value == null ? "" : value).replace(/"/g, '""') + '"';
   }
 
   function colName(index) {
@@ -116,14 +117,22 @@ const PATCH_INJECTION = `
   }
 
   function dataUrlToBlob(dataUrl) {
-    const parts = String(dataUrl).split(",");
-    if (parts.length < 2) return null;
-    const meta = parts[0] || "";
-    const mimeMatch = meta.match(/^data:([^;]+);base64$/i);
+    const text = String(dataUrl || "");
+    const comma = text.indexOf(",");
+    if (!text.startsWith("data:") || comma < 0) return null;
+    const meta = text.slice(0, comma);
+    const data = text.slice(comma + 1);
+    const mimeMatch = meta.match(/^data:([^;]+)(;base64)?$/i);
     const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
-    const bin = atob(parts.slice(1).join(","));
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    let bytes;
+    if (/;base64/i.test(meta)) {
+      const bin = atob(data);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    } else {
+      const decoded = decodeURIComponent(data);
+      bytes = new TextEncoder().encode(decoded);
+    }
     return new Blob([bytes], { type: mime });
   }
 
@@ -297,13 +306,13 @@ const PATCH_INJECTION = `
       const item = { entry, nestPhotoFiles: [], randomPhotoFiles: [] };
 
       const groups = [
-        ["nest", "gniazdo", safeArray(entry.nestMicro.photos), item.nestPhotoFiles],
-        ["random", "punkt_losowy", safeArray(entry.randomMicro.photos), item.randomPhotoFiles]
+        ["gniazdo", safeArray(entry.nestMicro.photos), item.nestPhotoFiles],
+        ["punkt_losowy", safeArray(entry.randomMicro.photos), item.randomPhotoFiles]
       ];
 
       for (const group of groups) {
-        const refs = group[2];
-        const target = group[3];
+        const refs = group[1];
+        const target = group[2];
         for (let i = 0; i < refs.length; i += 1) {
           const blob = await getPhotoBlob(refs[i]);
           if (!blob) {
@@ -311,7 +320,7 @@ const PATCH_INJECTION = `
             continue;
           }
           const ext = extensionFromType(blob.type);
-          const fileName = baseName + "__" + group[1] + "_" + (i + 1) + "." + ext;
+          const fileName = baseName + "__" + group[0] + "_" + (i + 1) + "." + ext;
           const zipPath = "photos/" + fileName;
           outerZip.file(zipPath, blob);
           target.push(zipPath);
@@ -417,7 +426,7 @@ const PATCH_INJECTION = `
     const originalText = button ? button.textContent : "";
     if (button) {
       button.disabled = true;
-      button.textContent = "Tworzę Excel + zdjęcia...";
+      button.textContent = "Tworzę XLSX + zdjęcia...";
     }
 
     try {
@@ -442,11 +451,16 @@ const PATCH_INJECTION = `
       });
 
       const xlsxBlob = await buildXlsxBlob(headers, sheetRows);
+      const csv = [headers.map(csvEscape).join(",")].concat(
+        sheetRows.map((row) => row.map((value) => csvEscape(value && typeof value === "object" ? value.hyperlink : value)).join(","))
+      ).join("\n");
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
-      outerZip.file("sieweczka-dane-" + stamp + ".xlsx", xlsxBlob);
-      outerZip.file("README.txt", "Eksport Sieweczka Field App.\n\nPlik XLSX zawiera kolumny ze zdjęciami jako formuły HYPERLINK do plików w folderze photos.\nPo rozpakowaniu ZIP zostaw plik XLSX i folder photos w tym samym katalogu, aby hiperłącza działały.\n");
+      outerZip.file("records.xlsx", xlsxBlob);
+      outerZip.file("records.csv", csv);
+      outerZip.file("records.json", JSON.stringify(entries, null, 2));
+      outerZip.file("README.txt", "Eksport Sieweczka Field App.\n\nNajważniejszy plik: records.xlsx. Kolumny nest_photo_1, nest_photo_2 itd. oraz random_photo_1, random_photo_2 itd. zawierają hiperłącza do plików w folderze photos.\n\nPo rozpakowaniu ZIP zostaw records.xlsx i folder photos w tym samym katalogu, aby hiperłącza działały.\n");
       const zipBlob = await outerZip.generateAsync({ type: "blob", mimeType: "application/zip" });
-      downloadBlob("sieweczka-eksport-" + stamp + ".zip", zipBlob);
+      downloadBlob("sieweczka-eksport-xlsx-" + stamp + ".zip", zipBlob);
     } catch (error) {
       console.error(error);
       alert("Nie udało się przygotować eksportu XLSX ze zdjęciami. Szczegóły są w konsoli przeglądarki.");
@@ -460,9 +474,9 @@ const PATCH_INJECTION = `
 
   function bootExportPatch() {
     const button = document.getElementById("export-zip");
-    if (!button || button.dataset.xlsxPhotoPatch === "1") return;
-    button.dataset.xlsxPhotoPatch = "1";
-    button.textContent = "Eksport ZIP + Excel + zdjęcia";
+    if (!button || button.dataset.xlsxPhotoPatchV7 === "1") return;
+    button.dataset.xlsxPhotoPatchV7 = "1";
+    button.textContent = "Eksport ZIP + Excel + zdjęcia (XLSX)";
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -480,61 +494,73 @@ const PATCH_INJECTION = `
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
 })();
-</script>`;
+`;
 
-async function navigationResponse(request) {
-  const cached = await caches.match("./index.html");
-  let response = cached;
+async function cacheFreshAppShell() {
+  const cache = await caches.open(CACHE_NAME);
+  await cache.addAll(APP_SHELL);
+}
+
+async function appJsResponse(request) {
+  const cache = await caches.open(CACHE_NAME);
+  let response = null;
+
   try {
-    response = await fetch(request);
-    const copy = response.clone();
-    caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
+    response = await fetch(request, { cache: "no-store" });
+    if (response && response.ok) cache.put(request, response.clone());
   } catch (error) {
-    if (!response) return new Response("Offline", { status: 503, statusText: "Offline" });
+    response = await caches.match(request) || await caches.match("./app.js");
   }
 
-  const html = await response.clone().text();
-  const patched = html.includes("sieweczka-export-xlsx-patch")
-    ? html
-    : html.replace("</body>", PATCH_INJECTION + "\n</body>");
+  if (!response) return new Response("Offline", { status: 503, statusText: "Offline" });
+
+  const source = await response.clone().text();
+  const patched = source.includes("__sieweczkaXlsxExportPatchV7") ? source : source + "\n\n" + XLSX_EXPORT_PATCH_JS + "\n";
   return new Response(patched, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: { "Content-Type": "text/html; charset=utf-8" }
+    status: 200,
+    statusText: "OK",
+    headers: {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "no-store"
+    }
   });
 }
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil(cacheFreshAppShell());
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  const isNavigation = event.request.mode === "navigate";
 
-  if (isNavigation) {
-    event.respondWith(navigationResponse(event.request));
+  const url = new URL(event.request.url);
+  if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("app.js")) {
+    event.respondWith(appJsResponse(event.request));
     return;
   }
 
+  const isNavigation = event.request.mode === "navigate";
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      if (cached) return cached;
+      if (cached && !isNavigation) return cached;
       return fetch(event.request)
         .then((response) => {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => new Response("Offline", { status: 503, statusText: "Offline" }));
+        .catch(() => {
+          if (isNavigation) return caches.match("./index.html");
+          return cached || new Response("Offline", { status: 503, statusText: "Offline" });
+        });
     })
   );
 });
