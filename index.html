@@ -69,6 +69,12 @@
     <section id="map-screen" class="screen card" hidden>
       <div class="screen-head"><button type="button" id="map-back">← Wróć</button><h2>Mapa rekordów</h2></div>
       <div id="map-info" class="muted"></div>
+      <div class="map-toolbar">
+        <button id="map-center-user" type="button">Pokaż moją pozycję</button>
+        <button id="map-enable-heading" type="button">Włącz kierunek</button>
+        <span id="map-user-status" class="muted">Twoja pozycja: oczekiwanie…</span>
+      </div>
+      <div class="map-legend muted"><span class="legend-dot g">G</span> — gniazdo • <span class="legend-dot k">K</span> — kontrola / punkt losowy</div>
       <div id="records-map" style="height: 55vh; border-radius: 12px;"></div>
     </section>
 
