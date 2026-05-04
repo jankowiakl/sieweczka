@@ -4,6 +4,9 @@
   const STORAGE_KEY = "sieweczka-field-data-v3";
   const LEGACY_STORAGE_KEY = "sieweczka-field-data-v2";
   const DRAFT_KEY = "sieweczka-field-draft-v3";
+  const CUSTOM_SPECIES_KEY = "sieweczka-custom-species-v1";
+  const OBSERVERS_KEY = "sieweczka-observers-v1";
+  const SECTORS_KEY = "sieweczka-sectors-v1";
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
@@ -23,6 +26,11 @@
     return Number.isNaN(n) ? fallback : n;
   };
   const clamp = (n, min = 0, max = 100) => Math.max(min, Math.min(max, n));
+  const SPECIES_CODE_MAP = {
+    "charadrius-hiaticula": "SOb",
+    "charadrius-dubius": "SRz",
+    unknown: "SN",
+  };
 
   const LABELS = {
     species: {
@@ -276,6 +284,106 @@
     if (!value("#obs-date")) setValue("#obs-date", now.toISOString().slice(0, 10));
     if (!value("#obs-time")) setValue("#obs-time", now.toTimeString().slice(0, 5));
     if (!value("#season")) setValue("#season", String(now.getFullYear()));
+  }
+
+  function formatNestIdDateTime(date = new Date()) {
+    const y = String(date.getFullYear());
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    const hh = String(date.getHours()).padStart(2, "0");
+    const mm = String(date.getMinutes()).padStart(2, "0");
+    return `${y}${m}${d}-${hh}${mm}`;
+  }
+
+  function speciesCode(speciesValue) {
+    const existing = SPECIES_CODE_MAP[speciesValue];
+    if (existing) return existing;
+    const normalized = String(speciesValue || "").trim().toLowerCase().replace(/^custom:/, "");
+    const fallback = normalized.split("-").filter(Boolean).slice(0, 3).map((part) => part[0]?.toUpperCase() || "").join("");
+    return fallback || "SX";
+  }
+
+  function parseNestId(text) {
+    const value = String(text || "").trim();
+    const match = value.match(/^([^-]+)-(\d{8})-(\d{4})-(.*)$/);
+    if (!match) return null;
+    return { code: match[1], date: match[2], time: match[3], suffix: match[4] || "" };
+  }
+
+  function buildNestId(speciesValue, suffix = "", now = new Date()) {
+    return `${speciesCode(speciesValue)}-${formatNestIdDateTime(now)}-${suffix}`;
+  }
+
+  function setupNestIdAutofill() {
+    const nestIdInput = $("#nest-id");
+    const speciesInput = $("#species");
+    const generateBtn = $("#nest-id-generate");
+    if (!nestIdInput || !speciesInput) return;
+
+    const refreshFromSpecies = () => {
+      const current = parseNestId(nestIdInput.value);
+      if (current) {
+        nestIdInput.value = buildNestId(speciesInput.value, current.suffix);
+        return;
+      }
+      if (!String(nestIdInput.value || "").trim()) nestIdInput.value = buildNestId(speciesInput.value);
+    };
+
+    speciesInput.addEventListener("change", refreshFromSpecies);
+    document.addEventListener("click", (event) => {
+      if (event.target.closest('.tile-group[data-target="species"] .tile')) {
+        requestAnimationFrame(refreshFromSpecies);
+      }
+    });
+    if (generateBtn) generateBtn.addEventListener("click", () => {
+      const current = parseNestId(nestIdInput.value);
+      nestIdInput.value = buildNestId(speciesInput.value, current ? current.suffix : "");
+    });
+  }
+
+  
+  const slugify = (txt) => String(txt || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  function readList(key) { try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch { return []; } }
+  function saveList(key, values) { localStorage.setItem(key, JSON.stringify(Array.from(new Set(values.filter(Boolean))))); }
+
+  function setupSmartLists() {
+    const bind = (inputSel, listSel, key) => {
+      const input = $(inputSel); const list = $(listSel); if (!input || !list) return;
+      const render = () => { list.innerHTML = readList(key).map((v) => `<option value="${escapeHtml(v)}"></option>`).join(""); };
+      input.addEventListener("change", () => { const v = String(input.value || "").trim(); if (!v) return; const arr = readList(key); arr.push(v); saveList(key, arr); render(); });
+      render();
+    };
+    bind("#observer", "#observer-list", OBSERVERS_KEY);
+    bind("#sector", "#sector-list", SECTORS_KEY);
+  }
+
+  function setupCustomSpecies() {
+    const hidden = $("#species"); const customInput = $("#species-custom-input"); const list = $("#species-custom-list");
+    if (!hidden || !customInput || !list) return;
+    const render = () => { list.innerHTML = readList(CUSTOM_SPECIES_KEY).map((v) => `<option value="${escapeHtml(v)}"></option>`).join(""); };
+    document.addEventListener("click", (event) => { if (event.target.closest('.tile-group[data-target="species"] .tile[data-value="custom:other"]')) { hidden.value = "custom:"; customInput.hidden = false; customInput.focus(); } });
+    customInput.addEventListener("change", () => {
+      const raw = String(customInput.value || "").trim(); if (!raw) return;
+      hidden.value = `custom:${slugify(raw) || "inn"}`;
+      const arr = readList(CUSTOM_SPECIES_KEY); arr.push(raw); saveList(CUSTOM_SPECIES_KEY, arr); render();
+    });
+    render();
+  }
+
+  function haversineM(lat1, lon1, lat2, lon2) {
+    const R = 6371000, toRad = (n) => (n * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  function autoFillNearestDistances() {
+    const lat = getNumber("#lat", null), lon = getNumber("#lon", null), species = value("#species", "unknown");
+    if (lat == null || lon == null) return;
+    const entries = getEntries();
+    const nearest = (sp) => entries.filter((e) => e.species === sp && e.uid !== editingUid && e.lat != null && e.lon != null).reduce((best, e) => Math.min(best, haversineM(lat, lon, Number(e.lat), Number(e.lon))), Infinity);
+    const hiEl = $("#dist-nearest-hiaticula"), duEl = $("#dist-nearest-dubius");
+    if (hiEl && !hiEl.dataset.manual && species === "charadrius-hiaticula") { const d = nearest("charadrius-hiaticula"); hiEl.value = Number.isFinite(d) ? d.toFixed(1) : ""; }
+    if (duEl && !duEl.dataset.manual && species === "charadrius-dubius") { const d = nearest("charadrius-dubius"); duEl.value = Number.isFinite(d) ? d.toFixed(1) : ""; }
   }
 
   function showView(name) {
@@ -542,6 +650,7 @@
       },
 
       notes: trim("#notes"),
+      validationOverride: !!$("#validation-override-summary")?.checked,
     };
   }
 
@@ -556,26 +665,67 @@
     if (!record.obsTime) addErr(1, "#obs-time", "Brakuje godziny.");
     if (!record.sector) addErr(1, "#sector", "Brakuje sektora / części wyspy.");
     if (!record.observer) addWarn(1, "#observer", "Brakuje obserwatora.");
-    if (record.species === "unknown") addWarn(1, "#species", "Gatunek jest nieokreślony.");
-    if (record.eggCount == null || Number.isNaN(record.eggCount)) addWarn(1, "#egg-count", "Brakuje liczby jaj.");
+    if (record.species === "unknown") addErr(1, "#species", "Brak gatunku.");
+    if (record.eggCount == null || Number.isNaN(record.eggCount)) addErr(1, "#egg-count", "Brak liczby jaj.");
 
-    if (record.lat == null || record.lon == null) addWarn(2, "#lat", "Brakuje GPS gniazda.");
+    if (record.lat == null || record.lon == null) addErr(2, "#lat", "Brak GPS gniazda.");
+    if (record.randomMicro.lat == null || record.randomMicro.lon == null) addErr(4, "#random-lat", "Brak GPS punktu losowego / kontroli.");
     if (record.randomMicro.azimuthDeg == null) addWarn(4, "#random-azimuth", "Brakuje azymutu punktu losowego.");
 
+    const infos = [];
+    const quality = [];
     const nestSum = coverageSum(record.nestMicro.coverage);
     const randomSum = coverageSum(record.randomMicro.coverage);
     const mesoSum = record.meso.pctSand + record.meso.pctGravel + record.meso.pctVegetation + record.meso.pctWater + record.meso.pctOther;
+    if (nestSum !== 100) quality.push({ step: 3, field: "#nest-pct-sand", message: `Mikrohabitat gniazda: suma pokrycia wynosi ${nestSum}%, powinna wynosić 100%.` });
+    if (mesoSum !== 100) quality.push({ step: 6, field: "#pct-sand", message: `Mezohabitat: suma pokrycia wynosi ${mesoSum}%, powinna wynosić 100%.` });
+    if (randomSum !== 100) quality.push({ step: 5, field: "#random-pct-sand", message: `Punkt losowy/kontrola: suma pokrycia wynosi ${randomSum}%, powinna wynosić 100%.` });
+    if (!record.docPhotoDone || record.docPhotoDone === "unknown") quality.push({ step: 7, field: "#doc-photo-done", message: "Brak informacji o zdjęciu nad kontrolą." });
+    if (!(record.nestMicro?.photos?.length)) addErr(2, "#nest-photos", "Brak zdjęcia gniazda.");
+    if (!(record.randomMicro?.photos?.length)) addErr(4, "#random-photos", "Brak zdjęcia punktu losowego / kontroli.");
+    if (!record.nestOneMPhotoDone || record.nestOneMPhotoDone === "unknown") quality.push({ step: 7, field: "#nest-one-m-photo-done", message: "Brak informacji o zdjęciu 1 m²." });
+    if (!record.randomPointDone || record.randomPointDone === "unknown") addWarn(7, "#random-point-done", "Brak informacji o punkcie losowym.");
+    const infoFields = new Set();
+    const addInfo = (step, field, message) => { if (infoFields.has(field)) return; infoFields.add(field); infos.push({ step, field, message }); };
+    const emptyNum = (v) => v == null || Number.isNaN(v);
+    if (emptyNum(record.nestMicro?.distPlantCm)) addInfo(3, "#nest-dist-plant", "Puste: odległość do najbliższej rośliny przy gnieździe.");
+    if (emptyNum(record.nestMicro?.distObjectCm)) addInfo(3, "#nest-dist-object", "Puste: odległość do najbliższego obiektu przy gnieździe.");
+    if (emptyNum(record.randomMicro?.distPlantCm)) addInfo(5, "#random-dist-plant", "Puste: odległość do najbliższej rośliny przy kontroli/punkcie losowym.");
+    if (emptyNum(record.randomMicro?.distObjectCm)) addInfo(5, "#random-dist-object", "Puste: odległość do najbliższego obiektu przy kontroli/punkcie losowym.");
+    if (emptyNum(record.meso?.distWaterM)) addInfo(6, "#dist-water", "Puste: odległość do wody.");
+    if (emptyNum(record.meso?.distVegEdgeM)) addInfo(6, "#dist-veg-edge", "Puste: odległość do krawędzi zwartej roślinności.");
+    if (emptyNum(record.meso?.distVerticalStructureM)) addInfo(6, "#dist-vertical-structure", "Puste: odległość do najbliższego wyższego obiektu.");
+    if (emptyNum(record.meso?.distFineGravelPatchM)) addInfo(6, "#dist-fine-gravel-patch", "Puste: odległość do płatu drobnego żwiru.");
+    if (emptyNum(record.meso?.distCoarseGravelPatchM)) addInfo(6, "#dist-coarse-gravel-patch", "Puste: odległość do płatu grubszego żwiru/kamieni.");
+    if (emptyNum(record.meso?.distNearestHiaticulaM)) addInfo(6, "#dist-nearest-hiaticula", "Puste: odległość do najbliższego gniazda sieweczki obrożnej.");
+    if (emptyNum(record.meso?.distNearestDubiusM)) addInfo(6, "#dist-nearest-dubius", "Puste: odległość do najbliższego gniazda sieweczki rzecznej.");
+    if (emptyNum(record.nestMicro?.heightPlantCm)) addInfo(3, "#nest-height-plant", "Puste: wysokość najbliższej rośliny przy gnieździe.");
+    if (emptyNum(record.nestMicro?.heightObjectCm)) addInfo(3, "#nest-height-object", "Puste: wysokość najbliższego obiektu przy gnieździe.");
+    if (emptyNum(record.randomMicro?.heightPlantCm)) addInfo(5, "#random-height-plant", "Puste: wysokość najbliższej rośliny przy kontroli/punkcie losowym.");
+    if (emptyNum(record.randomMicro?.heightObjectCm)) addInfo(5, "#random-height-object", "Puste: wysokość najbliższego obiektu przy kontroli/punkcie losowym.");
+    if (!record.nestMicro?.slope) addInfo(3, "#nest-slope", "Puste: nachylenie przy gnieździe.");
+    if (!record.randomMicro?.slope) addInfo(5, "#random-slope", "Puste: nachylenie przy kontroli/punkcie losowym.");
+    if (!record.nestMicro?.microrelief) addInfo(3, "#nest-microrelief", "Puste: mikrorzeźba przy gnieździe.");
+    if (!record.randomMicro?.microrelief) addInfo(5, "#random-microrelief", "Puste: mikrorzeźba przy kontroli/punkcie losowym.");
+    if (!record.meso?.bigObjects || record.meso?.bigObjects === "unknown") addInfo(6, "#meso-big-objects", "Puste: duże obiekty w 15 m.");
+    if (!record.meso?.assessmentMethod || record.meso?.assessmentMethod === "unknown") addInfo(6, "#meso-assessment-method", "Puste: sposób oceny buforu 15 m.");
+    if (!String(record.meso?.spatialNotes || "").trim()) addInfo(6, "#meso-spatial-notes", "Puste: uwagi przestrzenne.");
+    if (!String(record.moduleNotes?.meso || "").trim()) addInfo(6, "#notes-meso", "Puste: notatki mezohabitatowe.");
 
-    if (nestSum < 95 || nestSum > 105) addWarn(3, "#nest-pct-sand", `Mikrohabitat gniazda: suma pokrycia to ${nestSum}%, zalecane ok. 100%.`);
-    if (randomSum < 95 || randomSum > 105) addWarn(5, "#random-pct-sand", `Punkt losowy: suma pokrycia to ${randomSum}%, zalecane ok. 100%.`);
-    if (mesoSum < 95 || mesoSum > 105) addWarn(6, "#pct-sand", `Mezohabitat: suma pokrycia to ${mesoSum}%, zalecane ok. 100%.`);
-
-    return { errors, warnings };
+    const technical = new Set(["species","egg-count","nest-status","possible-renest","doc-photo-done","nest-one-m-photo-done","random-point-done","nest-substrate","random-rerolled","random-reroll-reason","random-substrate","qc-bird-reaction","qc-time-at-nest","qc-aborted","qc-tracks","gps-accuracy","random-gps-accuracy","validation-override-summary"]);
+    $$("input,select,textarea", $("#entry-form")).forEach((el) => {
+      if (!el.id || el.type === "hidden" || el.type === "file" || technical.has(el.id)) return;
+      if (el.closest("[hidden]")) return;
+      if (String(el.value || "").trim()) return;
+      const step = Number(el.closest(".step")?.dataset.step || 1);
+      infos.push({ step, field: `#${el.id}`, message: `Pole puste: ${el.id}` });
+    });
+    return { errors, warnings, infos, quality };
   }
 
   function renderValidationAndPreview() {
     buildRecord({ persistPhotos: false }).then((record) => {
-      const { errors, warnings } = validateRecord(record);
+      const { errors, warnings, infos, quality } = validateRecord(record);
       const list = $("#validation-list");
       if (list) {
         const renderItems = (items, cls) => items.map((item) => `
@@ -585,9 +735,9 @@
           </div>
         `).join("");
         list.innerHTML = `
-          ${errors.length ? `<h3>Braki blokujące zapis</h3>${renderItems(errors, "validation-error")}` : `<p class="ok-text">Brak braków blokujących zapis.</p>`}
-          ${warnings.length ? `<h3>Ostrzeżenia</h3>${renderItems(warnings, "validation-warning")}` : `<p class="ok-text">Brak ostrzeżeń jakościowych.</p>`}
-          <p class="hint">Ostrzeżenia nie blokują zapisu, ale warto je sprawdzić przed wyjściem z terenu.</p>
+          ${errors.length ? `<h3>Braki obowiązkowe — blokują zapis</h3>${renderItems(errors, "validation-error")}` : `<p class="ok-text">Brak braków blokujących zapis.</p>`}
+          ${warnings.length ? `<h3>Braki zalecane — sprawdź przed zakończeniem</h3>${renderItems(warnings, "validation-warning")}` : `<p class="ok-text">Brak ostrzeżeń jakościowych.</p>`}
+          <h3>Pola puste / nieuzupełnione — informacyjnie</h3>${infos.length ? renderItems(infos, "validation-warning") : `<p class="muted">Brak.</p>`}<h3>Ostrzeżenia jakościowe</h3>${quality.length ? renderItems(quality, "validation-warning") : `<p class="ok-text">Brak ostrzeżeń jakościowych.</p>`}
         `;
         $$("button", list).forEach((btn) => btn.addEventListener("click", () => {
           showStep(Number(btn.dataset.step));
@@ -609,7 +759,7 @@
   async function saveFinalRecord() {
     const record = await buildRecord({ persistPhotos: true });
     const { errors } = validateRecord(record);
-    if (errors.length) {
+    if (errors.length && !$("#validation-override-summary")?.checked) {
       renderValidationAndPreview();
       showStep(8);
       return;
@@ -676,6 +826,7 @@
 
     $("#nest-photo-preview").innerHTML = "";
     $("#random-photo-preview").innerHTML = "";
+    if ($("#validation-override-summary")) $("#validation-override-summary").checked = false;
     $("#edit-banner").hidden = true;
     $("#form-mode-title").textContent = "Nowe gniazdo";
     syncTilesFromInputs();
@@ -711,6 +862,7 @@
     setValue("#doc-photo-done", record.docPhotoDone || "unknown");
     setValue("#nest-one-m-photo-done", record.nestOneMPhotoDone || "unknown");
     setValue("#random-point-done", record.randomPointDone || "unknown");
+    if ($("#validation-override-summary")) $("#validation-override-summary").checked = !!record.validationOverride;
 
     setValue("#nest-substrate", record.nestMicro?.substrate || "sand");
     setCoverage("nest", record.nestMicro?.coverage);
@@ -931,8 +1083,86 @@
       if (btn.dataset.action === "delete") deleteRecord(btn.dataset.uid);
     });
 
-    $("#nest-photos").addEventListener("change", renderPhotoPreviews);
-    $("#random-photos").addEventListener("change", renderPhotoPreviews);
+    $("#nest-photos").addEventListener("change", () => {
+      setValue("#nest-one-m-photo-done", "yes");
+      renderPhotoPreviews();
+    });
+    $("#random-photos").addEventListener("change", () => {
+      setValue("#random-point-done", "yes");
+      setValue("#doc-photo-done", "yes");
+      renderPhotoPreviews();
+    });
+    $("#validation-override-summary")?.addEventListener("change", () => renderValidationAndPreview());
+  }
+
+  function setupCompass() {
+    const statusEl = $("#compass-status");
+    const degEl = $("#compass-deg");
+    const dirEl = $("#compass-dir");
+    const arrowEl = $("#compass-arrow");
+    const enableBtn = $("#compass-enable-btn");
+    if (!statusEl || !degEl || !dirEl || !arrowEl) return;
+
+    const toDir = (deg) => ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
+    const normalize = (deg) => ((deg % 360) + 360) % 360;
+    let gotData = false;
+    let started = false;
+    let timeoutId = null;
+    const render = (deg) => {
+      const n = normalize(deg);
+      gotData = true;
+      degEl.textContent = `${Math.round(n)}°`;
+      dirEl.textContent = toDir(n);
+      arrowEl.style.transform = `rotate(${n}deg)`;
+      statusEl.textContent = "Kompas aktywny.";
+    };
+
+    const onOrientation = (event) => {
+      let heading = null;
+      if (typeof event.webkitCompassHeading === "number") heading = event.webkitCompassHeading;
+      else if (event.absolute === true && typeof event.alpha === "number") heading = event.alpha;
+      else if (typeof event.alpha === "number") heading = 360 - event.alpha;
+      if (typeof heading === "number" && Number.isFinite(heading)) render(heading);
+    };
+
+    const start = () => {
+      if (started) return;
+      started = true;
+      gotData = false;
+      window.addEventListener("deviceorientationabsolute", onOrientation, true);
+      window.addEventListener("deviceorientation", onOrientation, true);
+      statusEl.textContent = "Kompas: oczekuję na dane z kompasu...";
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        if (!gotData) {
+          statusEl.textContent = "Brak danych z kompasu. Sprawdź, czy przeglądarka ma dostęp do czujników ruchu/orientacji i czy urządzenie ma magnetometr.";
+        }
+      }, 7000);
+    };
+
+    const hasApi = "DeviceOrientationEvent" in window;
+    if (!hasApi) {
+      statusEl.textContent = "Kompas niedostępny w tej przeglądarce lub na tym urządzeniu.";
+      enableBtn.disabled = true;
+      return;
+    }
+    statusEl.textContent = "Kompas gotowy. Kliknij „Uruchom kompas”.";
+    enableBtn.addEventListener("click", async () => {
+      const requestPermission = window.DeviceOrientationEvent?.requestPermission;
+      if (typeof requestPermission === "function") {
+        try {
+          const permission = await requestPermission.call(window.DeviceOrientationEvent);
+          if (permission !== "granted") {
+            statusEl.textContent = "Kompas niedostępny bez zgody użytkownika.";
+            return;
+          }
+        } catch {
+          statusEl.textContent = "Kompas niedostępny w tej przeglądarce lub na tym urządzeniu.";
+          return;
+        }
+      }
+      start();
+    });
   }
 
   function setupExports() {
@@ -1137,8 +1367,14 @@
     setupPercentGroups();
     setupTiles();
     setDefaultDateTime();
+    setupNestIdAutofill();
+    setupSmartLists();
+    setupCustomSpecies();
     setupNavigation();
     setupGps();
+    setupCompass();
+    ["#lat", "#lon", "#species"].forEach((sel) => $(sel)?.addEventListener("change", autoFillNearestDistances));
+    ["#dist-nearest-hiaticula", "#dist-nearest-dubius"].forEach((sel) => $(sel)?.addEventListener("input", (event) => { event.target.dataset.manual = "1"; }));
     setupExports();
     setupFieldMode();
     syncTilesFromInputs();
