@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v19-map-view";
+const CACHE_NAME = "sieweczka-clean-v20-working-nests";
 const APP_SHELL = [
   "./",
   "./index.html",
