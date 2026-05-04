@@ -138,6 +138,7 @@
   let workingLayer = null;
   let workingViewMode = "map";
   let workingFocusId = null;
+  let editingWorkingId = null;
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
@@ -1147,6 +1148,12 @@
   function nextWorkingLabel(items){ const d=new Date(); const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'); const key=`${y}${m}${day}`; const nums=items.map(i=>/^R-(\d{8})-(\d{3})$/.exec(i.label||"")).filter(Boolean).filter(x=>x[1]===key).map(x=>Number(x[2])); const n=(Math.max(0,...nums)+1); return `R-${key}-${String(n).padStart(3,'0')}`; }
   function workingStatusLabel(v){ return ({do_sprawdzenia:'Do sprawdzenia',prawdopodobne:'Prawdopodobne',potwierdzone:'Potwierdzone',odrzucone:'Odrzucone',przepisane:'Przepisane do rekordu'})[v]||'Do sprawdzenia'; }
   function workingStatusOptions(selected){ return ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].map(k=>`<option value="${k}" ${k===selected?'selected':''}>${workingStatusLabel(k)}</option>`).join(''); }
+  function workingStatusMarkerText(status){ return ({do_sprawdzenia:'?',prawdopodobne:'P',potwierdzone:'✓',odrzucone:'×',przepisane:'Z'})[status]||'?'; }
+  function normalizeWorkingNest(w) {
+    const now = new Date().toISOString();
+    const normalizedStatus = ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].includes(w?.status) ? w.status : 'do_sprawdzenia';
+    return { ...w, id: w?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), lat: Number(w?.lat), lon: Number(w?.lon), status: normalizedStatus, note: String(w?.note ?? w?.notes ?? ""), notes: String(w?.notes ?? w?.note ?? ""), createdAt: w?.createdAt || now, updatedAt: w?.updatedAt || w?.createdAt || now };
+  }
 
   function navigateTo(lat, lon) {
     const pos = toLatLon(lat, lon);
@@ -1395,8 +1402,11 @@
     $("#working-show-map").addEventListener("click",()=>{workingViewMode="map";renderWorkingMap();});
     $("#working-show-list").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap();});
     $("#working-nearest").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap(true);});
-    $("#working-list").addEventListener("click", onWorkingListClick);
-    $("#working-map-screen").addEventListener("click", onWorkingListClick);
+    $("#working-map-screen").addEventListener("click", onWorkingScreenClick);
+    $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
+    $("#working-edit-form").addEventListener("submit", onWorkingEditSubmit);
+    $("#working-edit-cancel").addEventListener("click", closeWorkingEditPanel);
+    $("#working-edit-delete").addEventListener("click", () => { if (editingWorkingId && confirm("Usunąć punkt roboczy?")) deleteWorkingNest(editingWorkingId); });
     $("#back-to-readonly")?.addEventListener("click", () => {
       if (readonlyUid) showReadonlyRecord(readonlyUid);
     });
@@ -1641,8 +1651,43 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function getWorkingNests() { try { const v = JSON.parse(localStorage.getItem(WORKING_NESTS_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } }
-  function saveWorkingNests(items) { localStorage.setItem(WORKING_NESTS_KEY, JSON.stringify(items)); }
+  function getWorkingNests() { try { const v = JSON.parse(localStorage.getItem(WORKING_NESTS_KEY) || "[]"); return Array.isArray(v) ? v.map(normalizeWorkingNest) : []; } catch { return []; } }
+  function setWorkingNests(nests) { localStorage.setItem(WORKING_NESTS_KEY, JSON.stringify((Array.isArray(nests) ? nests : []).map(normalizeWorkingNest))); }
+  const saveWorkingNests = setWorkingNests;
+  function findWorkingNest(id) { return getWorkingNests().find((w) => String(w.id) === String(id)) || null; }
+  function updateWorkingNest(id, patch) {
+    const items = getWorkingNests();
+    const idx = items.findIndex((w) => String(w.id) === String(id));
+    if (idx < 0) return null;
+    const updated = normalizeWorkingNest({ ...items[idx], ...patch, updatedAt: new Date().toISOString() });
+    items[idx] = updated;
+    setWorkingNests(items);
+    renderWorkingMap();
+    return updated;
+  }
+  function deleteWorkingNest(id) {
+    const items = getWorkingNests();
+    const next = items.filter((w) => String(w.id) !== String(id));
+    if (next.length === items.length) return false;
+    setWorkingNests(next);
+    if (editingWorkingId && String(editingWorkingId) === String(id)) closeWorkingEditPanel();
+    renderWorkingMap();
+    return true;
+  }
+  function openWorkingEditPanel(id) {
+    const item = findWorkingNest(id);
+    const panel = $("#working-edit-panel");
+    if (!panel || !item) return;
+    editingWorkingId = item.id;
+    panel.hidden = false;
+    $("#working-edit-id").value = item.id;
+    $("#working-edit-label").textContent = item.label || "—";
+    $("#working-edit-status").value = item.status || "do_sprawdzenia";
+    $("#working-edit-note").value = item.note || "";
+    $("#working-edit-lat").value = Number.isFinite(item.lat) ? item.lat : "";
+    $("#working-edit-lon").value = Number.isFinite(item.lon) ? item.lon : "";
+  }
+  function closeWorkingEditPanel() { editingWorkingId = null; const panel = $("#working-edit-panel"); if (panel) panel.hidden = true; }
   function fitWorkingMapBounds() {
     const points = getWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
     if (points.length) workingMap?.fitBounds(L.latLngBounds(points), { padding: [30, 30] });
@@ -1655,7 +1700,7 @@
       const items = getWorkingNests();
       const pos=[+coords.latitude.toFixed(6), +coords.longitude.toFixed(6)];
       const dup=items.map(i=>({i,pos2:toLatLon(i.lat,i.lon)})).filter(x=>x.pos2).map(x=>({item:x.i,dist:distanceM(pos,x.pos2)})).sort((a,b)=>a.dist-b.dist)[0];
-      const savePoint=()=>{ const label=nextWorkingLabel(items); const point={ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia' }; saveWorkingNests([point,...getWorkingNests()]); workingFocusId=point.id; workingViewMode='map'; renderWorkingMap(); };
+      const savePoint=()=>{ const label=nextWorkingLabel(items); const point=normalizeWorkingNest({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia' }); setWorkingNests([point,...getWorkingNests()]); workingFocusId=point.id; workingViewMode='map'; renderWorkingMap(); };
       if (dup && dup.dist<=20) {
         const choice=prompt(`W pobliżu jest już gniazdo robocze ${dup.item.label||'—'}, odległość ${Math.round(dup.dist)} m. Wpisz: pokaz / dodaj / anuluj`, 'pokaz');
         if (choice==='pokaz') { workingFocusId=dup.item.id; workingViewMode='map'; renderWorkingMap(); return; }
@@ -1664,15 +1709,26 @@
       savePoint();
     }, () => alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
   }
-  function onWorkingListClick(event) {
-    const btn = event.target.closest("button[data-w-action]"); if (!btn) return;
-    const items=getWorkingNests();
-    const item = items.find((x) => String(x.id) === String(btn.dataset.id)); if (!item) return;
-    if (btn.dataset.wAction === "show") { workingViewMode='map'; workingFocusId=item.id; renderWorkingMap(); }
-    if (btn.dataset.wAction === "nav") navigateTo(item.lat, item.lon);
-    if (btn.dataset.wAction === "delete" && confirm("Usunąć punkt roboczy?")) { saveWorkingNests(items.filter((x) => String(x.id) !== String(item.id))); renderWorkingMap(); }
-    if (btn.dataset.wAction === 'status') { item.status=btn.value; saveWorkingNests(items); renderWorkingMap(); }
-    if (btn.dataset.wAction === 'edit') { item.note=prompt('Notatka', item.note||'') ?? item.note; const st=prompt('Status: do_sprawdzenia/prawdopodobne/potwierdzone/odrzucone/przepisane', item.status||'do_sprawdzenia'); if(st) item.status=st; saveWorkingNests(items); renderWorkingMap(); }
+  function onWorkingScreenClick(event) {
+    const btn = event.target.closest("[data-w-action]"); if (!btn) return;
+    const id = btn.dataset.workingId; const item = findWorkingNest(id); if (!item) return;
+    if (btn.dataset.wAction === "show") { workingViewMode='map'; workingFocusId=item.id; renderWorkingMap(); return; }
+    if (btn.dataset.wAction === "nav") { navigateTo(item.lat, item.lon); return; }
+    if (btn.dataset.wAction === "delete" && confirm("Usunąć punkt roboczy?")) { deleteWorkingNest(item.id); return; }
+    if (btn.dataset.wAction === "edit") { openWorkingEditPanel(item.id); return; }
+  }
+  function onWorkingScreenChange(event) {
+    const select = event.target.closest("select[data-w-action='status'][data-working-id]"); if (!select) return;
+    updateWorkingNest(select.dataset.workingId, { status: select.value });
+  }
+  function onWorkingEditSubmit(event) {
+    event.preventDefault();
+    if (!editingWorkingId) return;
+    const lat = Number($("#working-edit-lat").value);
+    const lon = Number($("#working-edit-lon").value);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return alert("Podaj poprawne współrzędne.");
+    updateWorkingNest(editingWorkingId, { status: $("#working-edit-status").value, note: $("#working-edit-note").value, notes: $("#working-edit-note").value, lat, lon });
+    closeWorkingEditPanel();
   }
   function renderWorkingMap(showNearest = false) {
     const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
@@ -1687,13 +1743,13 @@
     const items = getWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
     enriched.forEach(({w,pos}) => {
-      const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: '<div class="pin"><span>R</span></div>' }) }).addTo(workingLayer);
-      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-id='${w.id}'>Nawiguj</button><br><select data-w-action='status' data-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>`);
+      const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }) }).addTo(workingLayer);
+      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> <button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button><br><select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,18); m.openPopup(); }
     });
     $("#working-map-info").textContent = `Punkty robocze: ${enriched.length}`;
-    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-id="${w.id}">Nawiguj</button><button data-w-action="edit" data-id="${w.id}">Edytuj notatkę</button><button class="danger" data-w-action="delete" data-id="${w.id}">Usuń</button><select data-w-action="status" data-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select></div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
-    $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
+    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button><button data-w-action="edit" data-working-id="${w.id}">Edytuj</button><button class="danger" data-w-action="delete" data-working-id="${w.id}">Usuń</button><select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select></div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
+    $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
     workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); syncUserLocationLayers(workingMap);} 
   }
