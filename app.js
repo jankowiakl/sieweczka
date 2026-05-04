@@ -125,9 +125,7 @@
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
-  let userLocationMarker = null;
-  let userAccuracyCircle = null;
-  let userHeadingMarker = null;
+  let userLayers = { records:{marker:null,circle:null,heading:null}, working:{marker:null,circle:null,heading:null} };
   let mapUserWatchId = null;
   let latestUserLatLng = null;
   let latestUserAccuracy = null;
@@ -136,6 +134,8 @@
   let latestMapHeadingDeg = null;
   let workingMap = null;
   let workingLayer = null;
+  let workingViewMode = "map";
+  let workingFocusId = null;
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
@@ -1084,6 +1084,65 @@
     return [a, b];
   }
 
+
+  function createBaseLayers() {
+    const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
+    const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
+    const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
+    return {
+      defaultLayer: esriImgLbl,
+      layers: {
+        "Esri Imagery + Labels": esriImgLbl,
+        "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
+        "Esri World Imagery": esriImg,
+        "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"),
+        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png"),
+        "CARTO Positron": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"),
+        "CARTO Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"),
+        "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
+      }
+    };
+  }
+
+  function setLocationStatus(text){ ["#map-user-status","#working-user-status"].forEach((id)=>{ if($(id)) $(id).textContent=text; }); }
+
+  function locationStatusText(mode){ if(mode==="waiting") return "Moja pozycja: oczekiwanie na GPS…"; if(mode==="unavailable") return "Moja pozycja: niedostępna"; if(mode==="active") return Number.isFinite(latestUserAccuracy)?`Moja pozycja: aktywna, dokładność ${Math.round(latestUserAccuracy)} m`:"Moja pozycja: aktywna"; return "Moja pozycja: niedostępna"; }
+
+  async function showMyLocationOnMap(map, statusSelector) {
+    if (!navigator.geolocation || !map) {
+      if (statusSelector) $(statusSelector).textContent = locationStatusText("unavailable");
+      throw new Error("gps-unavailable");
+    }
+    if (statusSelector) $(statusSelector).textContent = locationStatusText("waiting");
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(({ coords }) => {
+        latestUserLatLng = [coords.latitude, coords.longitude];
+        latestUserAccuracy = coords.accuracy;
+        if (statusSelector) $(statusSelector).textContent = locationStatusText("active"); setLocationStatus(locationStatusText("active"));
+        resolve(latestUserLatLng);
+      }, () => {
+        if (statusSelector) $(statusSelector).textContent = locationStatusText("unavailable");
+        reject(new Error("gps-failed"));
+      }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
+    });
+  }
+
+  function syncUserLocationLayers(targetMap, kind = "records") {
+    if (!targetMap || !latestUserLatLng) return;
+    const layer = userLayers[kind];
+    if (!layer.marker) layer.marker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(targetMap);
+    else if (!targetMap.hasLayer(layer.marker)) layer.marker.addTo(targetMap);
+    layer.marker.setLatLng(latestUserLatLng);
+    if (Number.isFinite(latestUserAccuracy)) {
+      if (!layer.circle) layer.circle = L.circle(latestUserLatLng,{radius:latestUserAccuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(targetMap);
+      else if (!targetMap.hasLayer(layer.circle)) layer.circle.addTo(targetMap);
+      layer.circle.setLatLng(latestUserLatLng).setRadius(latestUserAccuracy);
+    }
+    setLocationStatus(locationStatusText("active"));
+  }
+
+  function cleanupUserLayers(kind){ const map= kind==='records'?recordsMap:workingMap; const l=userLayers[kind]; if(!map||!l) return; [l.marker,l.circle,l.heading].forEach((x)=>{ if(x&&map.hasLayer(x)) map.removeLayer(x); }); }
+
   function navigateTo(lat, lon) {
     const pos = toLatLon(lat, lon);
     if (!pos) return alert("Brak poprawnych współrzędnych GPS.");
@@ -1111,10 +1170,10 @@
     const sections = [
       ["Identyfikacja", `${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
       ["GPS i zdjęcia gniazda", `${fld("Lat", record.lat)}${fld("Lon", record.lon)}${fld("Dokładność [m]", record.gpsAccuracyM)}${photoGrid(record.nestMicro?.photos, "Zdjęcie gniazda")}`],
-      ["Mikrohabitat gniazda", `${fld("Podłoże", LABELS.substrate[record.nestMicro?.substrate] || record.nestMicro?.substrate)}${fld("Nachylenie", LABELS.slope[record.nestMicro?.slope] || record.nestMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.nestMicro?.microrelief] || record.nestMicro?.microrelief)}`],
-      ["Mezohabitat", `${fld("Piasek [%]", record.meso?.pctSand)}${fld("Żwir [%]", record.meso?.pctGravel)}${fld("Roślinność [%]", record.meso?.pctVegetation)}${fld("Woda [%]", record.meso?.pctWater)}${fld("Inne [%]", record.meso?.pctOther)}`],
-      ["Punkt losowy / kontrola", `${fld("Azymut [°]", record.randomMicro?.azimuthDeg)}${fld("Lat", record.randomMicro?.lat)}${fld("Lon", record.randomMicro?.lon)}${fld("Dokładność [m]", record.randomMicro?.gpsAccuracyM)}`],
-      ["Mikrohabitat kontroli", `${fld("Podłoże", LABELS.substrate[record.randomMicro?.substrate] || record.randomMicro?.substrate)}${fld("Nachylenie", LABELS.slope[record.randomMicro?.slope] || record.randomMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.randomMicro?.microrelief] || record.randomMicro?.microrelief)}${photoGrid(record.randomMicro?.photos, "Zdjęcie kontroli")}`],
+      ["Mikrohabitat gniazda", `${fld("Podłoże", LABELS.substrate[record.nestMicro?.substrate] || record.nestMicro?.substrate)}${fld("Piasek [%]", record.nestMicro?.coverage?.pctSand)}${fld("Drobny żwir [%]", record.nestMicro?.coverage?.pctFineGravel)}${fld("Gruby żwir/kamienie [%]", record.nestMicro?.coverage?.pctCoarse)}${fld("Muszle [%]", record.nestMicro?.coverage?.pctShells)}${fld("Roślinność żywa [%]", record.nestMicro?.coverage?.pctLiveVeg)}${fld("Roślinność sucha [%]", record.nestMicro?.coverage?.pctDryVeg)}${fld("Drewno/szczątki [%]", record.nestMicro?.coverage?.pctOrganic)}${fld("Antropogeniczne [%]", record.nestMicro?.coverage?.pctAnthro)}${fld("Suma pokrycia [%]", coverageSum(record.nestMicro?.coverage||{}))}${fld("Odległość do rośliny [cm]", record.nestMicro?.distPlantCm)}${fld("Wysokość rośliny [cm]", record.nestMicro?.heightPlantCm)}${fld("Odległość do obiektu [cm]", record.nestMicro?.distObjectCm)}${fld("Wysokość obiektu [cm]", record.nestMicro?.heightObjectCm)}${fld("Nachylenie", LABELS.slope[record.nestMicro?.slope] || record.nestMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.nestMicro?.microrelief] || record.nestMicro?.microrelief)}`],
+      ["Mezohabitat", `${Object.entries(record.meso||{}).filter(([k])=>k.startsWith("pct")).map(([k,v])=>fld(`Pokrycie ${k}` ,v)).join("")}${fld("Suma pokrycia [%]", Object.entries(record.meso||{}).filter(([k])=>k.startsWith("pct")).reduce((a,[,v])=>a+(Number(v)||0),0))}${fld("Sposób oceny buforu", LABELS.assessmentMethod?.[record.meso?.assessmentMethod] || record.meso?.assessmentMethod)}${fld("Odległość do wody [m]", record.meso?.distWaterM)}${fld("Odległość do krawędzi roślinności [m]", record.meso?.distVegEdgeM)}${fld("Odległość do wysokiego obiektu [m]", record.meso?.distVerticalStructureM)}${fld("Duże obiekty w 15 m", LABELS.yesNoUnknown?.[record.meso?.bigObjects] || record.meso?.bigObjects)}${fld("Odległość do płatu drobnego żwiru [m]", record.meso?.distFineGravelPatchM)}${fld("Odległość do płatu grubszego żwiru [m]", record.meso?.distCoarseGravelPatchM)}${fld("Odległość do najbliższego gniazda obrożnej [m]", record.meso?.distNearestHiaticulaM)}${fld("Odległość do najbliższego gniazda rzecznej [m]", record.meso?.distNearestDubiusM)}${fld("Uwagi przestrzenne", record.meso?.spatialNotes)}`],
+      ["Punkt losowy / kontrola", `${fld("Azymut [°]", record.randomMicro?.azimuthDeg)}${fld("Ponowne losowanie", LABELS.yesNoUnknown[record.randomMicro?.wasRerolled] || record.randomMicro?.wasRerolled)}${fld("Powód ponownego losowania", record.randomMicro?.rerollReason)}${fld("GPS kontroli lat", record.randomMicro?.lat)}${fld("GPS kontroli lon", record.randomMicro?.lon)}${fld("Dokładność GPS kontroli [m]", record.randomMicro?.gpsAccuracyM)}`],
+      ["Mikrohabitat kontroli", `${fld("Podłoże", LABELS.substrate[record.randomMicro?.substrate] || record.randomMicro?.substrate)}${fld("Piasek [%]", record.randomMicro?.coverage?.pctSand)}${fld("Drobny żwir [%]", record.randomMicro?.coverage?.pctFineGravel)}${fld("Gruby żwir/kamienie [%]", record.randomMicro?.coverage?.pctCoarse)}${fld("Muszle [%]", record.randomMicro?.coverage?.pctShells)}${fld("Roślinność żywa [%]", record.randomMicro?.coverage?.pctLiveVeg)}${fld("Roślinność sucha [%]", record.randomMicro?.coverage?.pctDryVeg)}${fld("Drewno/szczątki [%]", record.randomMicro?.coverage?.pctOrganic)}${fld("Antropogeniczne [%]", record.randomMicro?.coverage?.pctAnthro)}${fld("Suma pokrycia [%]", coverageSum(record.randomMicro?.coverage||{}))}${fld("Odległość do rośliny [cm]", record.randomMicro?.distPlantCm)}${fld("Wysokość rośliny [cm]", record.randomMicro?.heightPlantCm)}${fld("Odległość do obiektu [cm]", record.randomMicro?.distObjectCm)}${fld("Wysokość obiektu [cm]", record.randomMicro?.heightObjectCm)}${fld("Nachylenie", LABELS.slope[record.randomMicro?.slope] || record.randomMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.randomMicro?.microrelief] || record.randomMicro?.microrelief)}${photoGrid(record.randomMicro?.photos, "Zdjęcie kontroli")}`],
       ["Kontrola jakości", `${fld("Zdjęcie dokumentacyjne", LABELS.yesNoUnknown[record.docPhotoDone] || record.docPhotoDone)}${fld("Zdjęcie 1m²", LABELS.yesNoUnknown[record.nestOneMPhotoDone] || record.nestOneMPhotoDone)}${fld("Punkt losowy", LABELS.yesNoUnknown[record.randomPointDone] || record.randomPointDone)}`],
       ["Notatki / podsumowanie", `${fld("Notatki", record.notes)}${fld("Notatki identyfikacja", record.moduleNotes?.identification)}${fld("Notatki mikro gniazda", record.moduleNotes?.nestMicro)}${fld("Notatki mikro kontroli", record.moduleNotes?.randomMicro)}${fld("Notatki mezohabitat", record.moduleNotes?.meso)}`]
     ];
@@ -1126,22 +1185,10 @@
     const mapEl = $("#records-map");
     if (!mapEl || typeof L === "undefined") { $("#map-info").textContent = "Mapa niedostępna offline (brak biblioteki Leaflet)."; return; }
     if (!recordsMap) {
-      const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
-      const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
-      const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
-      const baseLayers = {
-        "Esri Imagery + Labels": esriImgLbl,
-        "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
-        "Esri World Imagery": esriImg,
-        "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"),
-        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png"),
-        "CARTO Positron": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"),
-        "CARTO Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"),
-        "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
-      };
-      recordsMap = L.map(mapEl, { layers: [esriImgLbl] });
+      const base = createBaseLayers();
+      recordsMap = L.map(mapEl, { layers: [base.defaultLayer] });
       recordsMap.attributionControl.setPrefix("");
-      L.control.layers(baseLayers).addTo(recordsMap);
+      L.control.layers(base.layers).addTo(recordsMap);
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
     }
     mapMarkersLayer.clearLayers();
@@ -1173,32 +1220,31 @@
     $("#map-info").textContent = `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`;
     if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
-    ensureUserLocationTracking(points, focusUid);
+    ensureUserLocationTracking(points, focusUid); syncUserLocationLayers(recordsMap,"records");
   }
 
   function ensureUserLocationTracking(points, focusUid) {
-    if (!navigator.geolocation || !recordsMap) { $("#map-user-status").textContent = "Twoja pozycja: niedostępna"; return; }
+    if (!navigator.geolocation || !recordsMap) { setLocationStatus(locationStatusText("unavailable")); return; }
     if (mapUserWatchId == null) {
       mapUserWatchId = navigator.geolocation.watchPosition(({coords}) => {
         latestUserLatLng = [coords.latitude, coords.longitude];
         latestUserAccuracy = coords.accuracy;
-        $("#map-user-status").textContent = "Twoja pozycja: aktywna";
-        if (!userLocationMarker) userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(recordsMap);
-        else userLocationMarker.setLatLng(latestUserLatLng);
-        if (Number.isFinite(coords.accuracy)) {
-          if (!userAccuracyCircle) userAccuracyCircle = L.circle(latestUserLatLng,{radius:coords.accuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(recordsMap);
-          else userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(coords.accuracy);
-        }
-        renderMapHeading();
+        setLocationStatus(locationStatusText("active"));
+        syncUserLocationLayers(recordsMap,"records");
+        syncUserLocationLayers(workingMap,"working");
+        renderMapHeading("records");
+        renderMapHeading("working");
         if (!mapHasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 17); mapHasAutoCenteredOnUser = true; }
-      }, () => { $("#map-user-status").textContent = "Twoja pozycja: niedostępna"; if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie."; }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
-    } else $("#map-user-status").textContent = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
+      }, () => { setLocationStatus(locationStatusText("unavailable")); if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie."; }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
+    } else setLocationStatus(latestUserLatLng ? locationStatusText("active") : locationStatusText("waiting"));
   }
-  function renderMapHeading() {
-    if (!recordsMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
-    if (!userHeadingMarker) userHeadingMarker = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(recordsMap);
-    else userHeadingMarker.setLatLng(latestUserLatLng);
-    const arrow = userHeadingMarker.getElement()?.querySelector("div");
+  function renderMapHeading(kind = "records") {
+    const map = kind==="records"?recordsMap:workingMap;
+    if (!map || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg) || !mapHeadingEnabled) return;
+    const layer = userLayers[kind];
+    if (!layer.heading) layer.heading = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(map);
+    else { if(!map.hasLayer(layer.heading)) layer.heading.addTo(map); layer.heading.setLatLng(latestUserLatLng); }
+    const arrow = layer.heading.getElement()?.querySelector("div");
     if (arrow) arrow.style.transform = `rotate(${latestMapHeadingDeg}deg)`;
   }
 
@@ -1291,10 +1337,16 @@
           if (latestMapHeadingDeg != null && Math.abs(normalized - latestMapHeadingDeg) < 3) return;
           latestMapHeadingDeg = latestMapHeadingDeg == null ? normalized : (latestMapHeadingDeg * 0.7 + normalized * 0.3);
           requestAnimationFrame(renderMapHeading);
-          statusEl.textContent = "Twoja pozycja: aktywna (kierunek włączony)";
+          setLocationStatus("Moja pozycja: aktywna (kierunek włączony)");
         }
       };
       if (!("DeviceOrientationEvent" in window)) return alert("Kierunek niedostępny na tym urządzeniu lub w tej przeglądarce.");
+      if (mapHeadingEnabled) {
+        mapHeadingEnabled = false;
+        $("#map-enable-heading").textContent = "Włącz kierunek"; $("#working-enable-heading").textContent = "Włącz kierunek";
+        cleanupUserLayers("records"); cleanupUserLayers("working"); syncUserLocationLayers(recordsMap,"records"); syncUserLocationLayers(workingMap,"working");
+        return;
+      }
       if (!mapHeadingEnabled) {
         const req = window.DeviceOrientationEvent?.requestPermission;
         if (typeof req === "function") {
@@ -1304,6 +1356,7 @@
         window.addEventListener("deviceorientationabsolute", onOrientation, true);
         window.addEventListener("deviceorientation", onOrientation, true);
         mapHeadingEnabled = true;
+        $("#map-enable-heading").textContent = "Wyłącz kierunek"; $("#working-enable-heading").textContent = "Wyłącz kierunek";
         alert("Porusz telefonem ósemką, aby skalibrować kompas.");
       }
     });
@@ -1329,14 +1382,24 @@
     $("#validation-override-summary")?.addEventListener("change", () => renderValidationAndPreview());
     $("#working-map-back").addEventListener("click", () => showView("home"));
     $("#working-add-gps").addEventListener("click", addWorkingNestFromGps);
-    $("#working-center-user").addEventListener("click", () => {
-      if (!latestUserLatLng) return alert("Twoja pozycja jest jeszcze niedostępna.");
-      workingMap?.setView(latestUserLatLng, 17);
+    $("#working-center-user").addEventListener("click", async () => {
+      try {
+        await showMyLocationOnMap(workingMap, "#working-user-status");
+        syncUserLocationLayers(workingMap,"working");
+        workingMap?.setView(latestUserLatLng, 17);
+      } catch {
+        alert("Nie udało się pobrać mojej pozycji. Sprawdź uprawnienia lokalizacji.");
+      }
     });
     $("#working-fit").addEventListener("click", () => fitWorkingMapBounds());
     $("#working-enable-heading").addEventListener("click", () => $("#map-enable-heading")?.click());
+    $("#working-show-map").addEventListener("click",()=>{workingViewMode="map";renderWorkingMap();});
+    $("#working-show-list").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap();});
+    $("#working-nearest").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap(true);});
     $("#working-list").addEventListener("click", onWorkingListClick);
+    $("#working-list").addEventListener("change", onWorkingListClick);
     $("#working-map-screen").addEventListener("click", onWorkingListClick);
+    $("#working-map-screen").addEventListener("change", onWorkingListClick);
     $("#back-to-readonly")?.addEventListener("click", () => {
       if (readonlyUid) showReadonlyRecord(readonlyUid);
     });
@@ -1589,45 +1652,86 @@
     else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 17);
     else workingMap?.setView([52, 19], 6);
   }
-  function addWorkingNestFromGps() {
-    if (!navigator.geolocation) return alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
-    navigator.geolocation.getCurrentPosition(({ coords }) => {
-      const label = prompt("Etykieta/notatka punktu roboczego", "") || `Robocze ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+  function getCurrentPositionAsync(options = { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 }) {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error("gps-unavailable"));
+      navigator.geolocation.getCurrentPosition(resolve, reject, options);
+    });
+  }
+
+  async function addWorkingNestFromCurrentGps() {
+    try {
+      const { coords } = await getCurrentPositionAsync();
+      const lat = Number(coords.latitude); const lon = Number(coords.longitude);
+      if (!hasValidCoords(lat, lon)) throw new Error("invalid-coords");
+      const pos = [Number(lat.toFixed(6)), Number(lon.toFixed(6))];
+      latestUserLatLng = pos; latestUserAccuracy = coords.accuracy;
       const items = getWorkingNests();
-      items.unshift({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), createdAt: new Date().toISOString(), lat: +coords.latitude.toFixed(6), lon: +coords.longitude.toFixed(6), accuracy: Math.round(coords.accuracy), label, note: label });
-      saveWorkingNests(items);
+      const nearest = items.map((i) => ({ item: i, p: toLatLon(i.lat, i.lon) })).filter((x) => x.p).map((x) => ({ item: x.item, dist: distanceM(pos, x.p) })).sort((a, b) => a.dist - b.dist)[0];
+      if (nearest && nearest.dist <= 20) {
+        const msg = `W pobliżu jest już gniazdo robocze ${nearest.item.label || "—"}, odległość ${Math.round(nearest.dist)} m. Czy mimo to dodać nowy punkt?`;
+        if (confirm(msg)) {
+          // add anyway
+        } else {
+          if (confirm("Pokaż istniejące? (Anuluj = całkowite anulowanie)")) {
+            workingViewMode = "map"; workingFocusId = nearest.item.id; renderWorkingMap();
+          }
+          return;
+        }
+      }
+      const label = nextWorkingLabel(items);
+      const point = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        label,
+        createdAt: new Date().toISOString(),
+        lat: pos[0], lon: pos[1],
+        accuracy: Number.isFinite(coords.accuracy) ? Math.round(coords.accuracy) : null,
+        note: "",
+        status: "do_sprawdzenia",
+      };
+      saveWorkingNests([point, ...items]);
+      workingFocusId = point.id;
       renderWorkingMap();
-    }, () => alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
+      alert(`Dodano gniazdo robocze ${label}.`);
+    } catch {
+      alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
+    }
   }
+
+  function addWorkingNestFromGps() { addWorkingNestFromCurrentGps(); }
+
   function onWorkingListClick(event) {
-    const btn = event.target.closest("button[data-w-action]"); if (!btn) return;
-    const item = getWorkingNests().find((x) => String(x.id) === String(btn.dataset.id)); if (!item) return;
-    if (btn.dataset.wAction === "show") workingMap?.setView([item.lat, item.lon], 18);
-    if (btn.dataset.wAction === "nav") navigateTo(item.lat, item.lon);
-    if (btn.dataset.wAction === "delete" && confirm("Usunąć punkt roboczy?")) { saveWorkingNests(getWorkingNests().filter((x) => String(x.id) !== String(item.id))); renderWorkingMap(); }
+    const control = event.target.closest("button[data-w-action], select[data-w-action]"); if (!control) return;
+    const items=getWorkingNests();
+    const item = items.find((x) => String(x.id) === String(control.dataset.id)); if (!item) return;
+    if (control.dataset.wAction === "show") { workingViewMode='map'; workingFocusId=item.id; renderWorkingMap(); }
+    if (control.dataset.wAction === "nav") navigateTo(item.lat, item.lon);
+    if (control.dataset.wAction === "delete" && confirm("Usunąć punkt roboczy?")) { saveWorkingNests(items.filter((x) => String(x.id) !== String(item.id))); renderWorkingMap(); }
+    if (control.dataset.wAction === "status") { item.status=control.value; saveWorkingNests(items); renderWorkingMap(); }
+    if (control.dataset.wAction === "edit") { item.note=prompt("Notatka", item.note||"") ?? item.note; const st=prompt("Status: do_sprawdzenia/prawdopodobne/potwierdzone/odrzucone/przepisane", item.status||"do_sprawdzenia"); if(st) item.status=st; saveWorkingNests(items); renderWorkingMap(); }
   }
-  function renderWorkingMap() {
+  function renderWorkingMap(showNearest = false) {
     const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
     if (!workingMap) {
-      const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
-      const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
-      const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
-      workingMap = L.map(mapEl, { layers: [esriImgLbl] });
+      const base = createBaseLayers();
+      workingMap = L.map(mapEl, { layers: [base.defaultLayer] });
       workingMap.attributionControl.setPrefix("");
-      L.control.layers({ "Esri Imagery + Labels": esriImgLbl, "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png") }).addTo(workingMap);
+      L.control.layers(base.layers).addTo(workingMap);
       workingLayer = L.layerGroup().addTo(workingMap);
     }
     workingLayer.clearLayers();
     const items = getWorkingNests();
-    items.forEach((w) => {
-      const pos = toLatLon(w.lat, w.lon); if (!pos) return;
-      const m = L.marker(pos, { icon: L.divIcon({ className: "map-marker working", html: '<div class="pin"><span>R</span></div>' }) }).addTo(workingLayer);
-      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>${escapeHtml(w.createdAt || "—")}<br>${pos[0]}, ${pos[1]}<br>GPS ±${escapeHtml(w.accuracy || "—")} m<br>${escapeHtml(w.note || "—")}<br><button data-w-action='nav' data-id='${w.id}'>Nawiguj</button> <button data-w-action='delete' data-id='${w.id}'>Usuń</button>`);
+    const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
+    enriched.forEach(({w,pos}) => {
+      const iconChar = ({do_sprawdzenia:"?",prawdopodobne:"💡",potwierdzone:"📖",odrzucone:"×",przepisane:"💾"})[w.status||"do_sprawdzenia"]||"?"; const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${iconChar}</span></div>` }) }).addTo(workingLayer);
+      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-id='${w.id}'>Nawiguj</button><br><select data-w-action='status' data-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>`);
+      if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,18); m.openPopup(); }
     });
-    $("#working-map-info").textContent = `Punkty robocze: ${items.length}`;
-    $("#working-list").innerHTML = items.map((w) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p class="muted">${escapeHtml(w.createdAt || "—")}</p></div><div class="entry-actions"><button data-w-action="show" data-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-id="${w.id}">Nawiguj</button><button class="danger" data-w-action="delete" data-id="${w.id}">Usuń</button></div></article>`).join("") || `<p class="muted">Brak punktów roboczych.</p>`;
-    workingMap.invalidateSize();
-    fitWorkingMapBounds();
+    $("#working-map-info").textContent = `Punkty robocze: ${enriched.length}`;
+    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <span class="status-badge status-${escapeHtml(w.status||'do_sprawdzenia')}">${escapeHtml(workingStatusLabel(w.status))}</span> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-id="${w.id}">Nawiguj</button><button data-w-action="edit" data-id="${w.id}">Edytuj notatkę</button><button class="danger" data-w-action="delete" data-id="${w.id}">Usuń</button><select data-w-action="status" data-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select></div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
+    $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
+    $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
+    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); syncUserLocationLayers(workingMap,"working");} 
   }
 
   function setupFieldMode() {
