@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v13-compass-qc-photo-move";
+const CACHE_NAME = "sieweczka-clean-v14-compass-android-fix";
 const APP_SHELL = [
   "./",
   "./index.html",

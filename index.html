@@ -143,14 +143,6 @@
               <input id="possible-renest" type="hidden" value="unknown" />
             </div>
 
-            <label>Czy wyznaczono punkt losowy 10 m?
-              <select id="random-point-done">
-                <option value="unknown">Nie wiem</option>
-                <option value="yes">Tak</option>
-                <option value="no">Nie</option>
-              </select>
-            </label>
-
             <label>Notatki identyfikacyjne
               <textarea id="notes-identification" rows="2"></textarea>
             </label>
@@ -266,7 +258,7 @@
             <div class="compass-panel" id="compass-panel">
               <p class="field-label">Kompas terenowy</p>
               <p class="hint">Trzymaj telefon górą ekranu w kierunku marszu. Wskaźnik pokazuje kierunek względem północy.</p>
-              <button type="button" id="compass-enable-btn" hidden>Włącz kompas</button>
+              <button type="button" id="compass-enable-btn">Uruchom kompas</button>
               <p id="compass-status" class="muted">Kompas: inicjalizacja...</p>
               <div class="compass-readout">
                 <div id="compass-arrow" class="compass-arrow" aria-hidden="true">↑</div>
@@ -502,6 +494,13 @@
             </label>
 
             <div class="row-2">
+              <label>Czy wyznaczono punkt losowy 10 m?
+                <select id="random-point-done">
+                  <option value="unknown">Nie wiem</option>
+                  <option value="yes">Tak</option>
+                  <option value="no">Nie</option>
+                </select>
+              </label>
               <label>Czy wykonano zdjęcie nad kontrolą?
                 <select id="doc-photo-done">
                   <option value="unknown">Nie wiem</option>

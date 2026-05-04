@@ -1005,8 +1005,12 @@
 
     const toDir = (deg) => ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
     const normalize = (deg) => ((deg % 360) + 360) % 360;
+    let gotData = false;
+    let started = false;
+    let timeoutId = null;
     const render = (deg) => {
       const n = normalize(deg);
+      gotData = true;
       degEl.textContent = `${Math.round(n)}°`;
       dirEl.textContent = toDir(n);
       arrowEl.style.transform = `rotate(${n}deg)`;
@@ -1016,40 +1020,49 @@
     const onOrientation = (event) => {
       let heading = null;
       if (typeof event.webkitCompassHeading === "number") heading = event.webkitCompassHeading;
-      else if (event.absolute === true && typeof event.alpha === "number") heading = 360 - event.alpha;
+      else if (event.absolute === true && typeof event.alpha === "number") heading = event.alpha;
       else if (typeof event.alpha === "number") heading = 360 - event.alpha;
       if (typeof heading === "number" && Number.isFinite(heading)) render(heading);
     };
 
     const start = () => {
+      if (started) return;
+      started = true;
+      gotData = false;
       window.addEventListener("deviceorientationabsolute", onOrientation, true);
       window.addEventListener("deviceorientation", onOrientation, true);
-      statusEl.textContent = "Kompas: oczekiwanie na dane czujnika...";
+      statusEl.textContent = "Kompas: oczekuję na dane z kompasu...";
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        if (!gotData) {
+          statusEl.textContent = "Brak danych z kompasu. Sprawdź, czy przeglądarka ma dostęp do czujników ruchu/orientacji i czy urządzenie ma magnetometr.";
+        }
+      }, 7000);
     };
 
     const hasApi = "DeviceOrientationEvent" in window;
     if (!hasApi) {
       statusEl.textContent = "Kompas niedostępny w tej przeglądarce lub na tym urządzeniu.";
+      enableBtn.disabled = true;
       return;
     }
-    const requestPermission = window.DeviceOrientationEvent?.requestPermission;
-    if (typeof requestPermission === "function") {
-      enableBtn.hidden = false;
-      statusEl.textContent = "Kompas wymaga zgody użytkownika.";
-      enableBtn.addEventListener("click", async () => {
+    statusEl.textContent = "Kompas gotowy. Kliknij „Uruchom kompas”.";
+    enableBtn.addEventListener("click", async () => {
+      const requestPermission = window.DeviceOrientationEvent?.requestPermission;
+      if (typeof requestPermission === "function") {
         try {
           const permission = await requestPermission.call(window.DeviceOrientationEvent);
-          if (permission === "granted") {
-            enableBtn.hidden = true;
-            start();
-          } else statusEl.textContent = "Kompas niedostępny bez zgody użytkownika.";
+          if (permission !== "granted") {
+            statusEl.textContent = "Kompas niedostępny bez zgody użytkownika.";
+            return;
+          }
         } catch {
           statusEl.textContent = "Kompas niedostępny w tej przeglądarce lub na tym urządzeniu.";
+          return;
         }
-      });
-      return;
-    }
-    start();
+      }
+      start();
+    });
   }
 
   function setupExports() {
