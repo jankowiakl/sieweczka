@@ -6,6 +6,7 @@
   <title>Sieweczka Field App</title>
   <meta name="theme-color" content="#0f766e" />
   <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -27,10 +28,13 @@
         <div class="stat"><span>Łącznie</span><strong id="entry-count">0</strong></div>
         <div class="stat wide"><span>Status</span><strong id="offline-status">online</strong></div>
       </div>
+      <div id="species-summary" class="muted"></div>
 
       <div class="home-actions">
         <button id="start-new" type="button" class="primary big">+ Nowe gniazdo</button>
         <button id="open-records" type="button" class="big">Zapisane rekordy</button>
+        <button id="open-map" type="button" class="big">Mapa rekordów</button>
+        <button id="open-working-map" type="button" class="big">Mapa gniazd roboczych</button>
         <button id="export-csv" type="button" class="big">Eksport CSV</button>
         <button id="export-json" type="button" class="big">Eksport JSON</button>
         <button id="export-zip" type="button" class="big">Eksport ZIP + zdjęcia</button>
@@ -45,13 +49,55 @@
         <button type="button" class="back-home">← Menu główne</button>
         <h2>Zapisane rekordy</h2>
       </div>
-      <input id="record-search" type="search" placeholder="Szukaj po ID, sektorze, gatunku lub obserwatorze" />
+      <div class="row-actions"><input id="record-search" type="search" placeholder="Szukaj po ID, sektorze, gatunku lub obserwatorze" /><button id="records-show-map" type="button">Pokaż rekordy na mapie</button></div>
       <div id="entries-list" class="entries-list"></div>
+    </section>
+
+
+
+    <section id="record-readonly-screen" class="screen card" hidden>
+      <div class="screen-head"><button type="button" id="readonly-back">← Wróć do rekordów</button><h2>Podgląd rekordu</h2></div>
+      <div id="record-readonly-content"></div>
+      <div class="entry-actions">
+        <button id="readonly-edit" type="button">Edytuj rekord</button>
+        <button id="readonly-show-map" type="button">Pokaż na mapie</button>
+        <button id="readonly-nav-nest" type="button">Nawiguj do gniazda</button>
+        <button id="readonly-nav-random" type="button" hidden>Nawiguj do kontroli</button>
+        <button id="readonly-delete" type="button" class="danger">Usuń rekord</button>
+        <button id="readonly-back-btn" type="button">Wróć</button>
+      </div>
+    </section>
+
+    <section id="map-screen" class="screen card" hidden>
+      <div class="screen-head"><button type="button" id="map-back">← Wróć</button><h2>Mapa rekordów</h2></div>
+      <div id="map-info" class="muted"></div>
+      <div class="map-toolbar">
+        <button id="map-center-user" type="button">Pokaż moją pozycję</button>
+        <button id="map-enable-heading" type="button">Włącz kierunek</button>
+        <span id="map-user-status" class="muted">Twoja pozycja: oczekiwanie…</span>
+      </div>
+      <div class="map-legend muted"><span class="legend-dot g">G</span> — gniazdo • <span class="legend-dot k">K</span> — kontrola / punkt losowy</div>
+      <div id="records-map" style="height: 55vh; border-radius: 12px;"></div>
+    </section>
+    <section id="working-map-screen" class="screen card" hidden>
+      <div class="screen-head"><button type="button" id="working-map-back">← Wróć</button><h2>Mapa gniazd roboczych</h2></div>
+      <div id="working-map-info" class="muted"></div>
+      <div class="map-toolbar">
+        <button id="working-add-gps" type="button">Dodaj moje GPS</button>
+        <button id="working-center-user" type="button">Pokaż moją pozycję</button>
+        <button id="working-enable-heading" type="button">Włącz kierunek</button>
+        <button id="working-fit" type="button">Dopasuj widok</button><button id="working-nearest" type="button">Najbliższe robocze</button>
+        <span id="working-user-status" class="muted">Twoja pozycja: oczekiwanie…</span><button id="working-show-map" type="button">Mapa</button><button id="working-show-list" type="button">Lista</button>
+      </div>
+      <div class="map-legend muted"><span class="legend-dot r">R</span> — gniazdo robocze</div>
+      <div id="working-map-panel"><div id="working-map" style="height: 50vh; border-radius: 12px;"></div></div>
+      <div id="working-list-panel" hidden><div id="working-nearest-list" class="muted"></div><div id="working-list" class="entries-list"></div></div>
     </section>
 
     <section id="form-screen" class="screen card" hidden>
       <div class="screen-head">
         <button type="button" class="back-home">← Menu główne</button>
+        <button type="button" id="back-to-readonly" hidden>← Wróć do podglądu</button>
         <h2 id="form-mode-title">Nowe gniazdo</h2>
       </div>
 
@@ -70,7 +116,7 @@
           <fieldset>
             <legend>Identyfikacja gniazda</legend>
 
-            <label>ID gniazda
+            <label>ID gniazda *
               <div class="inline-field">
                 <input id="nest-id" type="text" autocomplete="off" placeholder="np. SOb-20260504-1432-01" />
                 <button type="button" id="nest-id-generate" class="btn-ghost btn-inline">Generuj ID</button>
@@ -82,36 +128,41 @@
               <label>Sezon
                 <input id="season" type="text" inputmode="numeric" placeholder="2026" />
               </label>
-              <label>Obserwator
-                <input id="observer" type="text" autocomplete="name" placeholder="imię i nazwisko" />
+              <label>Obserwator *
+                <input id="observer" type="text" list="observer-list" autocomplete="name" placeholder="imię i nazwisko" />
               </label>
             </div>
 
             <div class="row-2">
-              <label>Data
+              <label>Data *
                 <input id="obs-date" type="date" />
               </label>
-              <label>Godzina
+              <label>Godzina *
                 <input id="obs-time" type="time" />
               </label>
             </div>
 
-            <label>Sektor / część wyspy
-              <input id="sector" type="text" autocomplete="off" />
+            <label>Sektor / część wyspy *
+              <input id="sector" type="text" list="sector-list" autocomplete="off" />
             </label>
+            <datalist id="observer-list"></datalist>
+            <datalist id="sector-list"></datalist>
 
             <div class="field-block">
-              <p class="field-label">Gatunek</p>
+              <p class="field-label">Gatunek *</p>
               <div class="tile-group" data-target="species">
                 <button type="button" class="tile" data-value="charadrius-hiaticula">Sieweczka obrożna</button>
                 <button type="button" class="tile" data-value="charadrius-dubius">Sieweczka rzeczna</button>
                 <button type="button" class="tile" data-value="unknown">Nieokreślony</button>
+                <button type="button" class="tile" data-value="custom:other">Inny gatunek</button>
               </div>
               <input id="species" type="hidden" value="unknown" />
+              <input id="species-custom-input" type="text" list="species-custom-list" placeholder="Wpisz nazwę własnego gatunku" hidden />
+              <datalist id="species-custom-list"></datalist>
             </div>
 
             <div class="field-block">
-              <p class="field-label">Liczba jaj</p>
+              <p class="field-label">Liczba jaj *</p>
               <div class="tile-group compact" data-target="egg-count">
                 <button type="button" class="tile" data-value="0">0</button>
                 <button type="button" class="tile" data-value="1">1</button>
@@ -143,31 +194,6 @@
               <input id="possible-renest" type="hidden" value="unknown" />
             </div>
 
-            <div class="row-2">
-              <label>Czy wykonano zdjęcie dokumentacyjne?
-                <select id="doc-photo-done">
-                  <option value="unknown">Nie wiem</option>
-                  <option value="yes">Tak</option>
-                  <option value="no">Nie</option>
-                </select>
-              </label>
-              <label>Czy wykonano zdjęcie 1 m² nad gniazdem?
-                <select id="nest-one-m-photo-done">
-                  <option value="unknown">Nie wiem</option>
-                  <option value="yes">Tak</option>
-                  <option value="no">Nie</option>
-                </select>
-              </label>
-            </div>
-
-            <label>Czy wyznaczono punkt losowy 10 m?
-              <select id="random-point-done">
-                <option value="unknown">Nie wiem</option>
-                <option value="yes">Tak</option>
-                <option value="no">Nie</option>
-              </select>
-            </label>
-
             <label>Notatki identyfikacyjne
               <textarea id="notes-identification" rows="2"></textarea>
             </label>
@@ -182,10 +208,10 @@
               <button type="button" id="gps-btn" class="primary">Pobierz GPS gniazda</button>
               <p id="gps-status">GPS: brak</p>
               <div class="row-2">
-                <label>GPS lat
+                <label>GPS lat *
                   <input id="lat" type="number" step="0.000001" inputmode="decimal" />
                 </label>
-                <label>GPS lon
+                <label>GPS lon *
                   <input id="lon" type="number" step="0.000001" inputmode="decimal" />
                 </label>
               </div>
@@ -193,7 +219,7 @@
             </div>
 
             <label class="photo-input">
-              <span>+ Zrób/dodaj zdjęcie gniazda</span>
+              <span>+ Zrób/dodaj zdjęcie gniazda *</span>
               <input id="nest-photos" type="file" accept="image/*" capture="environment" multiple />
             </label>
             <div id="nest-photo-preview" class="photo-preview"></div>
@@ -280,6 +306,17 @@
               <button type="button" id="random-azimuth-btn">Losuj azymut</button>
             </div>
 
+            <div class="compass-panel" id="compass-panel">
+              <p class="field-label">Kompas terenowy</p>
+              <p class="hint">Trzymaj telefon górą ekranu w kierunku marszu. Wskaźnik pokazuje kierunek względem północy.</p>
+              <button type="button" id="compass-enable-btn">Uruchom kompas</button>
+              <p id="compass-status" class="muted">Kompas: inicjalizacja...</p>
+              <div class="compass-readout">
+                <div id="compass-arrow" class="compass-arrow" aria-hidden="true">↑</div>
+                <p><strong id="compass-deg">—°</strong> <span id="compass-dir">—</span></p>
+              </div>
+            </div>
+
             <div class="field-block">
               <p class="field-label">Czy punkt losowy był powtórnie losowany?</p>
               <div class="tile-group compact" data-target="random-rerolled">
@@ -304,10 +341,10 @@
               <button type="button" id="random-gps-btn" class="primary">Pobierz GPS punktu losowego</button>
               <p id="random-gps-status">GPS punktu losowego: brak</p>
               <div class="row-2">
-                <label>GPS punktu lat
+                <label>GPS punktu lat *
                   <input id="random-lat" type="number" step="0.000001" inputmode="decimal" />
                 </label>
-                <label>GPS punktu lon
+                <label>GPS punktu lon *
                   <input id="random-lon" type="number" step="0.000001" inputmode="decimal" />
                 </label>
               </div>
@@ -315,7 +352,7 @@
             </div>
 
             <label class="photo-input">
-              <span>+ Zrób/dodaj zdjęcie punktu losowego</span>
+              <span>+ Zrób/dodaj zdjęcie punktu losowego / kontroli *</span>
               <input id="random-photos" type="file" accept="image/*" capture="environment" multiple />
             </label>
             <div id="random-photo-preview" class="photo-preview"></div>
@@ -426,9 +463,11 @@
               </label>
               <label>Najbliższe gniazdo s. obrożnej [m]
                 <input id="dist-nearest-hiaticula" type="number" min="0" step="0.1" inputmode="decimal" />
+                <small class="hint">Odległość może być wyliczona automatycznie z zapisanych gniazd tego samego gatunku.</small>
               </label>
               <label>Najbliższe gniazdo s. rzecznej [m]
                 <input id="dist-nearest-dubius" type="number" min="0" step="0.1" inputmode="decimal" />
+                <small class="hint">Odległość może być wyliczona automatycznie z zapisanych gniazd tego samego gatunku.</small>
               </label>
               <label>Duże obiekty w 15 m?
                 <select id="meso-big-objects">
@@ -439,9 +478,7 @@
               </label>
             </div>
 
-            <details>
-              <summary>Dodatkowe pomiary, jeśli potrzebne</summary>
-              <div class="row-2">
+            <div class="row-2">
                 <label>Odległość do płatu drobnego żwiru [m]
                   <input id="dist-fine-gravel-patch" type="number" min="0" step="0.1" inputmode="decimal" />
                 </label>
@@ -449,7 +486,6 @@
                   <input id="dist-coarse-gravel-patch" type="number" min="0" step="0.1" inputmode="decimal" />
                 </label>
               </div>
-            </details>
 
             <label>Uwagi przestrzenne
               <textarea id="meso-spatial-notes" rows="2" placeholder="np. skraj łachy, środek żwirowiska, przy starorzeczu, przy ścieżce"></textarea>
@@ -507,6 +543,30 @@
               <textarea id="qc-tracks-notes" rows="2"></textarea>
             </label>
 
+            <div class="row-2">
+              <label>Czy wyznaczono punkt losowy 10 m?
+                <select id="random-point-done">
+                  <option value="unknown">Nie wiem</option>
+                  <option value="yes">Tak</option>
+                  <option value="no">Nie</option>
+                </select>
+              </label>
+              <label>Czy wykonano zdjęcie nad kontrolą?
+                <select id="doc-photo-done">
+                  <option value="unknown">Nie wiem</option>
+                  <option value="yes">Tak</option>
+                  <option value="no">Nie</option>
+                </select>
+              </label>
+              <label>Czy wykonano zdjęcie 1 m² nad gniazdem?
+                <select id="nest-one-m-photo-done">
+                  <option value="unknown">Nie wiem</option>
+                  <option value="yes">Tak</option>
+                  <option value="no">Nie</option>
+                </select>
+              </label>
+            </div>
+
             <label>Uwagi dodatkowe
               <textarea id="notes" rows="3"></textarea>
             </label>
@@ -518,6 +578,7 @@
             <legend>Podsumowanie i zapis</legend>
             <div id="validation-list" class="validation-list"></div>
             <div id="record-preview" class="record-preview"></div>
+            <label class="inline-check"><input type="checkbox" id="validation-override-summary" /> Nie wymagaj pól obowiązkowych</label>
           </fieldset>
         </section>
 
@@ -532,6 +593,7 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="app.js"></script>
   <script src="field-help.js"></script>
   <script>

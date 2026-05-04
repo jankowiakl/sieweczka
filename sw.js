@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v12-nest-id-autogen";
+const CACHE_NAME = "sieweczka-clean-v21-regression-fixes";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,7 +6,9 @@ const APP_SHELL = [
   "./app.js",
   "./field-help.js",
   "./manifest.webmanifest",
-  "./icons/icon.svg"
+  "./icons/icon.svg",
+  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
 ];
 
 const SIEWECZKA_PATCH_V9 = String.raw`
