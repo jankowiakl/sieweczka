@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v9-autosave-order-nav";
+const CACHE_NAME = "sieweczka-clean-v12-nest-id-autogen";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -650,6 +650,260 @@ const SIEWECZKA_PATCH_V9 = String.raw`
 })();
 `;
 
+const SIEWECZKA_PATCH_V11_SAFE_FIXES = String.raw`
+
+(() => {
+  "use strict";
+  if (window.__sieweczkaPatchV11SafeFixes) return;
+  window.__sieweczkaPatchV11SafeFixes = true;
+
+  const AUTOSAVE_KEY = "sieweczka-field-autosave-v9";
+  let resumeDraftPending = false;
+  let lastPhotoScale = 1;
+
+  function $(selector, root) { return (root || document).querySelector(selector); }
+  function $$(selector, root) { return Array.from((root || document).querySelectorAll(selector)); }
+
+  function readAutosave() {
+    try { return JSON.parse(localStorage.getItem(AUTOSAVE_KEY) || "null"); }
+    catch { return null; }
+  }
+
+  function hasDraft() {
+    const draft = readAutosave();
+    return !!(draft && draft.values);
+  }
+
+  function injectSafeStyles() {
+    if (document.getElementById("sieweczka-v11-safe-styles")) return;
+    const style = document.createElement("style");
+    style.id = "sieweczka-v11-safe-styles";
+    style.textContent = [
+      "#autosave-status{display:none!important}",
+      "#form-screen .screen-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.6rem;align-items:center}",
+      "#form-screen .screen-head h2{text-align:center;margin:.2rem 0}",
+      "#form-screen .screen-head .back-home,#form-jump-end{background:var(--primary,#0f766e)!important;color:#fff!important;border:2px solid var(--primary,#0f766e)!important;border-radius:12px!important;padding:.45rem .75rem!important;font-weight:800!important;box-shadow:none!important;min-height:40px}",
+      "#form-screen .screen-head .back-home:active,#form-jump-end:active{transform:translateY(1px)}",
+      "#resume-draft[hidden]{display:none!important}",
+      ".photo-guidance{display:none!important}",
+      ".photo-preview img{cursor:zoom-in}",
+      ".sieweczka-photo-modal{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.92);display:grid;grid-template-rows:auto minmax(0,1fr);color:#fff}",
+      ".sieweczka-photo-toolbar{display:flex;gap:.45rem;align-items:center;justify-content:space-between;padding:.65rem;background:rgba(0,0,0,.65)}",
+      ".sieweczka-photo-toolbar .tools{display:flex;gap:.45rem;align-items:center}",
+      ".sieweczka-photo-toolbar button{background:#fff;color:#111;border:0;border-radius:10px;padding:.45rem .7rem;font-weight:900;min-height:38px}",
+      ".sieweczka-photo-stage{overflow:auto;display:grid;place-items:center;padding:1rem;touch-action:pan-x pan-y pinch-zoom}",
+      ".sieweczka-photo-stage img{max-width:94vw;max-height:82vh;transform-origin:center center;transition:transform .12s ease;box-shadow:0 8px 30px rgba(0,0,0,.55)}",
+      ".sieweczka-help-btn{display:inline-grid;place-items:center;width:1.45rem;height:1.45rem;border-radius:999px;border:0;background:var(--primary,#0f766e);color:#fff;font-weight:900;margin-left:.45rem;vertical-align:middle;line-height:1}",
+      ".sieweczka-help-panel{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99998;display:grid;place-items:end center;padding:1rem;color:var(--text,#111827)}",
+      ".sieweczka-help-card{background:#fff;border-radius:18px;padding:1rem;max-width:680px;width:min(100%,680px);box-shadow:0 18px 50px rgba(0,0,0,.25)}",
+      ".sieweczka-help-card h3{margin-top:0}",
+      ".sieweczka-help-card button{margin-top:.75rem;background:var(--primary,#0f766e);color:#fff;border:0;border-radius:10px;padding:.5rem .8rem;font-weight:800}"
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  function setTopNavigation() {
+    const formHead = $("#form-screen .screen-head");
+    if (!formHead) return;
+    const backHome = formHead.querySelector(".back-home");
+    if (backHome) {
+      backHome.textContent = "Początek";
+      backHome.title = "Przejdź do pierwszej karty formularza";
+    }
+    let end = $("#form-jump-end");
+    if (end) {
+      end.textContent = "Koniec";
+      end.title = "Przejdź do podsumowania i zapisu";
+    }
+    const auto = $("#autosave-status");
+    if (auto) auto.remove();
+  }
+
+  function clearFormToFreshSheet() {
+    const form = $("#entry-form");
+    if (!form) return;
+    $$('input, select, textarea', form).forEach((el) => {
+      if (el.type === "file") {
+        try { el.value = ""; } catch (_) {}
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return;
+      }
+      if (el.type === "hidden" || el.tagName === "SELECT") {
+        const defaults = {
+          "species":"unknown", "nest-status":"unknown", "possible-renest":"unknown",
+          "doc-photo-done":"unknown", "nest-one-m-photo-done":"unknown", "random-point-done":"unknown",
+          "nest-substrate":"sand", "nest-slope":"flat", "nest-microrelief":"flat",
+          "random-rerolled":"no", "random-reroll-reason":"none", "random-substrate":"sand",
+          "random-slope":"flat", "random-microrelief":"flat", "meso-assessment-method":"unknown",
+          "meso-big-objects":"unknown", "qc-bird-reaction":"weak", "qc-time-at-nest":"lt1",
+          "qc-aborted":"no", "qc-tracks":"no"
+        };
+        el.value = Object.prototype.hasOwnProperty.call(defaults, el.id) ? defaults[el.id] : "";
+      } else if (/^nest-pct-|^random-pct-|^pct-/.test(el.id || "")) {
+        el.value = "0";
+      } else if (el.id === "season") {
+        el.value = String(new Date().getFullYear());
+      } else if (el.id === "obs-date") {
+        el.value = new Date().toISOString().slice(0, 10);
+      } else if (el.id === "obs-time") {
+        el.value = new Date().toTimeString().slice(0, 5);
+      } else {
+        el.value = "";
+      }
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    $$(".photo-preview").forEach((el) => { el.innerHTML = ""; });
+    $$(".tile-group").forEach((group) => {
+      const target = document.getElementById(group.dataset.target || "");
+      if (!target) return;
+      $$(".tile", group).forEach((tile) => tile.classList.toggle("selected", tile.dataset.value === target.value));
+    });
+    const back = $("#step-back");
+    let guard = 0;
+    while (back && !back.disabled && guard < 10) { back.click(); guard += 1; }
+  }
+
+  function updateDraftButtonVisibility() {
+    const resume = $("#resume-draft");
+    if (resume) resume.hidden = !hasDraft();
+  }
+
+  function setupDraftButtons() {
+    const start = $("#start-new");
+    if (!start) return;
+    let resume = $("#resume-draft");
+    if (!resume) {
+      resume = document.createElement("button");
+      resume.id = "resume-draft";
+      resume.type = "button";
+      resume.className = "big";
+      resume.textContent = "Wróć do szkicu";
+      start.insertAdjacentElement("afterend", resume);
+    }
+    updateDraftButtonVisibility();
+
+    if (start.dataset.v11FreshStart !== "1") {
+      start.dataset.v11FreshStart = "1";
+      start.addEventListener("click", () => {
+        if (resumeDraftPending) return;
+        setTimeout(clearFormToFreshSheet, 260);
+        setTimeout(() => { setTopNavigation(); updateDraftButtonVisibility(); }, 360);
+      }, true);
+    }
+
+    if (resume.dataset.v11ResumeDraft !== "1") {
+      resume.dataset.v11ResumeDraft = "1";
+      resume.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        resumeDraftPending = true;
+        start.click();
+        setTimeout(() => { resumeDraftPending = false; }, 700);
+      }, true);
+    }
+  }
+
+  function openPhotoViewer(src) {
+    if (!src) return;
+    const old = $(".sieweczka-photo-modal");
+    if (old) old.remove();
+    lastPhotoScale = 1;
+    const modal = document.createElement("div");
+    modal.className = "sieweczka-photo-modal";
+    modal.innerHTML = '<div class="sieweczka-photo-toolbar"><strong>Podgląd zdjęcia</strong><div class="tools"><button type="button" data-action="minus">−</button><button type="button" data-action="reset">100%</button><button type="button" data-action="plus">+</button><button type="button" data-action="close">Zamknij</button></div></div><div class="sieweczka-photo-stage"><img alt="Podgląd zdjęcia" /></div>';
+    modal.querySelector("img").src = src;
+    function applyScale() { modal.querySelector("img").style.transform = "scale(" + lastPhotoScale + ")"; }
+    modal.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-action]");
+      if (!btn) return;
+      const action = btn.dataset.action;
+      if (action === "close") modal.remove();
+      if (action === "plus") { lastPhotoScale = Math.min(5, lastPhotoScale + 0.25); applyScale(); }
+      if (action === "minus") { lastPhotoScale = Math.max(0.5, lastPhotoScale - 0.25); applyScale(); }
+      if (action === "reset") { lastPhotoScale = 1; applyScale(); }
+    });
+    modal.addEventListener("wheel", (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      lastPhotoScale = Math.max(0.5, Math.min(5, lastPhotoScale + (event.deltaY < 0 ? 0.2 : -0.2)));
+      applyScale();
+    }, { passive: false });
+    document.body.appendChild(modal);
+  }
+
+  function setupPhotoViewer() {
+    if (document.body.dataset.v11PhotoViewer === "1") return;
+    document.body.dataset.v11PhotoViewer = "1";
+    document.addEventListener("click", (event) => {
+      const img = event.target.closest(".photo-preview img");
+      if (!img) return;
+      event.preventDefault();
+      openPhotoViewer(img.currentSrc || img.src);
+    }, true);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        const modal = $(".sieweczka-photo-modal");
+        if (modal) modal.remove();
+      }
+    });
+  }
+
+  function showHelpPanel(title, body) {
+    const old = $(".sieweczka-help-panel");
+    if (old) old.remove();
+    const panel = document.createElement("div");
+    panel.className = "sieweczka-help-panel";
+    panel.innerHTML = '<div class="sieweczka-help-card"><h3></h3><p></p><button type="button">Zamknij</button></div>';
+    panel.querySelector("h3").textContent = title;
+    panel.querySelector("p").textContent = body;
+    panel.addEventListener("click", (event) => {
+      if (event.target === panel || event.target.tagName === "BUTTON") panel.remove();
+    });
+    document.body.appendChild(panel);
+  }
+
+  function setupPhotoHelp() {
+    const text = "Zdjęcie wykonuj pionowo z góry. Trzymaj telefon tak, aby w kadrze mieściła się cała ramka lub cały kwadrat pomiarowy 1 × 1 m. Staraj się objąć ramkę równo, bez ucinania boków, podobnie przy gnieździe i przy punkcie losowym.";
+    $$(".photo-guidance").forEach((el) => { el.hidden = true; el.style.display = "none"; });
+    ["nest-photos", "random-photos"].forEach((id) => {
+      const input = document.getElementById(id);
+      const label = input ? input.closest("label") : null;
+      if (!label || label.dataset.v11PhotoHelp === "1") return;
+      label.dataset.v11PhotoHelp = "1";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "sieweczka-help-btn";
+      btn.textContent = "?";
+      btn.title = "Jak wykonać zdjęcie";
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showHelpPanel("Jak wykonać zdjęcie", text);
+      });
+      const span = label.querySelector("span") || label;
+      span.appendChild(btn);
+    });
+  }
+
+  function bootSafeFixes() {
+    injectSafeStyles();
+    setTopNavigation();
+    setupDraftButtons();
+    setupPhotoViewer();
+    setupPhotoHelp();
+    updateDraftButtonVisibility();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootSafeFixes);
+  else bootSafeFixes();
+  setTimeout(bootSafeFixes, 500);
+  setTimeout(bootSafeFixes, 1500);
+  setInterval(() => { setTopNavigation(); updateDraftButtonVisibility(); setupPhotoHelp(); }, 3000);
+})();
+
+`;
+
 async function cacheFreshAppShell() {
   const cache = await caches.open(CACHE_NAME);
   await cache.addAll(APP_SHELL);
@@ -666,7 +920,9 @@ async function appJsResponse(request) {
   }
   if (!response) return new Response("Offline", { status: 503, statusText: "Offline" });
   const source = await response.clone().text();
-  const patched = source.includes("__sieweczkaPatchV9") ? source : source + "\n\n" + SIEWECZKA_PATCH_V9 + "\n";
+  let patched = source;
+  if (!patched.includes("__sieweczkaPatchV9")) patched += "\n\n" + SIEWECZKA_PATCH_V9 + "\n";
+  if (!patched.includes("__sieweczkaPatchV11SafeFixes")) patched += "\n\n" + SIEWECZKA_PATCH_V11_SAFE_FIXES + "\n";
   return new Response(patched, {
     status: 200,
     statusText: "OK",

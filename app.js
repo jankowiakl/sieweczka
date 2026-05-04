@@ -23,6 +23,11 @@
     return Number.isNaN(n) ? fallback : n;
   };
   const clamp = (n, min = 0, max = 100) => Math.max(min, Math.min(max, n));
+  const SPECIES_CODE_MAP = {
+    "charadrius-hiaticula": "SOb",
+    "charadrius-dubius": "SRz",
+    unknown: "SN",
+  };
 
   const LABELS = {
     species: {
@@ -276,6 +281,61 @@
     if (!value("#obs-date")) setValue("#obs-date", now.toISOString().slice(0, 10));
     if (!value("#obs-time")) setValue("#obs-time", now.toTimeString().slice(0, 5));
     if (!value("#season")) setValue("#season", String(now.getFullYear()));
+  }
+
+  function formatNestIdDateTime(date = new Date()) {
+    const y = String(date.getFullYear());
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    const hh = String(date.getHours()).padStart(2, "0");
+    const mm = String(date.getMinutes()).padStart(2, "0");
+    return `${y}${m}${d}-${hh}${mm}`;
+  }
+
+  function speciesCode(speciesValue) {
+    const existing = SPECIES_CODE_MAP[speciesValue];
+    if (existing) return existing;
+    const normalized = String(speciesValue || "").trim().toLowerCase();
+    const fallback = normalized.split("-").filter(Boolean).slice(0, 3).map((part) => part[0]?.toUpperCase() || "").join("");
+    return fallback || "SX";
+  }
+
+  function parseNestId(text) {
+    const value = String(text || "").trim();
+    const match = value.match(/^([^-]+)-(\d{8})-(\d{4})-(.*)$/);
+    if (!match) return null;
+    return { code: match[1], date: match[2], time: match[3], suffix: match[4] || "" };
+  }
+
+  function buildNestId(speciesValue, suffix = "", now = new Date()) {
+    return `${speciesCode(speciesValue)}-${formatNestIdDateTime(now)}-${suffix}`;
+  }
+
+  function setupNestIdAutofill() {
+    const nestIdInput = $("#nest-id");
+    const speciesInput = $("#species");
+    const generateBtn = $("#nest-id-generate");
+    if (!nestIdInput || !speciesInput) return;
+
+    const refreshFromSpecies = () => {
+      const current = parseNestId(nestIdInput.value);
+      if (current) {
+        nestIdInput.value = buildNestId(speciesInput.value, current.suffix);
+        return;
+      }
+      if (!String(nestIdInput.value || "").trim()) nestIdInput.value = buildNestId(speciesInput.value);
+    };
+
+    speciesInput.addEventListener("change", refreshFromSpecies);
+    document.addEventListener("click", (event) => {
+      if (event.target.closest('.tile-group[data-target="species"] .tile')) {
+        requestAnimationFrame(refreshFromSpecies);
+      }
+    });
+    if (generateBtn) generateBtn.addEventListener("click", () => {
+      const current = parseNestId(nestIdInput.value);
+      nestIdInput.value = buildNestId(speciesInput.value, current ? current.suffix : "");
+    });
   }
 
   function showView(name) {
@@ -1137,6 +1197,7 @@
     setupPercentGroups();
     setupTiles();
     setDefaultDateTime();
+    setupNestIdAutofill();
     setupNavigation();
     setupGps();
     setupExports();
