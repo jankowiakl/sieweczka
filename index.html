@@ -28,11 +28,13 @@
         <div class="stat"><span>Łącznie</span><strong id="entry-count">0</strong></div>
         <div class="stat wide"><span>Status</span><strong id="offline-status">online</strong></div>
       </div>
+      <div id="species-summary" class="muted"></div>
 
       <div class="home-actions">
         <button id="start-new" type="button" class="primary big">+ Nowe gniazdo</button>
         <button id="open-records" type="button" class="big">Zapisane rekordy</button>
         <button id="open-map" type="button" class="big">Mapa rekordów</button>
+        <button id="open-working-map" type="button" class="big">Mapa gniazd roboczych</button>
         <button id="export-csv" type="button" class="big">Eksport CSV</button>
         <button id="export-json" type="button" class="big">Eksport JSON</button>
         <button id="export-zip" type="button" class="big">Eksport ZIP + zdjęcia</button>
@@ -77,10 +79,25 @@
       <div class="map-legend muted"><span class="legend-dot g">G</span> — gniazdo • <span class="legend-dot k">K</span> — kontrola / punkt losowy</div>
       <div id="records-map" style="height: 55vh; border-radius: 12px;"></div>
     </section>
+    <section id="working-map-screen" class="screen card" hidden>
+      <div class="screen-head"><button type="button" id="working-map-back">← Wróć</button><h2>Mapa gniazd roboczych</h2></div>
+      <div id="working-map-info" class="muted"></div>
+      <div class="map-toolbar">
+        <button id="working-add-gps" type="button">Dodaj GPS</button>
+        <button id="working-center-user" type="button">Pokaż moją pozycję</button>
+        <button id="working-enable-heading" type="button">Włącz kierunek</button>
+        <button id="working-fit" type="button">Dopasuj widok</button>
+        <span id="working-user-status" class="muted">Twoja pozycja: oczekiwanie…</span>
+      </div>
+      <div class="map-legend muted"><span class="legend-dot r">R</span> — gniazdo robocze</div>
+      <div id="working-map" style="height: 50vh; border-radius: 12px;"></div>
+      <div id="working-list" class="entries-list"></div>
+    </section>
 
     <section id="form-screen" class="screen card" hidden>
       <div class="screen-head">
         <button type="button" class="back-home">← Menu główne</button>
+        <button type="button" id="back-to-readonly" hidden>← Wróć do podglądu</button>
         <h2 id="form-mode-title">Nowe gniazdo</h2>
       </div>
 
