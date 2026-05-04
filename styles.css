@@ -722,3 +722,10 @@ summary {
   border: 3px solid #000;
   box-shadow: none;
 }
+
+.row-actions{display:flex;gap:.5rem;align-items:center}
+.row-actions input{flex:1}
+#record-readonly-content p{margin:.35rem 0}
+.map-marker div{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.map-marker.gniazdo div{background:#0f766e}
+.map-marker.kontrola div{background:#7c3aed}
