@@ -189,10 +189,54 @@ label span,
   font-weight: 760;
 }
 
+.inline-field {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+}
+
+.btn-inline {
+  min-height: 48px;
+  white-space: nowrap;
+  background: #fff;
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.btn-inline:hover {
+  background: #f3f8ff;
+}
+
 .lead,
 .hint,
 .muted {
   color: var(--muted);
+}
+
+.compass-panel {
+  margin: .8rem 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: .75rem;
+  background: #f8fafc;
+}
+
+.compass-readout {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+.compass-arrow {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  background: #fff;
 }
 
 .stats-grid {

@@ -10,7 +10,7 @@
     "egg-count": ["Liczba jaj", "Liczba jaj widoczna podczas krótkiego podejścia do gniazda. Nie wydłużaj kontroli tylko po to, by doprecyzować niepewny wynik."],
     "nest-status": ["Status gniazda", "Zaznacz, czy gniazdo znaleziono podczas inkubacji, jako świeże zniesienie, czy status jest nieznany."],
     "possible-renest": ["Możliwy renest", "Zaznacz „tak”, jeśli układ sytuacji wskazuje, że może to być ponowne zniesienie po wcześniejszej stracie. W razie wątpliwości wybierz „Nie wiem”."],
-    "doc-photo-done": ["Zdjęcie dokumentacyjne", "Zdjęcie pomagające później odnaleźć lub zweryfikować gniazdo. Nie zastępuje standardowego zdjęcia kwadratu 1 m²."],
+    "doc-photo-done": ["Zdjęcie nad kontrolą", "Zdjęcie wykonane przy kontroli jakości rekordu. Pomaga później odtworzyć kontekst obserwacji i stanowiska."],
     "nest-one-m-photo-done": ["Zdjęcie 1 m² nad gniazdem", "Zdjęcie wykonuj pionowo z wysokości ok. 1,5 m nad gruntem, z całym kwadratem 1 × 1 m w kadrze. Dopuszczalne odchylenie wysokości: 1,4–1,6 m."],
     "random-point-done": ["Punkt losowy 10 m", "Punkt kontrolny 10 m od gniazda w losowym azymucie. Jeśli wypada w wodzie, zwartej roślinności lub poza dostępnym siedliskiem lęgowym, losuj ponownie i zapisz powód."],
 
