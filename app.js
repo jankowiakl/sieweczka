@@ -121,6 +121,7 @@
   let currentStep = 1;
   let editingUid = null;
   let readonlyUid = null;
+  let editReturnToReadonly = false;
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
@@ -954,6 +955,8 @@
       return;
     }
     loadRecordToForm(record);
+    const backBtn = $("#back-to-readonly");
+    if (backBtn) backBtn.hidden = !editReturnToReadonly;
   }
 
   function deleteRecord(uid) {
@@ -999,9 +1002,27 @@
   function updateCounts() {
     const entries = getEntries();
     $("#entry-count").textContent = String(entries.length);
-    const today = new Date().toISOString().slice(0, 10);
-    $("#today-count").textContent = String(entries.filter((entry) => entry.obsDate === today).length);
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const todayCount = entries.filter((entry) => entry.obsDate === today).length;
+    $("#today-count").textContent = String(todayCount);
     $("#offline-status").textContent = navigator.onLine ? "online" : "offline";
+    const speciesSummary = $("#species-summary");
+    if (speciesSummary) {
+      const stats = new Map();
+      entries.forEach((entry) => {
+        const key = entry.species || "unknown";
+        if (!stats.has(key)) stats.set(key, { all: 0, today: 0 });
+        const row = stats.get(key);
+        row.all += 1;
+        if (entry.obsDate === today) row.today += 1;
+      });
+      speciesSummary.innerHTML = [
+        `<div>Wszystkie rekordy: ${entries.length}</div>`,
+        `<div>Dzisiaj: ${todayCount}</div>`,
+        ...Array.from(stats.entries()).map(([key, row]) => `<div>${escapeHtml(LABELS.species[key] || key || "Inne / nieokreślone")}: ${row.all}, dziś ${row.today}</div>`),
+      ].join("");
+    }
   }
 
   function renderEntries() {
@@ -1086,7 +1107,7 @@
   function buildReadonlySections(record) {
     const val = (v) => (v == null || String(v).trim() === "" ? "—" : String(v));
     const fld = (label, v) => `<div class="readonly-field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(val(v))}</div></div>`;
-    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>`<img src="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="${alt}">`).join("") || "<p>—</p>"}</div>`;
+    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>`<img src="" data-photo-ref="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="${alt}">`).join("") || "<p>—</p>"}</div>`;
     const sections = [
       ["Identyfikacja", `${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
       ["GPS i zdjęcia gniazda", `${fld("Lat", record.lat)}${fld("Lon", record.lon)}${fld("Dokładność [m]", record.gpsAccuracyM)}${photoGrid(record.nestMicro?.photos, "Zdjęcie gniazda")}`],
@@ -1099,7 +1120,7 @@
     ];
     return `<div class="readonly-carousel">${sections.map(([title, html], i) => `<section class="readonly-section${i===0?" active":""}"><h3>${title}</h3>${html}</section>`).join("")}</div><div class="readonly-nav"><button type="button" id="readonly-prev-section">Poprzednia karta</button><button type="button" id="readonly-next-section">Następna karta</button></div>`;
   }
-  function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $("#record-readonly-content .readonly-photo-grid")?.addEventListener("click",(e)=>{ const img=e.target.closest("img"); if(img) window.open(img.src,"_blank","noopener");}); }
+  function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $$("#record-readonly-content img[data-photo-ref]").forEach((img)=>{ resolvePhotoSrc(img.dataset.photoRef).then((src)=>{ if(src) img.src=src; });}); $("#record-readonly-content").addEventListener("click",(e)=>{ const img=e.target.closest("img[data-photo-ref]"); if(img?.src) window.open(img.src,"_blank","noopener");}); }
 
   function renderRecordsMap(focusUid = null) {
     const mapEl = $("#records-map");
@@ -1215,7 +1236,7 @@
   function setupNavigation() {
     $("#home-shortcut").addEventListener("click", () => showView("home"));
     $$(".back-home").forEach((btn) => btn.addEventListener("click", () => showView("home")));
-    $("#start-new").addEventListener("click", startNewRecord);
+    $("#start-new").addEventListener("click", () => { editReturnToReadonly = false; startNewRecord(); });
     $("#open-records").addEventListener("click", () => {
       renderEntries();
       showView("records");
@@ -1248,7 +1269,7 @@
       if (card?.dataset.uid) showReadonlyRecord(card.dataset.uid);
     });
     $("#readonly-back, #readonly-back-btn").addEventListener("click", () => showView("records"));
-    $("#readonly-edit").addEventListener("click", () => readonlyUid && editRecord(readonlyUid));
+    $("#readonly-edit").addEventListener("click", () => { editReturnToReadonly = true; readonlyUid && editRecord(readonlyUid); });
     $("#readonly-delete").addEventListener("click", () => { if (readonlyUid) { deleteRecord(readonlyUid); showView("records"); } });
     $("#readonly-nav-nest").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.lat,r.lon); });
     $("#readonly-nav-random").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.randomMicro?.lat,r.randomMicro?.lon); });
@@ -1308,7 +1329,17 @@
     $("#validation-override-summary")?.addEventListener("change", () => renderValidationAndPreview());
     $("#working-map-back").addEventListener("click", () => showView("home"));
     $("#working-add-gps").addEventListener("click", addWorkingNestFromGps);
+    $("#working-center-user").addEventListener("click", () => {
+      if (!latestUserLatLng) return alert("Twoja pozycja jest jeszcze niedostępna.");
+      workingMap?.setView(latestUserLatLng, 17);
+    });
+    $("#working-fit").addEventListener("click", () => fitWorkingMapBounds());
+    $("#working-enable-heading").addEventListener("click", () => $("#map-enable-heading")?.click());
     $("#working-list").addEventListener("click", onWorkingListClick);
+    $("#working-map-screen").addEventListener("click", onWorkingListClick);
+    $("#back-to-readonly")?.addEventListener("click", () => {
+      if (readonlyUid) showReadonlyRecord(readonlyUid);
+    });
 
   }
 
@@ -1548,6 +1579,55 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function getWorkingNests() { try { const v = JSON.parse(localStorage.getItem(WORKING_NESTS_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } }
+  function saveWorkingNests(items) { localStorage.setItem(WORKING_NESTS_KEY, JSON.stringify(items)); }
+  function fitWorkingMapBounds() {
+    const points = getWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
+    if (points.length) workingMap?.fitBounds(L.latLngBounds(points), { padding: [30, 30] });
+    else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 17);
+    else workingMap?.setView([52, 19], 6);
+  }
+  function addWorkingNestFromGps() {
+    if (!navigator.geolocation) return alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
+    navigator.geolocation.getCurrentPosition(({ coords }) => {
+      const label = prompt("Etykieta/notatka punktu roboczego", "") || `Robocze ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+      const items = getWorkingNests();
+      items.unshift({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), createdAt: new Date().toISOString(), lat: +coords.latitude.toFixed(6), lon: +coords.longitude.toFixed(6), accuracy: Math.round(coords.accuracy), label, note: label });
+      saveWorkingNests(items);
+      renderWorkingMap();
+    }, () => alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
+  }
+  function onWorkingListClick(event) {
+    const btn = event.target.closest("button[data-w-action]"); if (!btn) return;
+    const item = getWorkingNests().find((x) => String(x.id) === String(btn.dataset.id)); if (!item) return;
+    if (btn.dataset.wAction === "show") workingMap?.setView([item.lat, item.lon], 18);
+    if (btn.dataset.wAction === "nav") navigateTo(item.lat, item.lon);
+    if (btn.dataset.wAction === "delete" && confirm("Usunąć punkt roboczy?")) { saveWorkingNests(getWorkingNests().filter((x) => String(x.id) !== String(item.id))); renderWorkingMap(); }
+  }
+  function renderWorkingMap() {
+    const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
+    if (!workingMap) {
+      const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
+      const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
+      const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
+      workingMap = L.map(mapEl, { layers: [esriImgLbl] });
+      workingMap.attributionControl.setPrefix("");
+      L.control.layers({ "Esri Imagery + Labels": esriImgLbl, "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png") }).addTo(workingMap);
+      workingLayer = L.layerGroup().addTo(workingMap);
+    }
+    workingLayer.clearLayers();
+    const items = getWorkingNests();
+    items.forEach((w) => {
+      const pos = toLatLon(w.lat, w.lon); if (!pos) return;
+      const m = L.marker(pos, { icon: L.divIcon({ className: "map-marker working", html: '<div class="pin"><span>R</span></div>' }) }).addTo(workingLayer);
+      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>${escapeHtml(w.createdAt || "—")}<br>${pos[0]}, ${pos[1]}<br>GPS ±${escapeHtml(w.accuracy || "—")} m<br>${escapeHtml(w.note || "—")}<br><button data-w-action='nav' data-id='${w.id}'>Nawiguj</button> <button data-w-action='delete' data-id='${w.id}'>Usuń</button>`);
+    });
+    $("#working-map-info").textContent = `Punkty robocze: ${items.length}`;
+    $("#working-list").innerHTML = items.map((w) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p class="muted">${escapeHtml(w.createdAt || "—")}</p></div><div class="entry-actions"><button data-w-action="show" data-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-id="${w.id}">Nawiguj</button><button class="danger" data-w-action="delete" data-id="${w.id}">Usuń</button></div></article>`).join("") || `<p class="muted">Brak punktów roboczych.</p>`;
+    workingMap.invalidateSize();
+    fitWorkingMapBounds();
   }
 
   function setupFieldMode() {

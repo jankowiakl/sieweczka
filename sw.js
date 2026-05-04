@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v20-working-nests";
+const CACHE_NAME = "sieweczka-clean-v21-regression-fixes";
 const APP_SHELL = [
   "./",
   "./index.html",
