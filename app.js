@@ -129,6 +129,7 @@
   let mapUserWatchId = null;
   let latestUserLatLng = null;
   let latestUserAccuracy = null;
+  let latestUserPositionAt = null;
   let mapHasAutoCenteredOnUser = false;
   let mapHeadingEnabled = false;
   let latestMapHeadingDeg = null;
@@ -1106,6 +1107,23 @@
 
   function setLocationStatus(text){ ["#map-user-status","#working-user-status"].forEach((id)=>{ if($(id)) $(id).textContent=text; }); }
 
+
+  function rememberUserPosition(coords) {
+    if (!coords) return null;
+    const lat = Number(coords.latitude);
+    const lon = Number(coords.longitude);
+    if (!hasValidCoords(lat, lon)) throw new Error("invalid-coords");
+    latestUserLatLng = [Number(lat.toFixed(6)), Number(lon.toFixed(6))];
+    latestUserAccuracy = Number.isFinite(coords.accuracy) ? coords.accuracy : null;
+    latestUserPositionAt = Date.now();
+    return latestUserLatLng;
+  }
+
+  function hasRecentUserPosition(maxAgeMs = 120000) {
+    if (!latestUserLatLng || !latestUserPositionAt) return false;
+    return Date.now() - latestUserPositionAt <= maxAgeMs;
+  }
+
   function locationStatusText(mode){ if(mode==="waiting") return "Moja pozycja: oczekiwanie na GPS…"; if(mode==="unavailable") return "Moja pozycja: niedostępna"; if(mode==="active") return Number.isFinite(latestUserAccuracy)?`Moja pozycja: aktywna, dokładność ${Math.round(latestUserAccuracy)} m`:"Moja pozycja: aktywna"; return "Moja pozycja: niedostępna"; }
 
   async function showMyLocationOnMap(map, statusSelector) {
@@ -1116,10 +1134,9 @@
     if (statusSelector) $(statusSelector).textContent = locationStatusText("waiting");
     return new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(({ coords }) => {
-        latestUserLatLng = [coords.latitude, coords.longitude];
-        latestUserAccuracy = coords.accuracy;
+        const pos = rememberUserPosition(coords);
         if (statusSelector) $(statusSelector).textContent = locationStatusText("active"); setLocationStatus(locationStatusText("active"));
-        resolve(latestUserLatLng);
+        resolve(pos);
       }, () => {
         if (statusSelector) $(statusSelector).textContent = locationStatusText("unavailable");
         reject(new Error("gps-failed"));
@@ -1227,8 +1244,7 @@
     if (!navigator.geolocation || !recordsMap) { setLocationStatus(locationStatusText("unavailable")); return; }
     if (mapUserWatchId == null) {
       mapUserWatchId = navigator.geolocation.watchPosition(({coords}) => {
-        latestUserLatLng = [coords.latitude, coords.longitude];
-        latestUserAccuracy = coords.accuracy;
+        rememberUserPosition(coords);
         setLocationStatus(locationStatusText("active"));
         syncUserLocationLayers(recordsMap,"records");
         syncUserLocationLayers(workingMap,"working");
@@ -1659,13 +1675,44 @@
     });
   }
 
-  async function addWorkingNestFromCurrentGps() {
+  async function getCurrentPositionWithFallback() {
     try {
-      const { coords } = await getCurrentPositionAsync();
-      const lat = Number(coords.latitude); const lon = Number(coords.longitude);
-      if (!hasValidCoords(lat, lon)) throw new Error("invalid-coords");
-      const pos = [Number(lat.toFixed(6)), Number(lon.toFixed(6))];
-      latestUserLatLng = pos; latestUserAccuracy = coords.accuracy;
+      const position = await getCurrentPositionAsync();
+      rememberUserPosition(position.coords);
+      return { coords: position.coords, fromCache: false };
+    } catch (error) {
+      if (hasRecentUserPosition()) {
+        return {
+          coords: {
+            latitude: latestUserLatLng[0],
+            longitude: latestUserLatLng[1],
+            accuracy: latestUserAccuracy
+          },
+          fromCache: true
+        };
+      }
+      throw error;
+    }
+  }
+
+  function gpsErrorMessage(error) {
+    if (error?.code === 1) return "Brak zgody na lokalizację. Włącz lokalizację dla tej strony/aplikacji.";
+    if (error?.code === 2) return "Pozycja GPS jest chwilowo niedostępna. Spróbuj na otwartej przestrzeni.";
+    if (error?.code === 3) return "GPS nie zdążył ustalić pozycji. Spróbuj ponownie za chwilę.";
+    if (error?.message === "invalid-coords") return "Pobrano GPS, ale współrzędne są niepoprawne.";
+    return "Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.";
+  }
+
+  async function addWorkingNestFromCurrentGps() {
+    const addGpsBtn = $("#working-add-gps");
+    const prevLabel = addGpsBtn?.textContent;
+    if (addGpsBtn) {
+      addGpsBtn.disabled = true;
+      addGpsBtn.textContent = "Pobieram GPS…";
+    }
+    try {
+      const { coords, fromCache } = await getCurrentPositionWithFallback();
+      const pos = rememberUserPosition(coords);
       const items = getWorkingNests();
       const nearest = items.map((i) => ({ item: i, p: toLatLon(i.lat, i.lon) })).filter((x) => x.p).map((x) => ({ item: x.item, dist: distanceM(pos, x.p) })).sort((a, b) => a.dist - b.dist)[0];
       if (nearest && nearest.dist <= 20) {
@@ -1692,9 +1739,17 @@
       saveWorkingNests([point, ...items]);
       workingFocusId = point.id;
       renderWorkingMap();
-      alert(`Dodano gniazdo robocze ${label}.`);
-    } catch {
-      alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
+      alert(fromCache
+        ? `Dodano gniazdo robocze ${label} z ostatniej znanej pozycji GPS.`
+        : `Dodano gniazdo robocze ${label}.`);
+    } catch (error) {
+      console.error("Nie udało się dodać punktu roboczego z GPS", error);
+      alert(gpsErrorMessage(error));
+    } finally {
+      if (addGpsBtn) {
+        addGpsBtn.disabled = false;
+        addGpsBtn.textContent = prevLabel || "Dodaj moje GPS";
+      }
     }
   }
 
