@@ -1249,25 +1249,20 @@
   }
 
   function setupGps() {
+    const statusText = (selector, text) => {
+      const el = $(selector);
+      if (el) el.textContent = text;
+    };
     const getGps = (latSelector, lonSelector, accSelector, statusSelector, label) => {
-      const status = $(statusSelector);
-      if (!navigator.geolocation) {
-        if (status) status.textContent = `${label}: GPS niedostępny`;
-        return;
-      }
-      if (status) status.textContent = `${label}: pobieranie...`;
-      navigator.geolocation.getCurrentPosition(
-        ({ coords }) => {
-          setValue(latSelector, coords.latitude.toFixed(6));
-          setValue(lonSelector, coords.longitude.toFixed(6));
-          setValue(accSelector, Math.round(coords.accuracy));
-          if (status) status.textContent = `${label}: dokładność ±${Math.round(coords.accuracy)} m (${gpsQuality(coords.accuracy)})`;
-        },
-        () => {
-          if (status) status.textContent = `${label}: błąd pobierania`;
-        },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
-      );
+      statusText(statusSelector, `${label}: pobieranie...`);
+      getCurrentGpsPosition({ timeout: 12000, maximumAge: 30000 }).then(({ lat, lon, accuracy }) => {
+        setValue(latSelector, lat.toFixed(6));
+        setValue(lonSelector, lon.toFixed(6));
+        setValue(accSelector, Math.round(accuracy));
+        statusText(statusSelector, `${label}: dokładność ±${Math.round(accuracy)} m (${gpsQuality(accuracy)})`);
+      }).catch(() => {
+        statusText(statusSelector, `${label}: błąd pobierania`);
+      });
     };
     $("#gps-btn").addEventListener("click", () => getGps("#lat", "#lon", "#gps-accuracy", "#gps-status", "GPS gniazda"));
     $("#random-gps-btn").addEventListener("click", () => getGps("#random-lat", "#random-lon", "#random-gps-accuracy", "#random-gps-status", "GPS punktu"));
@@ -1277,6 +1272,20 @@
     if (acc <= 5) return "dobry";
     if (acc <= 10) return "średni";
     return "słaby";
+  }
+  function getCurrentGpsPosition(options = {}) {
+    const finalOptions = { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000, ...options };
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error("Geolokalizacja niedostępna"));
+      navigator.geolocation.getCurrentPosition(({ coords }) => {
+        const lat = Number(coords.latitude);
+        const lon = Number(coords.longitude);
+        const accuracy = Number(coords.accuracy);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return reject(new Error("Nieprawidłowe współrzędne GPS"));
+        if (lat === 0 && lon === 0) return reject(new Error("Nieprawidłowe współrzędne GPS 0,0"));
+        resolve({ lat, lon, accuracy: Number.isFinite(accuracy) ? accuracy : null });
+      }, reject, finalOptions);
+    });
   }
 
   function setupNavigation() {
@@ -1651,19 +1660,43 @@
     else workingMap?.setView([52, 19], 6);
   }
   function addWorkingNestFromGps() {
-    if (!navigator.geolocation) return alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
-    navigator.geolocation.getCurrentPosition(({ coords }) => {
+    const infoEl = $("#working-map-info");
+    if (!navigator.geolocation) {
+      if (infoEl) infoEl.textContent = "Geolokalizacja nie jest dostępna w tej przeglądarce.";
+      return;
+    }
+    if (infoEl) infoEl.textContent = "Pobieram GPS…";
+    getCurrentGpsPosition({ timeout: 12000, maximumAge: 10000 }).then(({ lat, lon, accuracy }) => {
       const items = getWorkingNests();
-      const pos=[+coords.latitude.toFixed(6), +coords.longitude.toFixed(6)];
+      const pos=[+lat.toFixed(6), +lon.toFixed(6)];
       const dup=items.map(i=>({i,pos2:toLatLon(i.lat,i.lon)})).filter(x=>x.pos2).map(x=>({item:x.i,dist:distanceM(pos,x.pos2)})).sort((a,b)=>a.dist-b.dist)[0];
-      const savePoint=()=>{ const label=nextWorkingLabel(items); const point={ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia' }; saveWorkingNests([point,...getWorkingNests()]); workingFocusId=point.id; workingViewMode='map'; renderWorkingMap(); };
+      const savePoint=()=>{ const label=nextWorkingLabel(items); const point={ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: accuracy == null ? null : Math.round(accuracy), note: "", status:'do_sprawdzenia' }; saveWorkingNests([point,...getWorkingNests()]); workingFocusId=point.id; workingViewMode='map'; renderWorkingMap(); if (infoEl) infoEl.textContent = `Dodano gniazdo robocze ${label}.`; };
       if (dup && dup.dist<=20) {
         const choice=prompt(`W pobliżu jest już gniazdo robocze ${dup.item.label||'—'}, odległość ${Math.round(dup.dist)} m. Wpisz: pokaz / dodaj / anuluj`, 'pokaz');
         if (choice==='pokaz') { workingFocusId=dup.item.id; workingViewMode='map'; renderWorkingMap(); return; }
         if (choice!=='dodaj') return;
       }
       savePoint();
-    }, () => alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
+    }).catch(() => {
+      if (infoEl) infoEl.textContent = "Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.";
+    });
+  }
+  function nextWorkingLabel(items) {
+    const now = new Date();
+    const y = String(now.getFullYear());
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    const day = `${y}${m}${d}`;
+    const prefix = `R-${day}-`;
+    const nums = (Array.isArray(items) ? items : []).map((item) => {
+      const label = String(item?.label || "");
+      if (!label.startsWith(prefix)) return null;
+      const suffix = label.slice(prefix.length);
+      const n = Number.parseInt(suffix, 10);
+      return Number.isFinite(n) ? n : null;
+    }).filter((n) => n != null);
+    const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    return `${prefix}${String(next).padStart(3, "0")}`;
   }
   function onWorkingListClick(event) {
     const btn = event.target.closest("button[data-w-action]"); if (!btn) return;
