@@ -71,7 +71,11 @@
             <legend>Identyfikacja gniazda</legend>
 
             <label>ID gniazda
-              <input id="nest-id" type="text" autocomplete="off" placeholder="np. SO-2026-001" />
+              <div class="inline-field">
+                <input id="nest-id" type="text" autocomplete="off" placeholder="np. SOb-20260504-1432-01" />
+                <button type="button" id="nest-id-generate" class="btn-ghost btn-inline">Generuj ID</button>
+              </div>
+              <small class="hint">ID tworzy się automatycznie; dopisz tylko końcowy numer i zatwierdź rekord.</small>
             </label>
 
             <div class="row-2">
