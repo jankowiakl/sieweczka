@@ -747,3 +747,9 @@ summary {
 .readonly-thumb{width:100%;height:90px;object-fit:cover;border-radius:8px}
 .readonly-json{white-space:pre-wrap;background:#f8fafc;padding:.5rem;border-radius:8px}
 .map-heading div{color:#0b57d0;font-size:20px;text-shadow:0 0 6px #fff}
+.map-marker.working.do_sprawdzenia .pin{background:#dc2626}
+.map-marker.working.prawdopodobne .pin{background:#f59e0b}
+.map-marker.working.potwierdzone .pin{background:#16a34a}
+.map-marker.working.odrzucone .pin{background:#6b7280}
+.map-marker.working.przepisane .pin{background:#2563eb}
+#working-list-panel .entry-actions button,#working-list-panel .entry-actions select{min-height:40px}
