@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v8-xlsx-dictionary";
+const CACHE_NAME = "sieweczka-clean-v9-autosave-order-nav";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -9,16 +9,402 @@ const APP_SHELL = [
   "./icons/icon.svg"
 ];
 
-const XLSX_EXPORT_PATCH_JS = String.raw`
+const SIEWECZKA_PATCH_V9 = String.raw`
 (() => {
   "use strict";
-  if (window.__sieweczkaXlsxExportPatchV8) return;
-  window.__sieweczkaXlsxExportPatchV8 = true;
+  if (window.__sieweczkaPatchV9) return;
+  window.__sieweczkaPatchV9 = true;
 
   const STORAGE_KEYS = ["sieweczka-field-data-v3", "sieweczka-field-data-v2"];
+  const AUTOSAVE_KEY = "sieweczka-field-autosave-v9";
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
-  const BASE_COLUMNS = [["uid","uid","Techniczny identyfikator rekordu nadany przez aplikację.","tekst"],["protocol_version","protocolVersion","Wersja protokołu lub formularza, z której pochodzi rekord.","tekst"],["created_at","createdAt","Data i czas pierwszego utworzenia rekordu w aplikacji.","ISO datetime"],["updated_at","updatedAt","Data i czas ostatniej aktualizacji rekordu.","ISO datetime"],["nest_id","nestId","Unikalny terenowy identyfikator gniazda.","tekst"],["season","season","Sezon lub rok badań.","rok/tekst"],["observer","observer","Osoba wykonująca obserwację lub pomiar.","tekst"],["obs_date","obsDate","Data obserwacji terenowej.","RRRR-MM-DD"],["obs_time","obsTime","Godzina obserwacji terenowej.","HH:MM"],["species","species","Oznaczony gatunek sieweczki.","charadrius-hiaticula = sieweczka obrożna; charadrius-dubius = sieweczka rzeczna; unknown = nieokreślony"],["sector","sector","Sektor, część wyspy, łachy lub stanowiska.","tekst"],["lat","lat","Szerokość geograficzna gniazda.","WGS84, stopnie dziesiętne"],["lon","lon","Długość geograficzna gniazda.","WGS84, stopnie dziesiętne"],["gps_accuracy_m","gpsAccuracyM","Deklarowana dokładność pomiaru GPS gniazda.","metry"],["nest_status","nestStatus","Status gniazda w momencie znalezienia.","incubated = inkubacja; fresh = świeże zniesienie; unknown = nieznane"],["egg_count","eggCount","Liczba jaj widoczna w gnieździe.","liczba"],["possible_renest","possibleRenest","Czy gniazdo może być ponownym zniesieniem po stracie wcześniejszego lęgu.","yes/no/unknown"],["doc_photo_done","docPhotoDone","Czy wykonano zdjęcie dokumentacyjne gniazda.","yes/no/unknown"],["nest_one_m_photo_done","nestOneMPhotoDone","Czy wykonano zdjęcie kwadratu 1 m² nad gniazdem.","yes/no/unknown"],["random_point_done","randomPointDone","Czy wyznaczono punkt losowy 10 m od gniazda.","yes/no/unknown"],["nest_substrate","nestMicro.substrate","Dominujący typ podłoża bezpośrednio przy gnieździe.","sand/fine-gravel/coarse-gravel/stones/mixed"],["nest_pct_sand","nestMicro.coverage.pctSand","Udział piasku w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_fine_gravel","nestMicro.coverage.pctFineGravel","Udział drobnego żwiru w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_coarse","nestMicro.coverage.pctCoarse","Udział grubego żwiru lub kamieni w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_shells","nestMicro.coverage.pctShells","Udział muszli lub fragmentów skorup w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_live_veg","nestMicro.coverage.pctLiveVeg","Udział żywej roślinności w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_dry_veg","nestMicro.coverage.pctDryVeg","Udział suchej lub martwej roślinności w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_organic","nestMicro.coverage.pctOrganic","Udział drewna, szczątków organicznych lub detrytusu w kwadracie 1 m² przy gnieździe.","%"],["nest_pct_anthro","nestMicro.coverage.pctAnthro","Udział elementów antropogenicznych w kwadracie 1 m² przy gnieździe.","%"],["nest_dist_plant_cm","nestMicro.distPlantCm","Odległość od środka gniazda do najbliższej rośliny lub kępy.","cm"],["nest_height_plant_cm","nestMicro.heightPlantCm","Wysokość najbliższej rośliny lub kępy przy gnieździe.","cm"],["nest_dist_object_cm","nestMicro.distObjectCm","Odległość od środka gniazda do najbliższego obiektu lub osłony niebędącej rośliną.","cm"],["nest_height_object_cm","nestMicro.heightObjectCm","Wysokość najbliższego obiektu lub osłony przy gnieździe.","cm"],["nest_slope","nestMicro.slope","Nachylenie powierzchni przy gnieździe.","flat/slight/steep"],["nest_microrelief","nestMicro.microrelief","Mikrorzeźba powierzchni przy gnieździe.","flat/depression/ridge/between-stones"],["random_azimuth_deg","randomMicro.azimuthDeg","Azymut użyty do wyznaczenia punktu losowego 10 m od gniazda.","stopnie 0-359"],["random_rerolled","randomMicro.wasRerolled","Czy punkt losowy był ponownie losowany.","yes/no/unknown"],["random_reroll_reason","randomMicro.rerollReason","Powód ponownego losowania punktu losowego.","none/water/dense-vegetation/outside-habitat/other"],["random_lat","randomMicro.lat","Szerokość geograficzna punktu losowego.","WGS84, stopnie dziesiętne"],["random_lon","randomMicro.lon","Długość geograficzna punktu losowego.","WGS84, stopnie dziesiętne"],["random_gps_accuracy_m","randomMicro.gpsAccuracyM","Deklarowana dokładność pomiaru GPS punktu losowego.","metry"],["random_substrate","randomMicro.substrate","Dominujący typ podłoża w punkcie losowym.","sand/fine-gravel/coarse-gravel/stones/mixed"],["random_pct_sand","randomMicro.coverage.pctSand","Udział piasku w kwadracie 1 m² punktu losowego.","%"],["random_pct_fine_gravel","randomMicro.coverage.pctFineGravel","Udział drobnego żwiru w kwadracie 1 m² punktu losowego.","%"],["random_pct_coarse","randomMicro.coverage.pctCoarse","Udział grubego żwiru lub kamieni w kwadracie 1 m² punktu losowego.","%"],["random_pct_shells","randomMicro.coverage.pctShells","Udział muszli lub fragmentów skorup w kwadracie 1 m² punktu losowego.","%"],["random_pct_live_veg","randomMicro.coverage.pctLiveVeg","Udział żywej roślinności w kwadracie 1 m² punktu losowego.","%"],["random_pct_dry_veg","randomMicro.coverage.pctDryVeg","Udział suchej lub martwej roślinności w kwadracie 1 m² punktu losowego.","%"],["random_pct_organic","randomMicro.coverage.pctOrganic","Udział drewna, szczątków organicznych lub detrytusu w kwadracie 1 m² punktu losowego.","%"],["random_pct_anthro","randomMicro.coverage.pctAnthro","Udział elementów antropogenicznych w kwadracie 1 m² punktu losowego.","%"],["random_dist_plant_cm","randomMicro.distPlantCm","Odległość od punktu losowego do najbliższej rośliny lub kępy.","cm"],["random_height_plant_cm","randomMicro.heightPlantCm","Wysokość najbliższej rośliny lub kępy przy punkcie losowym.","cm"],["random_dist_object_cm","randomMicro.distObjectCm","Odległość od punktu losowego do najbliższego obiektu lub osłony niebędącej rośliną.","cm"],["random_height_object_cm","randomMicro.heightObjectCm","Wysokość najbliższego obiektu lub osłony przy punkcie losowym.","cm"],["random_slope","randomMicro.slope","Nachylenie powierzchni w punkcie losowym.","flat/slight/steep"],["random_microrelief","randomMicro.microrelief","Mikrorzeźba powierzchni w punkcie losowym.","flat/depression/ridge/between-stones"],["meso_pct_sand","meso.pctSand","Udział piasku w buforze 15 m wokół gniazda.","%"],["meso_pct_gravel","meso.pctGravel","Udział żwiru lub kamieni w buforze 15 m wokół gniazda.","%"],["meso_pct_vegetation","meso.pctVegetation","Udział roślinności w buforze 15 m wokół gniazda.","%"],["meso_pct_water","meso.pctWater","Udział wody lub podmokłości w buforze 15 m wokół gniazda.","%"],["meso_pct_other","meso.pctOther","Udział innych klas pokrycia w buforze 15 m wokół gniazda.","%"],["meso_assessment_method","meso.assessmentMethod","Sposób oceny buforu 15 m.","field = teren; gis = ortofotomapa/GIS; unknown = nieokreślone"],["meso_big_objects","meso.bigObjects","Obecność dużych obiektów w promieniu 15 m.","none/present/unknown"],["dist_water_m","meso.distWaterM","Odległość od gniazda do najbliższej linii wody.","m"],["dist_veg_edge_m","meso.distVegEdgeM","Odległość od gniazda do krawędzi zwartej roślinności.","m"],["dist_vertical_structure_m","meso.distVerticalStructureM","Odległość od gniazda do najbliższego wyższego obiektu lub struktury pionowej.","m"],["dist_fine_gravel_patch_m","meso.distFineGravelPatchM","Odległość od gniazda do płatu drobnego żwiru.","m"],["dist_coarse_gravel_patch_m","meso.distCoarseGravelPatchM","Odległość od gniazda do płatu grubszego żwiru lub kamieni.","m"],["dist_nearest_hiaticula_m","meso.distNearestHiaticulaM","Odległość do najbliższego znanego gniazda sieweczki obrożnej.","m"],["dist_nearest_dubius_m","meso.distNearestDubiusM","Odległość do najbliższego znanego gniazda sieweczki rzecznej.","m"],["meso_spatial_notes","meso.spatialNotes","Opis położenia i kontekstu przestrzennego gniazda.","tekst"],["qc_bird_reaction","qualityControl.birdReaction","Reakcja ptaków podczas podejścia do gniazda.","weak/moderate/strong"],["qc_time_at_nest","qualityControl.timeAtNest","Czas bezpośredniej obecności przy gnieździe.","lt1/1to3/gt3"],["qc_aborted","qualityControl.aborted","Czy przerwano pomiar z powodu niepokoju ptaków lub ryzyka terenowego.","yes/no"],["qc_tracks_visible","qualityControl.tracksVisible","Czy widoczne były ślady drapieżnika lub człowieka.","yes/no"],["qc_tracks_notes","qualityControl.tracksNotes","Opis śladów, zakłóceń lub uwag jakościowych.","tekst"],["notes_identification","moduleNotes.identification","Notatki dotyczące identyfikacji gniazda lub gatunku.","tekst"],["notes_nest_micro","moduleNotes.nestMicro","Notatki dotyczące mikrohabitatu gniazda.","tekst"],["notes_random_micro","moduleNotes.randomMicro","Notatki dotyczące mikrohabitatu punktu losowego.","tekst"],["notes_meso","moduleNotes.meso","Notatki dotyczące mezohabitatu i buforu 15 m.","tekst"],["notes","notes","Uwagi dodatkowe do całego rekordu.","tekst"]];
+  const STEP_TITLES = {
+    1: "Identyfikacja",
+    2: "GPS i zdjęcia gniazda",
+    3: "Mikrohabitat gniazda",
+    4: "Mezohabitat",
+    5: "Punkt losowy 10 m",
+    6: "Mikrohabitat punktu losowego",
+    7: "Kontrola jakości",
+    8: "Podsumowanie i zapis"
+  };
+  const STEP_REMAP = { "1": "1", "2": "2", "3": "3", "6": "4", "4": "5", "5": "6", "7": "7", "8": "8" };
+  const DEFAULT_VALUES = new Map([
+    ["species", "unknown"], ["nest-status", "unknown"], ["possible-renest", "unknown"],
+    ["doc-photo-done", "unknown"], ["nest-one-m-photo-done", "unknown"], ["random-point-done", "unknown"],
+    ["nest-substrate", "sand"], ["nest-slope", "flat"], ["nest-microrelief", "flat"],
+    ["random-rerolled", "no"], ["random-reroll-reason", "none"], ["random-substrate", "sand"],
+    ["random-slope", "flat"], ["random-microrelief", "flat"], ["meso-assessment-method", "unknown"],
+    ["meso-big-objects", "unknown"], ["qc-bird-reaction", "weak"], ["qc-time-at-nest", "lt1"],
+    ["qc-aborted", "no"], ["qc-tracks", "no"]
+  ]);
+
+  const BASE_COLUMNS = [
+    ["uid","uid","Techniczny identyfikator rekordu nadany przez aplikację.","tekst"],
+    ["protocol_version","protocolVersion","Wersja protokołu lub formularza, z której pochodzi rekord.","tekst"],
+    ["created_at","createdAt","Data i czas pierwszego utworzenia rekordu w aplikacji.","ISO datetime"],
+    ["updated_at","updatedAt","Data i czas ostatniej aktualizacji rekordu.","ISO datetime"],
+    ["nest_id","nestId","Unikalny terenowy identyfikator gniazda.","tekst"],
+    ["season","season","Sezon lub rok badań.","rok/tekst"],
+    ["observer","observer","Osoba wykonująca obserwację lub pomiar.","tekst"],
+    ["obs_date","obsDate","Data obserwacji terenowej.","RRRR-MM-DD"],
+    ["obs_time","obsTime","Godzina obserwacji terenowej.","HH:MM"],
+    ["species","species","Oznaczony gatunek sieweczki.","charadrius-hiaticula = sieweczka obrożna; charadrius-dubius = sieweczka rzeczna; unknown = nieokreślony"],
+    ["sector","sector","Sektor, część wyspy, łachy lub stanowiska.","tekst"],
+    ["lat","lat","Szerokość geograficzna gniazda.","WGS84, stopnie dziesiętne"],
+    ["lon","lon","Długość geograficzna gniazda.","WGS84, stopnie dziesiętne"],
+    ["gps_accuracy_m","gpsAccuracyM","Deklarowana dokładność pomiaru GPS gniazda.","metry"],
+    ["nest_status","nestStatus","Status gniazda w momencie znalezienia.","incubated = inkubacja; fresh = świeże zniesienie; unknown = nieznane"],
+    ["egg_count","eggCount","Liczba jaj widoczna w gnieździe.","liczba"],
+    ["possible_renest","possibleRenest","Czy gniazdo może być ponownym zniesieniem po stracie wcześniejszego lęgu.","yes/no/unknown"],
+    ["doc_photo_done","docPhotoDone","Czy wykonano zdjęcie dokumentacyjne gniazda.","yes/no/unknown"],
+    ["nest_one_m_photo_done","nestOneMPhotoDone","Czy wykonano zdjęcie kwadratu 1 m² nad gniazdem.","yes/no/unknown"],
+    ["random_point_done","randomPointDone","Czy wyznaczono punkt losowy 10 m od gniazda.","yes/no/unknown"],
+    ["nest_substrate","nestMicro.substrate","Dominujący typ podłoża bezpośrednio przy gnieździe.","sand/fine-gravel/coarse-gravel/stones/mixed"],
+    ["nest_pct_sand","nestMicro.coverage.pctSand","Udział piasku w kwadracie 1 m² przy gnieździe.","%"],
+    ["nest_pct_fine_gravel","nestMicro.coverage.pctFineGravel","Udział drobnego żwiru w kwadracie 1 m² przy gnieździe.","%"],
+    ["nest_pct_coarse","nestMicro.coverage.pctCoarse","Udział grubego żwiru lub kamieni w kwadracie 1 m² przy gnieździe.","%"],
+    ["nest_pct_shells","nestMicro.coverage.pctShells","Udział muszli lub fragmentów skorup w kwadracie 1 m² przy gnieździe.","%"],
+    ["nest_pct_live_veg","nestMicro.coverage.pctLiveVeg","Udział żywej roślinności w kwadracie 1 m² przy gnieździe.","%"],
+    ["nest_pct_dry_veg","nestMicro.coverage.pctDryVeg","Udział suchej lub martwej roślinności w kwadracie 1 m² przy gnieździe.","%"],
+    ["nest_pct_organic","nestMicro.coverage.pctOrganic","Udział drewna, szczątków organicznych lub detrytusu w kwadracie 1 m² przy gnieździe.","%"],
+    ["nest_pct_anthro","nestMicro.coverage.pctAnthro","Udział elementów antropogenicznych w kwadracie 1 m² przy gnieździe.","%"],
+    ["nest_dist_plant_cm","nestMicro.distPlantCm","Odległość od środka gniazda do najbliższej rośliny lub kępy.","cm"],
+    ["nest_height_plant_cm","nestMicro.heightPlantCm","Wysokość najbliższej rośliny lub kępy przy gnieździe.","cm"],
+    ["nest_dist_object_cm","nestMicro.distObjectCm","Odległość od środka gniazda do najbliższego obiektu lub osłony niebędącej rośliną.","cm"],
+    ["nest_height_object_cm","nestMicro.heightObjectCm","Wysokość najbliższego obiektu lub osłony przy gnieździe.","cm"],
+    ["nest_slope","nestMicro.slope","Nachylenie powierzchni przy gnieździe.","flat/slight/steep"],
+    ["nest_microrelief","nestMicro.microrelief","Mikrorzeźba powierzchni przy gnieździe.","flat/depression/ridge/between-stones"],
+    ["random_azimuth_deg","randomMicro.azimuthDeg","Azymut użyty do wyznaczenia punktu losowego 10 m od gniazda.","stopnie 0-359"],
+    ["random_rerolled","randomMicro.wasRerolled","Czy punkt losowy był ponownie losowany.","yes/no/unknown"],
+    ["random_reroll_reason","randomMicro.rerollReason","Powód ponownego losowania punktu losowego.","none/water/dense-vegetation/outside-habitat/other"],
+    ["random_lat","randomMicro.lat","Szerokość geograficzna punktu losowego.","WGS84, stopnie dziesiętne"],
+    ["random_lon","randomMicro.lon","Długość geograficzna punktu losowego.","WGS84, stopnie dziesiętne"],
+    ["random_gps_accuracy_m","randomMicro.gpsAccuracyM","Deklarowana dokładność pomiaru GPS punktu losowego.","metry"],
+    ["random_substrate","randomMicro.substrate","Dominujący typ podłoża w punkcie losowym.","sand/fine-gravel/coarse-gravel/stones/mixed"],
+    ["random_pct_sand","randomMicro.coverage.pctSand","Udział piasku w kwadracie 1 m² punktu losowego.","%"],
+    ["random_pct_fine_gravel","randomMicro.coverage.pctFineGravel","Udział drobnego żwiru w kwadracie 1 m² punktu losowego.","%"],
+    ["random_pct_coarse","randomMicro.coverage.pctCoarse","Udział grubego żwiru lub kamieni w kwadracie 1 m² punktu losowego.","%"],
+    ["random_pct_shells","randomMicro.coverage.pctShells","Udział muszli lub fragmentów skorup w kwadracie 1 m² punktu losowego.","%"],
+    ["random_pct_live_veg","randomMicro.coverage.pctLiveVeg","Udział żywej roślinności w kwadracie 1 m² punktu losowego.","%"],
+    ["random_pct_dry_veg","randomMicro.coverage.pctDryVeg","Udział suchej lub martwej roślinności w kwadracie 1 m² punktu losowego.","%"],
+    ["random_pct_organic","randomMicro.coverage.pctOrganic","Udział drewna, szczątków organicznych lub detrytusu w kwadracie 1 m² punktu losowego.","%"],
+    ["random_pct_anthro","randomMicro.coverage.pctAnthro","Udział elementów antropogenicznych w kwadracie 1 m² punktu losowego.","%"],
+    ["random_dist_plant_cm","randomMicro.distPlantCm","Odległość od punktu losowego do najbliższej rośliny lub kępy.","cm"],
+    ["random_height_plant_cm","randomMicro.heightPlantCm","Wysokość najbliższej rośliny lub kępy przy punkcie losowym.","cm"],
+    ["random_dist_object_cm","randomMicro.distObjectCm","Odległość od punktu losowego do najbliższego obiektu lub osłony niebędącej rośliną.","cm"],
+    ["random_height_object_cm","randomMicro.heightObjectCm","Wysokość najbliższego obiektu lub osłony przy punkcie losowym.","cm"],
+    ["random_slope","randomMicro.slope","Nachylenie powierzchni w punkcie losowym.","flat/slight/steep"],
+    ["random_microrelief","randomMicro.microrelief","Mikrorzeźba powierzchni w punkcie losowym.","flat/depression/ridge/between-stones"],
+    ["meso_pct_sand","meso.pctSand","Udział piasku w buforze 15 m wokół gniazda.","%"],
+    ["meso_pct_gravel","meso.pctGravel","Udział żwiru lub kamieni w buforze 15 m wokół gniazda.","%"],
+    ["meso_pct_vegetation","meso.pctVegetation","Udział roślinności w buforze 15 m wokół gniazda.","%"],
+    ["meso_pct_water","meso.pctWater","Udział wody lub podmokłości w buforze 15 m wokół gniazda.","%"],
+    ["meso_pct_other","meso.pctOther","Udział innych klas pokrycia w buforze 15 m wokół gniazda.","%"],
+    ["meso_assessment_method","meso.assessmentMethod","Sposób oceny buforu 15 m.","field = teren; gis = ortofotomapa/GIS; unknown = nieokreślone"],
+    ["meso_big_objects","meso.bigObjects","Obecność dużych obiektów w promieniu 15 m.","none/present/unknown"],
+    ["dist_water_m","meso.distWaterM","Odległość od gniazda do najbliższej linii wody.","m"],
+    ["dist_veg_edge_m","meso.distVegEdgeM","Odległość od gniazda do krawędzi zwartej roślinności.","m"],
+    ["dist_vertical_structure_m","meso.distVerticalStructureM","Odległość od gniazda do najbliższego wyższego obiektu lub struktury pionowej.","m"],
+    ["dist_fine_gravel_patch_m","meso.distFineGravelPatchM","Odległość od gniazda do płatu drobnego żwiru.","m"],
+    ["dist_coarse_gravel_patch_m","meso.distCoarseGravelPatchM","Odległość od gniazda do płatu grubszego żwiru lub kamieni.","m"],
+    ["dist_nearest_hiaticula_m","meso.distNearestHiaticulaM","Odległość do najbliższego znanego gniazda sieweczki obrożnej.","m"],
+    ["dist_nearest_dubius_m","meso.distNearestDubiusM","Odległość do najbliższego znanego gniazda sieweczki rzecznej.","m"],
+    ["meso_spatial_notes","meso.spatialNotes","Opis położenia i kontekstu przestrzennego gniazda.","tekst"],
+    ["qc_bird_reaction","qualityControl.birdReaction","Reakcja ptaków podczas podejścia do gniazda.","weak/moderate/strong"],
+    ["qc_time_at_nest","qualityControl.timeAtNest","Czas bezpośredniej obecności przy gnieździe.","lt1/1to3/gt3"],
+    ["qc_aborted","qualityControl.aborted","Czy przerwano pomiar z powodu niepokoju ptaków lub ryzyka terenowego.","yes/no"],
+    ["qc_tracks_visible","qualityControl.tracksVisible","Czy widoczne były ślady drapieżnika lub człowieka.","yes/no"],
+    ["qc_tracks_notes","qualityControl.tracksNotes","Opis śladów, zakłóceń lub uwag jakościowych.","tekst"],
+    ["notes_identification","moduleNotes.identification","Notatki dotyczące identyfikacji gniazda lub gatunku.","tekst"],
+    ["notes_nest_micro","moduleNotes.nestMicro","Notatki dotyczące mikrohabitatu gniazda.","tekst"],
+    ["notes_random_micro","moduleNotes.randomMicro","Notatki dotyczące mikrohabitatu punktu losowego.","tekst"],
+    ["notes_meso","moduleNotes.meso","Notatki dotyczące mezohabitatu i buforu 15 m.","tekst"],
+    ["notes","notes","Uwagi dodatkowe do całego rekordu.","tekst"]
+  ];
+
+  function $(selector, root) { return (root || document).querySelector(selector); }
+  function $$(selector, root) { return Array.from((root || document).querySelectorAll(selector)); }
+  function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+  function openPhotoDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(PHOTO_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(PHOTO_STORE)) db.createObjectStore(PHOTO_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function putPhotoBlob(file) {
+    const db = await openPhotoDb();
+    const id = "autosave-" + (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2));
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(PHOTO_STORE, "readwrite");
+      tx.objectStore(PHOTO_STORE).put(file, id);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    return "idb:" + id;
+  }
+
+  async function getPhotoBlob(ref) {
+    if (!ref) return null;
+    const text = String(ref);
+    if (text.startsWith("data:")) return dataUrlToBlob(text);
+    if (!text.startsWith("idb:")) return null;
+    const db = await openPhotoDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PHOTO_STORE, "readonly");
+      const req = tx.objectStore(PHOTO_STORE).get(text.slice(4));
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const text = String(dataUrl || "");
+    const comma = text.indexOf(",");
+    if (!text.startsWith("data:") || comma < 0) return null;
+    const meta = text.slice(0, comma);
+    const data = text.slice(comma + 1);
+    const mimeMatch = meta.match(/^data:([^;]+)(;base64)?$/i);
+    const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+    let bytes;
+    if (/;base64/i.test(meta)) {
+      const bin = atob(data);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    } else {
+      bytes = new TextEncoder().encode(decodeURIComponent(data));
+    }
+    return new Blob([bytes], { type: mime });
+  }
+
+  function readAutosave() {
+    try { return JSON.parse(localStorage.getItem(AUTOSAVE_KEY) || "null"); }
+    catch { return null; }
+  }
+
+  function writeAutosave(draft) {
+    try { localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(draft)); }
+    catch (error) { console.warn("Nie udało się wykonać autozapisu formularza.", error); }
+  }
+
+  function clearAutosave() {
+    localStorage.removeItem(AUTOSAVE_KEY);
+  }
+
+  function visibleStepNumber() {
+    const step = $("#entry-form .step:not([hidden])");
+    return step ? Number(step.dataset.step || 1) : 1;
+  }
+
+  function hasMeaningfulDraft(values, photos) {
+    const photoCount = ((photos && photos.nest) || []).length + ((photos && photos.random) || []).length;
+    if (photoCount > 0) return true;
+    return Object.entries(values || {}).some(([id, val]) => {
+      const text = String(val == null ? "" : val).trim();
+      if (!text) return false;
+      if (id === "obs-date" || id === "obs-time" || id === "season") return false;
+      if (DEFAULT_VALUES.has(id) && DEFAULT_VALUES.get(id) === text) return false;
+      if (/^nest-pct-|^random-pct-|^pct-/.test(id) && (text === "0" || text === "0.0")) return false;
+      return true;
+    });
+  }
+
+  async function captureFiles(inputId, groupName) {
+    const input = document.getElementById(inputId);
+    const files = input && input.files ? Array.from(input.files) : [];
+    if (!files.length) return null;
+    const saved = [];
+    for (const file of files.slice(0, 8)) {
+      try {
+        const ref = await putPhotoBlob(file);
+        saved.push({ ref, name: file.name || groupName + ".jpg", type: file.type || "image/jpeg", size: file.size || 0, lastModified: file.lastModified || Date.now() });
+      } catch (error) {
+        console.warn("Nie udało się zapisać zdjęcia w autozapisie", error);
+      }
+    }
+    return saved;
+  }
+
+  async function autosaveNow(options) {
+    const form = document.getElementById("entry-form");
+    const formScreen = document.getElementById("form-screen");
+    if (!form || !formScreen || formScreen.hidden) return;
+
+    const previous = readAutosave() || {};
+    const values = {};
+    $$('input, select, textarea', form).forEach((el) => {
+      if (!el.id && !el.name) return;
+      if (el.type === "file") return;
+      values[el.id || el.name] = el.value == null ? "" : String(el.value);
+    });
+
+    const photos = previous.photos || { nest: [], random: [] };
+    const forceFiles = options && options.captureFiles;
+    if (forceFiles || (document.getElementById("nest-photos") && document.getElementById("nest-photos").files && document.getElementById("nest-photos").files.length)) {
+      const nestFiles = await captureFiles("nest-photos", "zdjecie_gniazda");
+      if (nestFiles) photos.nest = nestFiles;
+    }
+    if (forceFiles || (document.getElementById("random-photos") && document.getElementById("random-photos").files && document.getElementById("random-photos").files.length)) {
+      const randomFiles = await captureFiles("random-photos", "zdjecie_punktu_losowego");
+      if (randomFiles) photos.random = randomFiles;
+    }
+
+    if (!hasMeaningfulDraft(values, photos)) return;
+    writeAutosave({ version: 9, savedAt: new Date().toISOString(), step: visibleStepNumber(), values, photos });
+  }
+
+  let autosaveTimer = null;
+  function scheduleAutosave() {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => autosaveNow({ captureFiles: false }), 350);
+  }
+
+  function setControlValue(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = value == null ? "" : String(value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function syncTilesFromInputs() {
+    $$(".tile-group").forEach((group) => {
+      const target = document.getElementById(group.dataset.target || "");
+      if (!target) return;
+      $$(".tile", group).forEach((tile) => tile.classList.toggle("selected", tile.dataset.value === target.value));
+    });
+  }
+
+  async function restoreFilesToInput(inputId, items) {
+    const input = document.getElementById(inputId);
+    if (!input || !items || !items.length || typeof DataTransfer === "undefined") return;
+    const dt = new DataTransfer();
+    for (const item of items) {
+      const blob = await getPhotoBlob(item.ref);
+      if (!blob) continue;
+      const name = item.name || "zdjecie.jpg";
+      try {
+        dt.items.add(new File([blob], name, { type: blob.type || item.type || "image/jpeg", lastModified: item.lastModified || Date.now() }));
+      } catch {
+        dt.items.add(new File([blob], name));
+      }
+    }
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  async function restoreAutosaveIfAvailable() {
+    const draft = readAutosave();
+    if (!draft || !draft.values) return;
+    Object.entries(draft.values).forEach(([id, value]) => setControlValue(id, value));
+    syncTilesFromInputs();
+    await restoreFilesToInput("nest-photos", draft.photos && draft.photos.nest);
+    await restoreFilesToInput("random-photos", draft.photos && draft.photos.random);
+    setTimeout(() => syncTilesFromInputs(), 50);
+    setTimeout(() => goToStep(Number(draft.step || 1)), 120);
+  }
+
+  async function goToStep(targetStep) {
+    const target = Math.max(1, Math.min(8, Number(targetStep) || 1));
+    let guard = 0;
+    while (visibleStepNumber() < target && guard < 10) {
+      const next = document.getElementById("step-next");
+      if (!next || next.hidden) break;
+      next.click();
+      guard += 1;
+      await wait(0);
+    }
+    while (visibleStepNumber() > target && guard < 20) {
+      const back = document.getElementById("step-back");
+      if (!back) break;
+      back.click();
+      guard += 1;
+      await wait(0);
+    }
+    refreshStepUi();
+  }
+
+  function reorderSteps() {
+    const form = document.getElementById("entry-form");
+    const sticky = form ? form.querySelector(".sticky-actions") : null;
+    if (!form || !sticky) return;
+    const sections = $$(".step", form);
+    sections.forEach((section) => {
+      if (!section.dataset.originalStep) section.dataset.originalStep = section.dataset.step || "";
+    });
+    const sorted = sections.slice().sort((a, b) => Number(STEP_REMAP[a.dataset.originalStep] || a.dataset.originalStep) - Number(STEP_REMAP[b.dataset.originalStep] || b.dataset.originalStep));
+    sorted.forEach((section) => {
+      section.dataset.step = STEP_REMAP[section.dataset.originalStep] || section.dataset.originalStep;
+      form.insertBefore(section, sticky);
+    });
+  }
+
+  function updateValidationButtons() {
+    $$("#validation-list button[data-field]").forEach((btn) => {
+      const field = document.querySelector(btn.dataset.field || "");
+      const section = field ? field.closest(".step") : null;
+      if (section && section.dataset.step) btn.dataset.step = section.dataset.step;
+    });
+  }
+
+  function refreshStepUi() {
+    const step = visibleStepNumber();
+    const title = document.getElementById("step-title");
+    const progress = document.getElementById("step-progress");
+    const back = document.getElementById("step-back");
+    const next = document.getElementById("step-next");
+    const save = document.getElementById("save-final");
+    if (title) title.textContent = "Krok " + step + " z 8 — " + (STEP_TITLES[step] || "");
+    if (progress) progress.style.width = String((step / 8) * 100) + "%";
+    if (back) back.disabled = step === 1;
+    if (next) next.hidden = step === 8;
+    if (save) save.hidden = step !== 8;
+    updateValidationButtons();
+  }
+
+  function setupNavigationTop() {
+    const formHead = document.querySelector("#form-screen .screen-head");
+    if (!formHead) return;
+    const backHome = formHead.querySelector(".back-home");
+    if (backHome) {
+      backHome.textContent = "← Początek";
+      backHome.title = "Przejdź do pierwszej karty formularza";
+    }
+    if (!document.getElementById("form-jump-end")) {
+      const end = document.createElement("button");
+      end.id = "form-jump-end";
+      end.type = "button";
+      end.className = "ghost small";
+      end.textContent = "Koniec →";
+      end.title = "Przejdź do podsumowania i zapisu";
+      formHead.appendChild(end);
+    }
+    if (!document.getElementById("autosave-status")) {
+      const note = document.createElement("div");
+      note.id = "autosave-status";
+      note.className = "hint";
+      note.style.margin = ".35rem 0 .75rem";
+      note.textContent = "Autozapis formularza jest włączony — przypadkowe wyjście do menu nie powinno kasować ostatnio wpisanych danych.";
+      formHead.insertAdjacentElement("afterend", note);
+    }
+  }
+
+  function hideOldExportButtonsAndRename() {
+    const csv = document.getElementById("export-csv");
+    const json = document.getElementById("export-json");
+    if (csv) csv.hidden = true;
+    if (json) json.hidden = true;
+    const zip = document.getElementById("export-zip");
+    if (zip) zip.textContent = "Eksport Excel + zdjęcia";
+  }
 
   function bootHeightSteppers() {
     const fields = [["nest-height-plant",1,"cm"],["nest-height-object",1,"cm"],["random-height-plant",1,"cm"],["random-height-object",1,"cm"]];
@@ -59,20 +445,12 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
     });
   }
 
-  function xmlEscape(value) {
-    return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-  function formulaEscape(value) {
-    return String(value == null ? "" : value).replace(/"/g, '""');
-  }
+  function xmlEscape(value) { return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function formulaEscape(value) { return String(value == null ? "" : value).replace(/"/g, '""'); }
   function colName(index) {
     let name = "";
     let n = index;
-    while (n > 0) {
-      const rem = (n - 1) % 26;
-      name = String.fromCharCode(65 + rem) + name;
-      n = Math.floor((n - 1) / 26);
-    }
+    while (n > 0) { const rem = (n - 1) % 26; name = String.fromCharCode(65 + rem) + name; n = Math.floor((n - 1) / 26); }
     return name;
   }
   function sanitizeFileName(value, fallback) {
@@ -88,48 +466,6 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
     if (t.includes("heif")) return "heif";
     return "jpg";
   }
-  function dataUrlToBlob(dataUrl) {
-    const text = String(dataUrl || "");
-    const comma = text.indexOf(",");
-    if (!text.startsWith("data:") || comma < 0) return null;
-    const meta = text.slice(0, comma);
-    const data = text.slice(comma + 1);
-    const mimeMatch = meta.match(/^data:([^;]+)(;base64)?$/i);
-    const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
-    let bytes;
-    if (/;base64/i.test(meta)) {
-      const bin = atob(data);
-      bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
-    } else {
-      bytes = new TextEncoder().encode(decodeURIComponent(data));
-    }
-    return new Blob([bytes], { type: mime });
-  }
-  function openPhotoDb() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(PHOTO_DB, 1);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains(PHOTO_STORE)) db.createObjectStore(PHOTO_STORE);
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
-  async function getPhotoBlob(ref) {
-    if (!ref) return null;
-    const text = String(ref);
-    if (text.startsWith("data:")) return dataUrlToBlob(text);
-    if (!text.startsWith("idb:")) return null;
-    const db = await openPhotoDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(PHOTO_STORE, "readonly");
-      const req = tx.objectStore(PHOTO_STORE).get(text.slice(4));
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  }
   function safeArray(value) { return Array.isArray(value) ? value : []; }
   function safeObj(value) { return value && typeof value === "object" ? value : {}; }
   function normalizeEntry(entry) {
@@ -138,25 +474,15 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
   }
   function loadEntries() {
     for (const key of STORAGE_KEYS) {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-        if (Array.isArray(parsed) && parsed.length) return parsed.map(normalizeEntry);
-      } catch (error) {
-        console.warn("Nie udało się odczytać bazy", key, error);
-      }
+      try { const parsed = JSON.parse(localStorage.getItem(key) || "[]"); if (Array.isArray(parsed) && parsed.length) return parsed.map(normalizeEntry); }
+      catch (error) { console.warn("Nie udało się odczytać bazy", key, error); }
     }
     const dynamicKey = Object.keys(localStorage).filter((key) => key.startsWith("sieweczka-field-data-")).sort().reverse()[0];
     if (!dynamicKey) return [];
-    try {
-      const parsed = JSON.parse(localStorage.getItem(dynamicKey) || "[]");
-      return Array.isArray(parsed) ? parsed.map(normalizeEntry) : [];
-    } catch {
-      return [];
-    }
+    try { const parsed = JSON.parse(localStorage.getItem(dynamicKey) || "[]"); return Array.isArray(parsed) ? parsed.map(normalizeEntry) : []; }
+    catch { return []; }
   }
-  function getPath(row, path) {
-    return String(path || "").split(".").reduce((acc, part) => (acc == null ? "" : acc[part]), row) ?? "";
-  }
+  function getPath(row, path) { return String(path || "").split(".").reduce((acc, part) => (acc == null ? "" : acc[part]), row) ?? ""; }
   async function collectRowsAndPhotos(entries, outerZip) {
     const exportRows = [];
     let maxNestPhotos = 0, maxRandomPhotos = 0;
@@ -191,15 +517,9 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
   }
   function buildSheetXml(headers, bodyRows) {
     const rows = ['<row r="1">' + headers.map((h, i) => cellXml(1, i + 1, h)).join("") + '</row>'];
-    bodyRows.forEach((row, offset) => {
-      const r = offset + 2;
-      rows.push('<row r="' + r + '">' + row.map((v, i) => cellXml(r, i + 1, v)).join("") + '</row>');
-    });
+    bodyRows.forEach((row, offset) => { const r = offset + 2; rows.push('<row r="' + r + '">' + row.map((v, i) => cellXml(r, i + 1, v)).join("") + '</row>'); });
     const lastCell = colName(headers.length) + Math.max(1, bodyRows.length + 1);
-    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-      '<dimension ref="A1:' + lastCell + '"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
-      '<sheetFormatPr defaultRowHeight="15"/><sheetData>' + rows.join("") + '</sheetData><autoFilter ref="A1:' + lastCell + '"/></worksheet>';
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' + '<dimension ref="A1:' + lastCell + '"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' + '<sheetFormatPr defaultRowHeight="15"/><sheetData>' + rows.join("") + '</sheetData><autoFilter ref="A1:' + lastCell + '"/></worksheet>';
   }
   async function buildXlsxBlob(dataHeaders, dataRows, dictionaryRows) {
     const zip = new JSZip();
@@ -234,32 +554,18 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
       const collected = await collectRowsAndPhotos(entries, outerZip);
       const headers = BASE_COLUMNS.map((col) => col[0]);
       const dictionaryRows = BASE_COLUMNS.map((col) => [col[0], col[2] || "", col[3] || ""]);
-      for (let i = 1; i <= collected.maxNestPhotos; i += 1) {
-        const name = "nest_photo_" + i;
-        headers.push(name);
-        dictionaryRows.push([name, "Hiperłącze do zdjęcia gniazda numer " + i + " zapisanego w folderze photos w tej samej paczce ZIP.", "ścieżka względna do pliku zdjęcia"]);
-      }
-      for (let i = 1; i <= collected.maxRandomPhotos; i += 1) {
-        const name = "random_photo_" + i;
-        headers.push(name);
-        dictionaryRows.push([name, "Hiperłącze do zdjęcia punktu losowego numer " + i + " zapisanego w folderze photos w tej samej paczce ZIP.", "ścieżka względna do pliku zdjęcia"]);
-      }
+      for (let i = 1; i <= collected.maxNestPhotos; i += 1) { const name = "nest_photo_" + i; headers.push(name); dictionaryRows.push([name, "Hiperłącze do zdjęcia gniazda numer " + i + " zapisanego w folderze photos w tej samej paczce ZIP.", "ścieżka względna do pliku zdjęcia"]); }
+      for (let i = 1; i <= collected.maxRandomPhotos; i += 1) { const name = "random_photo_" + i; headers.push(name); dictionaryRows.push([name, "Hiperłącze do zdjęcia punktu losowego numer " + i + " zapisanego w folderze photos w tej samej paczce ZIP.", "ścieżka względna do pliku zdjęcia"]); }
       const sheetRows = collected.exportRows.map((item) => {
         const row = BASE_COLUMNS.map((col) => getPath(item.entry, col[1]));
-        for (let i = 0; i < collected.maxNestPhotos; i += 1) {
-          const path = item.nestPhotoFiles[i] || "";
-          row.push(path ? { hyperlink: path, label: path.split("/").pop() } : "");
-        }
-        for (let i = 0; i < collected.maxRandomPhotos; i += 1) {
-          const path = item.randomPhotoFiles[i] || "";
-          row.push(path ? { hyperlink: path, label: path.split("/").pop() } : "");
-        }
+        for (let i = 0; i < collected.maxNestPhotos; i += 1) { const path = item.nestPhotoFiles[i] || ""; row.push(path ? { hyperlink: path, label: path.split("/").pop() } : ""); }
+        for (let i = 0; i < collected.maxRandomPhotos; i += 1) { const path = item.randomPhotoFiles[i] || ""; row.push(path ? { hyperlink: path, label: path.split("/").pop() } : ""); }
         return row;
       });
       const xlsxBlob = await buildXlsxBlob(headers, sheetRows, dictionaryRows);
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
       outerZip.file("records.xlsx", xlsxBlob);
-      outerZip.file("README.txt", "Eksport Sieweczka Field App.\n\nPlik records.xlsx ma dwa arkusze:\n1. Dane - rekordy terenowe.\n2. Opis zmiennych - słownik kolumn i jednostek.\n\nKolumny nest_photo_1, nest_photo_2 itd. oraz random_photo_1, random_photo_2 itd. zawierają hiperłącza do plików w folderze photos.\nPo rozpakowaniu ZIP zostaw records.xlsx i folder photos w tym samym katalogu, aby hiperłącza działały.\n");
+      outerZip.file("README.txt", "Eksport Sieweczka Field App.\n\nNajważniejszy plik: records.xlsx. Arkusz 'Dane' zawiera rekordy, a arkusz 'Opis zmiennych' opisuje znaczenie kolumn. Kolumny nest_photo_1, nest_photo_2 itd. oraz random_photo_1, random_photo_2 itd. zawierają hiperłącza do plików w folderze photos.\n\nPo rozpakowaniu ZIP zostaw records.xlsx i folder photos w tym samym katalogu, aby hiperłącza działały.\n");
       const zipBlob = await outerZip.generateAsync({ type: "blob", mimeType: "application/zip" });
       downloadBlob("sieweczka-eksport-excel-zdjecia-" + stamp + ".zip", zipBlob);
     } catch (error) {
@@ -269,31 +575,76 @@ const XLSX_EXPORT_PATCH_JS = String.raw`
       if (button) { button.disabled = false; button.textContent = originalText || "Eksport Excel + zdjęcia"; }
     }
   }
-  function removeOldExportButtons() {
-    const csvButton = document.getElementById("export-csv");
-    const jsonButton = document.getElementById("export-json");
-    if (csvButton) csvButton.remove();
-    if (jsonButton) jsonButton.remove();
-  }
+
   function bootExportPatch() {
-    removeOldExportButtons();
+    hideOldExportButtonsAndRename();
     const button = document.getElementById("export-zip");
-    if (!button) return;
+    if (!button || button.dataset.xlsxPhotoPatchV9 === "1") return;
+    button.dataset.xlsxPhotoPatchV9 = "1";
     button.textContent = "Eksport Excel + zdjęcia";
-    if (button.dataset.xlsxPhotoPatchV8 === "1") return;
-    button.dataset.xlsxPhotoPatchV8 = "1";
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
       exportZipWithExcel();
     }, true);
   }
+
+  function installEventHandlers() {
+    document.addEventListener("input", (event) => { if (event.target && event.target.closest && event.target.closest("#entry-form")) scheduleAutosave(); }, true);
+    document.addEventListener("change", (event) => { if (event.target && event.target.closest && event.target.closest("#entry-form")) autosaveNow({ captureFiles: event.target.type === "file" }); }, true);
+    document.addEventListener("click", (event) => {
+      const formScreen = document.getElementById("form-screen");
+      const inForm = formScreen && !formScreen.hidden;
+      const target = event.target && event.target.closest ? event.target.closest("button, a") : null;
+      if (!target) return;
+      if (inForm && target.id === "home-shortcut") autosaveNow({ captureFiles: true });
+      if (inForm && target.closest("#form-screen") && target.classList.contains("back-home")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        autosaveNow({ captureFiles: true });
+        goToStep(1);
+      }
+      if (target.id === "form-jump-end") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        autosaveNow({ captureFiles: true });
+        goToStep(8);
+      }
+      if (target.id === "save-draft") setTimeout(() => autosaveNow({ captureFiles: true }), 100);
+      if (target.id === "save-final") {
+        setTimeout(() => {
+          const fs = document.getElementById("form-screen");
+          if (fs && fs.hidden) clearAutosave();
+        }, 900);
+      }
+    }, true);
+    const start = document.getElementById("start-new");
+    if (start && start.dataset.autosaveRestoreV9 !== "1") {
+      start.dataset.autosaveRestoreV9 = "1";
+      start.addEventListener("click", () => { setTimeout(() => restoreAutosaveIfAvailable(), 180); }, false);
+    }
+  }
+
+  function observeUi() {
+    const form = document.getElementById("entry-form");
+    if (!form || form.dataset.v9Observed === "1") return;
+    form.dataset.v9Observed = "1";
+    const observer = new MutationObserver(() => setTimeout(refreshStepUi, 0));
+    observer.observe(form, { subtree: true, attributes: true, attributeFilter: ["hidden", "data-step"], childList: true });
+  }
+
   function boot() {
+    reorderSteps();
+    setupNavigationTop();
     bootHeightSteppers();
     bootExportPatch();
-    setTimeout(bootExportPatch, 300);
-    setTimeout(bootExportPatch, 1000);
+    installEventHandlers();
+    observeUi();
+    refreshStepUi();
+    setTimeout(() => { reorderSteps(); setupNavigationTop(); bootExportPatch(); refreshStepUi(); }, 400);
+    setTimeout(() => { reorderSteps(); setupNavigationTop(); bootExportPatch(); refreshStepUi(); }, 1200);
   }
+
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
 })();
@@ -307,18 +658,15 @@ async function cacheFreshAppShell() {
 async function appJsResponse(request) {
   const cache = await caches.open(CACHE_NAME);
   let response = null;
-
   try {
     response = await fetch(request, { cache: "no-store" });
     if (response && response.ok) cache.put(request, response.clone());
   } catch (error) {
     response = await caches.match(request) || await caches.match("./app.js");
   }
-
   if (!response) return new Response("Offline", { status: 503, statusText: "Offline" });
-
   const source = await response.clone().text();
-  const patched = source.includes("__sieweczkaXlsxExportPatchV8") ? source : source + "\n\n" + XLSX_EXPORT_PATCH_JS + "\n";
+  const patched = source.includes("__sieweczkaPatchV9") ? source : source + "\n\n" + SIEWECZKA_PATCH_V9 + "\n";
   return new Response(patched, {
     status: 200,
     statusText: "OK",
@@ -343,13 +691,11 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-
   const url = new URL(event.request.url);
   if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("app.js")) {
     event.respondWith(appJsResponse(event.request));
     return;
   }
-
   const isNavigation = event.request.mode === "navigate";
   event.respondWith(
     caches.match(event.request).then((cached) => {
