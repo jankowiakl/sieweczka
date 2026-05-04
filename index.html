@@ -70,31 +70,37 @@
           <fieldset>
             <legend>Identyfikacja gniazda</legend>
 
-            <label>ID gniazda
-              <input id="nest-id" type="text" autocomplete="off" placeholder="np. SO-2026-001" />
+            <label>ID gniazda *
+              <div class="inline-field">
+                <input id="nest-id" type="text" autocomplete="off" placeholder="np. SOb-20260504-1432-01" />
+                <button type="button" id="nest-id-generate" class="btn-ghost btn-inline">Generuj ID</button>
+              </div>
+              <small class="hint">ID tworzy się automatycznie; dopisz tylko końcowy numer i zatwierdź rekord.</small>
             </label>
 
             <div class="row-2">
               <label>Sezon
                 <input id="season" type="text" inputmode="numeric" placeholder="2026" />
               </label>
-              <label>Obserwator
-                <input id="observer" type="text" autocomplete="name" placeholder="imię i nazwisko" />
+              <label>Obserwator *
+                <input id="observer" type="text" list="observer-list" autocomplete="name" placeholder="imię i nazwisko" />
               </label>
             </div>
 
             <div class="row-2">
-              <label>Data
+              <label>Data *
                 <input id="obs-date" type="date" />
               </label>
-              <label>Godzina
+              <label>Godzina *
                 <input id="obs-time" type="time" />
               </label>
             </div>
 
-            <label>Sektor / część wyspy
-              <input id="sector" type="text" autocomplete="off" />
+            <label>Sektor / część wyspy *
+              <input id="sector" type="text" list="sector-list" autocomplete="off" />
             </label>
+            <datalist id="observer-list"></datalist>
+            <datalist id="sector-list"></datalist>
 
             <div class="field-block">
               <p class="field-label">Gatunek</p>
@@ -102,8 +108,11 @@
                 <button type="button" class="tile" data-value="charadrius-hiaticula">Sieweczka obrożna</button>
                 <button type="button" class="tile" data-value="charadrius-dubius">Sieweczka rzeczna</button>
                 <button type="button" class="tile" data-value="unknown">Nieokreślony</button>
+                <button type="button" class="tile" data-value="custom:other">Inny gatunek</button>
               </div>
               <input id="species" type="hidden" value="unknown" />
+              <input id="species-custom-input" type="text" list="species-custom-list" placeholder="Wpisz nazwę własnego gatunku" hidden />
+              <datalist id="species-custom-list"></datalist>
             </div>
 
             <div class="field-block">
@@ -138,31 +147,6 @@
               </div>
               <input id="possible-renest" type="hidden" value="unknown" />
             </div>
-
-            <div class="row-2">
-              <label>Czy wykonano zdjęcie dokumentacyjne?
-                <select id="doc-photo-done">
-                  <option value="unknown">Nie wiem</option>
-                  <option value="yes">Tak</option>
-                  <option value="no">Nie</option>
-                </select>
-              </label>
-              <label>Czy wykonano zdjęcie 1 m² nad gniazdem?
-                <select id="nest-one-m-photo-done">
-                  <option value="unknown">Nie wiem</option>
-                  <option value="yes">Tak</option>
-                  <option value="no">Nie</option>
-                </select>
-              </label>
-            </div>
-
-            <label>Czy wyznaczono punkt losowy 10 m?
-              <select id="random-point-done">
-                <option value="unknown">Nie wiem</option>
-                <option value="yes">Tak</option>
-                <option value="no">Nie</option>
-              </select>
-            </label>
 
             <label>Notatki identyfikacyjne
               <textarea id="notes-identification" rows="2"></textarea>
@@ -274,6 +258,17 @@
                 <input id="random-azimuth" type="number" min="0" max="359" step="1" inputmode="numeric" />
               </label>
               <button type="button" id="random-azimuth-btn">Losuj azymut</button>
+            </div>
+
+            <div class="compass-panel" id="compass-panel">
+              <p class="field-label">Kompas terenowy</p>
+              <p class="hint">Trzymaj telefon górą ekranu w kierunku marszu. Wskaźnik pokazuje kierunek względem północy.</p>
+              <button type="button" id="compass-enable-btn">Uruchom kompas</button>
+              <p id="compass-status" class="muted">Kompas: inicjalizacja...</p>
+              <div class="compass-readout">
+                <div id="compass-arrow" class="compass-arrow" aria-hidden="true">↑</div>
+                <p><strong id="compass-deg">—°</strong> <span id="compass-dir">—</span></p>
+              </div>
             </div>
 
             <div class="field-block">
@@ -422,9 +417,11 @@
               </label>
               <label>Najbliższe gniazdo s. obrożnej [m]
                 <input id="dist-nearest-hiaticula" type="number" min="0" step="0.1" inputmode="decimal" />
+                <small class="hint">Odległość może być wyliczona automatycznie z zapisanych gniazd tego samego gatunku.</small>
               </label>
               <label>Najbliższe gniazdo s. rzecznej [m]
                 <input id="dist-nearest-dubius" type="number" min="0" step="0.1" inputmode="decimal" />
+                <small class="hint">Odległość może być wyliczona automatycznie z zapisanych gniazd tego samego gatunku.</small>
               </label>
               <label>Duże obiekty w 15 m?
                 <select id="meso-big-objects">
@@ -502,6 +499,30 @@
             <label>Opis śladów / uwagi jakości
               <textarea id="qc-tracks-notes" rows="2"></textarea>
             </label>
+
+            <div class="row-2">
+              <label>Czy wyznaczono punkt losowy 10 m?
+                <select id="random-point-done">
+                  <option value="unknown">Nie wiem</option>
+                  <option value="yes">Tak</option>
+                  <option value="no">Nie</option>
+                </select>
+              </label>
+              <label>Czy wykonano zdjęcie nad kontrolą?
+                <select id="doc-photo-done">
+                  <option value="unknown">Nie wiem</option>
+                  <option value="yes">Tak</option>
+                  <option value="no">Nie</option>
+                </select>
+              </label>
+              <label>Czy wykonano zdjęcie 1 m² nad gniazdem?
+                <select id="nest-one-m-photo-done">
+                  <option value="unknown">Nie wiem</option>
+                  <option value="yes">Tak</option>
+                  <option value="no">Nie</option>
+                </select>
+              </label>
+            </div>
 
             <label>Uwagi dodatkowe
               <textarea id="notes" rows="3"></textarea>
