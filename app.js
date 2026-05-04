@@ -1147,6 +1147,7 @@
   function nextWorkingLabel(items){ const d=new Date(); const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'); const key=`${y}${m}${day}`; const nums=items.map(i=>/^R-(\d{8})-(\d{3})$/.exec(i.label||"")).filter(Boolean).filter(x=>x[1]===key).map(x=>Number(x[2])); const n=(Math.max(0,...nums)+1); return `R-${key}-${String(n).padStart(3,'0')}`; }
   function workingStatusLabel(v){ return ({do_sprawdzenia:'Do sprawdzenia',prawdopodobne:'Prawdopodobne',potwierdzone:'Potwierdzone',odrzucone:'Odrzucone',przepisane:'Przepisane do rekordu'})[v]||'Do sprawdzenia'; }
   function workingStatusOptions(selected){ return ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].map(k=>`<option value="${k}" ${k===selected?'selected':''}>${workingStatusLabel(k)}</option>`).join(''); }
+  function workingStatusMarkerText(status){ return ({do_sprawdzenia:'?',prawdopodobne:'P',potwierdzone:'✓',odrzucone:'×',przepisane:'Z'})[status]||'?'; }
 
   function navigateTo(lat, lon) {
     const pos = toLatLon(lat, lon);
@@ -1687,7 +1688,7 @@
     const items = getWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
     enriched.forEach(({w,pos}) => {
-      const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: '<div class="pin"><span>R</span></div>' }) }).addTo(workingLayer);
+      const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }) }).addTo(workingLayer);
       m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-id='${w.id}'>Nawiguj</button><br><select data-w-action='status' data-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,18); m.openPopup(); }
     });
