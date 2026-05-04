@@ -123,6 +123,15 @@
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
+  let userLocationMarker = null;
+  let userAccuracyCircle = null;
+  let userHeadingMarker = null;
+  let mapUserWatchId = null;
+  let latestUserLatLng = null;
+  let latestUserAccuracy = null;
+  let mapHasAutoCenteredOnUser = false;
+  let mapHeadingEnabled = false;
+  let latestMapHeadingDeg = null;
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
@@ -1033,9 +1042,19 @@
   }
 
 
+  function hasValidCoords(lat, lon) {
+    if (lat == null || lon == null) return false;
+    if (String(lat).trim() === "" || String(lon).trim() === "") return false;
+    const a = Number(lat), b = Number(lon);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+    if (a < -90 || a > 90 || b < -180 || b > 180) return false;
+    if (a === 0 && b === 0) return false;
+    return true;
+  }
+
   function toLatLon(lat, lon) {
+    if (!hasValidCoords(lat, lon)) return null;
     const a = Number(lat); const b = Number(lon);
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
     return [a, b];
   }
 
@@ -1049,21 +1068,30 @@
     const record = getEntries().find((entry) => String(entry.uid) === String(uid));
     if (!record) return;
     readonlyUid = record.uid;
+    const nestPos = toLatLon(record.lat, record.lon);
     const randomPos = toLatLon(record.randomMicro?.lat, record.randomMicro?.lon);
     $("#readonly-nav-random").hidden = !randomPos;
-    $("#record-readonly-content").innerHTML = `
-      <h3>${escapeHtml(record.nestId || "(bez ID)")}</h3>
-      <p><strong>Identyfikacja:</strong> ${escapeHtml(LABELS.species[record.species] || record.species || "-")}, ${escapeHtml(record.obsDate || "-")} ${escapeHtml(record.obsTime || "")}, obserwator: ${escapeHtml(record.observer || "-")}, sektor: ${escapeHtml(record.sector || "-")}</p>
-      <p><strong>GPS gniazda:</strong> ${record.lat ?? "brak"}, ${record.lon ?? "brak"}</p>
-      <p><strong>Punkt losowy/kontrola GPS:</strong> ${record.randomMicro?.lat ?? "brak"}, ${record.randomMicro?.lon ?? "brak"}</p>
-      <p><strong>Zdjęcia:</strong> gniazdo ${(record.nestMicro?.photos || []).length}, kontrola ${(record.randomMicro?.photos || []).length}</p>
-      <p><strong>Mikrohabitat gniazda:</strong> ${escapeHtml(record.nestMicro?.substrate || "-")}, nachylenie ${escapeHtml(record.nestMicro?.slope || "-")}</p>
-      <p><strong>Mezohabitat:</strong> piasek ${record.meso?.pctSand ?? 0}%, żwir ${record.meso?.pctGravel ?? 0}%, roślinność ${record.meso?.pctVegetation ?? 0}%</p>
-      <p><strong>Punkt losowy/kontrola:</strong> azymut ${record.randomMicro?.azimuthDeg ?? "-"}, podłoże ${escapeHtml(record.randomMicro?.substrate || "-")}</p>
-      <p><strong>Kontrola jakości:</strong> reakcja ${escapeHtml(LABELS.qcReaction[record.qualityControl?.birdReaction] || record.qualityControl?.birdReaction || "-")}, czas ${escapeHtml(LABELS.qcTime[record.qualityControl?.timeAtNest] || record.qualityControl?.timeAtNest || "-")}</p>
-      <p><strong>Notatki:</strong> ${escapeHtml(record.notes || "brak")}</p>`;
+    $("#readonly-nav-random").disabled = !randomPos;
+    $("#readonly-nav-nest").disabled = !nestPos;
+    $("#record-readonly-content").innerHTML = buildReadonlySections(record);
+    initReadonlyCarousel();
     showView("readonly");
   }
+
+  function buildReadonlySections(record) {
+    const sections = [
+      ["Identyfikacja", `<p>ID: <strong>${escapeHtml(record.nestId || "(bez ID)")}</strong></p><p>Data/godz.: ${escapeHtml(record.obsDate || "-")} ${escapeHtml(record.obsTime || "")}</p><p>Gatunek: ${escapeHtml(LABELS.species[record.species] || record.species || "-")}</p><p>Obserwator: ${escapeHtml(record.observer || "-")}</p><p>Sektor: ${escapeHtml(record.sector || "-")}</p>`],
+      ["GPS gniazda", `<p>Lat: ${record.lat ?? "brak"}</p><p>Lon: ${record.lon ?? "brak"}</p><p>Dokładność: ${record.gpsAccuracyM ?? "brak"} m</p>`],
+      ["Mikrohabitat gniazda", `<p>Podłoże: ${escapeHtml(record.nestMicro?.substrate || "-")}</p><p>Nachylenie: ${escapeHtml(record.nestMicro?.slope || "-")}</p><p>Mikrorzeźba: ${escapeHtml(record.nestMicro?.microrelief || "-")}</p><div class="readonly-photo-grid">${(record.nestMicro?.photos || []).map((p)=>`<img src="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="Zdjęcie gniazda">`).join("") || "<p>Brak zdjęć.</p>"}</div>`],
+      ["Punkt losowy / kontrola", `<p>Azymut: ${record.randomMicro?.azimuthDeg ?? "-"}</p><p>Podłoże: ${escapeHtml(record.randomMicro?.substrate || "-")}</p><p>Rzut ponowny: ${escapeHtml(record.randomMicro?.wasRerolled || "-")} (${escapeHtml(record.randomMicro?.rerollReason || "-")})</p>`],
+      ["GPS kontroli", `<p>Lat: ${record.randomMicro?.lat ?? "brak"}</p><p>Lon: ${record.randomMicro?.lon ?? "brak"}</p><p>Dokładność: ${record.randomMicro?.gpsAccuracyM ?? "brak"} m</p><div class="readonly-photo-grid">${(record.randomMicro?.photos || []).map((p)=>`<img src="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="Zdjęcie kontroli">`).join("") || "<p>Brak zdjęć.</p>"}</div>`],
+      ["Mezohabitat / QC / notatki", `<p>Mezo: piasek ${record.meso?.pctSand ?? 0}%, żwir ${record.meso?.pctGravel ?? 0}%, roślinność ${record.meso?.pctVegetation ?? 0}%</p><p>QC: ${escapeHtml(record.qualityControl?.birdReaction || "-")}, ${escapeHtml(record.qualityControl?.timeAtNest || "-")}</p><p>Notatki: ${escapeHtml(record.notes || "brak")}</p><pre class="readonly-json">${escapeHtml(JSON.stringify(record.moduleNotes || {}, null, 2))}</pre>`]
+    ];
+    const customPairs = Object.entries(record).filter(([k]) => !["uid","nestId","season","obsDate","obsTime","observer","species","sector","lat","lon","gpsAccuracyM","eggCount","nestStatus","possibleRenest","docPhotoDone","nestOneMPhotoDone","randomPointDone","nestMicro","randomMicro","meso","qualityControl","moduleNotes","notes","protocolVersion"].includes(k));
+    if (customPairs.length) sections.push(["Pola własne / dodatkowe", `<pre class="readonly-json">${escapeHtml(JSON.stringify(Object.fromEntries(customPairs), null, 2))}</pre>`]);
+    return `<div class="readonly-carousel">${sections.map(([title,html],i)=>`<section class="readonly-section${i===0?" active":""}"><h3>${title}</h3>${html}</section>`).join("")}</div><div class="readonly-nav"><button type="button" id="readonly-prev-section">Poprzednia sekcja</button><button type="button" id="readonly-next-section">Następna sekcja</button></div>`;
+  }
+  function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $("#record-readonly-content .readonly-photo-grid")?.addEventListener("click",(e)=>{ const img=e.target.closest("img"); if(img) window.open(img.src,"_blank","noopener");}); }
 
   function renderRecordsMap(focusUid = null) {
     const mapEl = $("#records-map");
@@ -1083,6 +1111,7 @@
         "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
       };
       recordsMap = L.map(mapEl, { layers: [esriImgLbl] });
+      recordsMap.attributionControl.setPrefix("");
       L.control.layers(baseLayers).addTo(recordsMap);
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
     }
@@ -1097,15 +1126,50 @@
       if (ctrlPos) points.push({entry, pos:ctrlPos, type:"kontrola"}); else missingCtrl++;
     });
     points.forEach((p)=>{
-      const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div>${p.type==='gniazdo'?'G':'K'}</div>`});
+      const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div class="pin"><span>${p.type==='gniazdo'?'G':'K'}</span></div>`});
       const m = L.marker(p.pos,{icon}).addTo(mapMarkersLayer);
       const e=p.entry;
       m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> <button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button> <button data-map-action='delete' data-uid='${e.uid}'>Usuń</button> <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
     });
-    if (!points.length) {$("#map-info").textContent="Brak zapisanych rekordów z GPS do pokazania na mapie."; recordsMap.setView([52,19],6); return;}
+    if (focusUid) {
+      const focusRecord = entries.find((e) => String(e.uid) === String(focusUid));
+      const focusNest = toLatLon(focusRecord?.lat, focusRecord?.lon);
+      const focusCtrl = toLatLon(focusRecord?.randomMicro?.lat, focusRecord?.randomMicro?.lon);
+      const focusPos = focusNest || focusCtrl;
+      if (focusPos) recordsMap.setView(focusPos, 18);
+      else $("#map-info").textContent = "Wybrany rekord nie ma poprawnych współrzędnych GPS.";
+    }
+    if (!points.length) {$("#map-info").textContent="Brak zapisanych punktów z GPS do pokazania na mapie."; recordsMap.setView([52,19],6);}
     $("#map-info").textContent = `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`;
-    recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
+    if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
+    recordsMap.invalidateSize();
+    ensureUserLocationTracking(points, focusUid);
+  }
+
+  function ensureUserLocationTracking(points, focusUid) {
+    if (!navigator.geolocation || !recordsMap) { $("#map-user-status").textContent = "Twoja pozycja: niedostępna"; return; }
+    if (mapUserWatchId == null) {
+      mapUserWatchId = navigator.geolocation.watchPosition(({coords}) => {
+        latestUserLatLng = [coords.latitude, coords.longitude];
+        latestUserAccuracy = coords.accuracy;
+        $("#map-user-status").textContent = "Twoja pozycja: aktywna";
+        if (!userLocationMarker) userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(recordsMap);
+        else userLocationMarker.setLatLng(latestUserLatLng);
+        if (Number.isFinite(coords.accuracy)) {
+          if (!userAccuracyCircle) userAccuracyCircle = L.circle(latestUserLatLng,{radius:coords.accuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(recordsMap);
+          else userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(coords.accuracy);
+        }
+        renderMapHeading();
+        if (!mapHasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 17); mapHasAutoCenteredOnUser = true; }
+      }, () => { $("#map-user-status").textContent = "Twoja pozycja: niedostępna"; if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie."; }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
+    } else $("#map-user-status").textContent = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
+  }
+  function renderMapHeading() {
+    if (!recordsMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
+    const icon = L.divIcon({className:"map-heading", html:`<div style="transform:rotate(${latestMapHeadingDeg}deg)">▲</div>`});
+    if (!userHeadingMarker) userHeadingMarker = L.marker(latestUserLatLng,{icon,zIndexOffset:900}).addTo(recordsMap);
+    else { userHeadingMarker.setLatLng(latestUserLatLng); userHeadingMarker.setIcon(icon); }
   }
 
   function setupGps() {
@@ -1180,6 +1244,36 @@
     $("#readonly-nav-random").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.randomMicro?.lat,r.randomMicro?.lon); });
     $("#readonly-show-map").addEventListener("click", () => { mapFocusUid = readonlyUid; showView("map"); });
     $("#map-back").addEventListener("click", () => showView("records"));
+    $("#map-center-user").addEventListener("click", () => {
+      if (!latestUserLatLng) return alert("Twoja pozycja jest jeszcze niedostępna.");
+      recordsMap?.setView(latestUserLatLng, 17);
+    });
+    $("#map-enable-heading").addEventListener("click", async () => {
+      const statusEl = $("#map-user-status");
+      const onOrientation = (event) => {
+        let heading = null;
+        if (typeof event.webkitCompassHeading === "number") heading = event.webkitCompassHeading;
+        else if (event.absolute === true && typeof event.alpha === "number") heading = event.alpha;
+        else if (typeof event.alpha === "number") heading = 360 - event.alpha;
+        if (Number.isFinite(heading)) {
+          latestMapHeadingDeg = ((heading % 360) + 360) % 360;
+          renderMapHeading();
+          statusEl.textContent = "Twoja pozycja: aktywna (kierunek włączony)";
+        }
+      };
+      if (!("DeviceOrientationEvent" in window)) return alert("Kierunek niedostępny na tym urządzeniu lub w tej przeglądarce.");
+      if (!mapHeadingEnabled) {
+        const req = window.DeviceOrientationEvent?.requestPermission;
+        if (typeof req === "function") {
+          const permission = await req.call(window.DeviceOrientationEvent);
+          if (permission !== "granted") return alert("Kierunek niedostępny na tym urządzeniu lub w tej przeglądarce.");
+        }
+        window.addEventListener("deviceorientationabsolute", onOrientation, true);
+        window.addEventListener("deviceorientation", onOrientation, true);
+        mapHeadingEnabled = true;
+        alert("Porusz telefonem ósemką, aby skalibrować kompas.");
+      }
+    });
     $("#map-screen").addEventListener("click", (event) => {
       const btn = event.target.closest("button[data-map-action]");
       if (!btn) return;
