@@ -23,6 +23,11 @@
     return Number.isNaN(n) ? fallback : n;
   };
   const clamp = (n, min = 0, max = 100) => Math.max(min, Math.min(max, n));
+  const SPECIES_CODE_MAP = {
+    "charadrius-hiaticula": "SOb",
+    "charadrius-dubius": "SRz",
+    unknown: "SN",
+  };
 
   const LABELS = {
     species: {
@@ -276,6 +281,61 @@
     if (!value("#obs-date")) setValue("#obs-date", now.toISOString().slice(0, 10));
     if (!value("#obs-time")) setValue("#obs-time", now.toTimeString().slice(0, 5));
     if (!value("#season")) setValue("#season", String(now.getFullYear()));
+  }
+
+  function formatNestIdDateTime(date = new Date()) {
+    const y = String(date.getFullYear());
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    const hh = String(date.getHours()).padStart(2, "0");
+    const mm = String(date.getMinutes()).padStart(2, "0");
+    return `${y}${m}${d}-${hh}${mm}`;
+  }
+
+  function speciesCode(speciesValue) {
+    const existing = SPECIES_CODE_MAP[speciesValue];
+    if (existing) return existing;
+    const normalized = String(speciesValue || "").trim().toLowerCase();
+    const fallback = normalized.split("-").filter(Boolean).slice(0, 3).map((part) => part[0]?.toUpperCase() || "").join("");
+    return fallback || "SX";
+  }
+
+  function parseNestId(text) {
+    const value = String(text || "").trim();
+    const match = value.match(/^([^-]+)-(\d{8})-(\d{4})-(.*)$/);
+    if (!match) return null;
+    return { code: match[1], date: match[2], time: match[3], suffix: match[4] || "" };
+  }
+
+  function buildNestId(speciesValue, suffix = "", now = new Date()) {
+    return `${speciesCode(speciesValue)}-${formatNestIdDateTime(now)}-${suffix}`;
+  }
+
+  function setupNestIdAutofill() {
+    const nestIdInput = $("#nest-id");
+    const speciesInput = $("#species");
+    const generateBtn = $("#nest-id-generate");
+    if (!nestIdInput || !speciesInput) return;
+
+    const refreshFromSpecies = () => {
+      const current = parseNestId(nestIdInput.value);
+      if (current) {
+        nestIdInput.value = buildNestId(speciesInput.value, current.suffix);
+        return;
+      }
+      if (!String(nestIdInput.value || "").trim()) nestIdInput.value = buildNestId(speciesInput.value);
+    };
+
+    speciesInput.addEventListener("change", refreshFromSpecies);
+    document.addEventListener("click", (event) => {
+      if (event.target.closest('.tile-group[data-target="species"] .tile')) {
+        requestAnimationFrame(refreshFromSpecies);
+      }
+    });
+    if (generateBtn) generateBtn.addEventListener("click", () => {
+      const current = parseNestId(nestIdInput.value);
+      nestIdInput.value = buildNestId(speciesInput.value, current ? current.suffix : "");
+    });
   }
 
   function showView(name) {
@@ -935,6 +995,63 @@
     $("#random-photos").addEventListener("change", renderPhotoPreviews);
   }
 
+  function setupCompass() {
+    const statusEl = $("#compass-status");
+    const degEl = $("#compass-deg");
+    const dirEl = $("#compass-dir");
+    const arrowEl = $("#compass-arrow");
+    const enableBtn = $("#compass-enable-btn");
+    if (!statusEl || !degEl || !dirEl || !arrowEl) return;
+
+    const toDir = (deg) => ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
+    const normalize = (deg) => ((deg % 360) + 360) % 360;
+    const render = (deg) => {
+      const n = normalize(deg);
+      degEl.textContent = `${Math.round(n)}°`;
+      dirEl.textContent = toDir(n);
+      arrowEl.style.transform = `rotate(${n}deg)`;
+      statusEl.textContent = "Kompas aktywny.";
+    };
+
+    const onOrientation = (event) => {
+      let heading = null;
+      if (typeof event.webkitCompassHeading === "number") heading = event.webkitCompassHeading;
+      else if (event.absolute === true && typeof event.alpha === "number") heading = 360 - event.alpha;
+      else if (typeof event.alpha === "number") heading = 360 - event.alpha;
+      if (typeof heading === "number" && Number.isFinite(heading)) render(heading);
+    };
+
+    const start = () => {
+      window.addEventListener("deviceorientationabsolute", onOrientation, true);
+      window.addEventListener("deviceorientation", onOrientation, true);
+      statusEl.textContent = "Kompas: oczekiwanie na dane czujnika...";
+    };
+
+    const hasApi = "DeviceOrientationEvent" in window;
+    if (!hasApi) {
+      statusEl.textContent = "Kompas niedostępny w tej przeglądarce lub na tym urządzeniu.";
+      return;
+    }
+    const requestPermission = window.DeviceOrientationEvent?.requestPermission;
+    if (typeof requestPermission === "function") {
+      enableBtn.hidden = false;
+      statusEl.textContent = "Kompas wymaga zgody użytkownika.";
+      enableBtn.addEventListener("click", async () => {
+        try {
+          const permission = await requestPermission.call(window.DeviceOrientationEvent);
+          if (permission === "granted") {
+            enableBtn.hidden = true;
+            start();
+          } else statusEl.textContent = "Kompas niedostępny bez zgody użytkownika.";
+        } catch {
+          statusEl.textContent = "Kompas niedostępny w tej przeglądarce lub na tym urządzeniu.";
+        }
+      });
+      return;
+    }
+    start();
+  }
+
   function setupExports() {
     $("#export-json").addEventListener("click", () => {
       downloadText(`sieweczka-records-${dateStamp()}.json`, JSON.stringify(getEntries(), null, 2), "application/json");
@@ -1137,8 +1254,10 @@
     setupPercentGroups();
     setupTiles();
     setDefaultDateTime();
+    setupNestIdAutofill();
     setupNavigation();
     setupGps();
+    setupCompass();
     setupExports();
     setupFieldMode();
     syncTilesFromInputs();

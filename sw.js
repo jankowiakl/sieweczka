@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v11-safe-ui-fixes";
+const CACHE_NAME = "sieweczka-clean-v13-compass-qc-photo-move";
 const APP_SHELL = [
   "./",
   "./index.html",
