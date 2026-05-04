@@ -7,6 +7,7 @@
   const CUSTOM_SPECIES_KEY = "sieweczka-custom-species-v1";
   const OBSERVERS_KEY = "sieweczka-observers-v1";
   const SECTORS_KEY = "sieweczka-sectors-v1";
+  const WORKING_NESTS_KEY = "sieweczka-working-nests-v1";
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
@@ -132,6 +133,8 @@
   let mapHasAutoCenteredOnUser = false;
   let mapHeadingEnabled = false;
   let latestMapHeadingDeg = null;
+  let workingMap = null;
+  let workingLayer = null;
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
@@ -404,8 +407,10 @@
     $("#records-screen").hidden = name !== "records";
     $("#record-readonly-screen").hidden = name !== "readonly";
     $("#map-screen").hidden = name !== "map";
+    $("#working-map-screen").hidden = name !== "working-map";
     $("#form-screen").hidden = name !== "form";
     if (name === "map") setTimeout(() => renderRecordsMap(mapFocusUid), 0);
+    if (name === "working-map") setTimeout(() => renderWorkingMap(), 0);
     updateCounts();
   }
 
@@ -1079,17 +1084,20 @@
   }
 
   function buildReadonlySections(record) {
+    const val = (v) => (v == null || String(v).trim() === "" ? "—" : String(v));
+    const fld = (label, v) => `<div class="readonly-field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(val(v))}</div></div>`;
+    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>`<img src="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="${alt}">`).join("") || "<p>—</p>"}</div>`;
     const sections = [
-      ["Identyfikacja", `<p>ID: <strong>${escapeHtml(record.nestId || "(bez ID)")}</strong></p><p>Data/godz.: ${escapeHtml(record.obsDate || "-")} ${escapeHtml(record.obsTime || "")}</p><p>Gatunek: ${escapeHtml(LABELS.species[record.species] || record.species || "-")}</p><p>Obserwator: ${escapeHtml(record.observer || "-")}</p><p>Sektor: ${escapeHtml(record.sector || "-")}</p>`],
-      ["GPS gniazda", `<p>Lat: ${record.lat ?? "brak"}</p><p>Lon: ${record.lon ?? "brak"}</p><p>Dokładność: ${record.gpsAccuracyM ?? "brak"} m</p>`],
-      ["Mikrohabitat gniazda", `<p>Podłoże: ${escapeHtml(record.nestMicro?.substrate || "-")}</p><p>Nachylenie: ${escapeHtml(record.nestMicro?.slope || "-")}</p><p>Mikrorzeźba: ${escapeHtml(record.nestMicro?.microrelief || "-")}</p><div class="readonly-photo-grid">${(record.nestMicro?.photos || []).map((p)=>`<img src="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="Zdjęcie gniazda">`).join("") || "<p>Brak zdjęć.</p>"}</div>`],
-      ["Punkt losowy / kontrola", `<p>Azymut: ${record.randomMicro?.azimuthDeg ?? "-"}</p><p>Podłoże: ${escapeHtml(record.randomMicro?.substrate || "-")}</p><p>Rzut ponowny: ${escapeHtml(record.randomMicro?.wasRerolled || "-")} (${escapeHtml(record.randomMicro?.rerollReason || "-")})</p>`],
-      ["GPS kontroli", `<p>Lat: ${record.randomMicro?.lat ?? "brak"}</p><p>Lon: ${record.randomMicro?.lon ?? "brak"}</p><p>Dokładność: ${record.randomMicro?.gpsAccuracyM ?? "brak"} m</p><div class="readonly-photo-grid">${(record.randomMicro?.photos || []).map((p)=>`<img src="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="Zdjęcie kontroli">`).join("") || "<p>Brak zdjęć.</p>"}</div>`],
-      ["Mezohabitat / QC / notatki", `<p>Mezo: piasek ${record.meso?.pctSand ?? 0}%, żwir ${record.meso?.pctGravel ?? 0}%, roślinność ${record.meso?.pctVegetation ?? 0}%</p><p>QC: ${escapeHtml(record.qualityControl?.birdReaction || "-")}, ${escapeHtml(record.qualityControl?.timeAtNest || "-")}</p><p>Notatki: ${escapeHtml(record.notes || "brak")}</p><pre class="readonly-json">${escapeHtml(JSON.stringify(record.moduleNotes || {}, null, 2))}</pre>`]
+      ["Identyfikacja", `${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
+      ["GPS i zdjęcia gniazda", `${fld("Lat", record.lat)}${fld("Lon", record.lon)}${fld("Dokładność [m]", record.gpsAccuracyM)}${photoGrid(record.nestMicro?.photos, "Zdjęcie gniazda")}`],
+      ["Mikrohabitat gniazda", `${fld("Podłoże", LABELS.substrate[record.nestMicro?.substrate] || record.nestMicro?.substrate)}${fld("Nachylenie", LABELS.slope[record.nestMicro?.slope] || record.nestMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.nestMicro?.microrelief] || record.nestMicro?.microrelief)}`],
+      ["Mezohabitat", `${fld("Piasek [%]", record.meso?.pctSand)}${fld("Żwir [%]", record.meso?.pctGravel)}${fld("Roślinność [%]", record.meso?.pctVegetation)}${fld("Woda [%]", record.meso?.pctWater)}${fld("Inne [%]", record.meso?.pctOther)}`],
+      ["Punkt losowy / kontrola", `${fld("Azymut [°]", record.randomMicro?.azimuthDeg)}${fld("Lat", record.randomMicro?.lat)}${fld("Lon", record.randomMicro?.lon)}${fld("Dokładność [m]", record.randomMicro?.gpsAccuracyM)}`],
+      ["Mikrohabitat kontroli", `${fld("Podłoże", LABELS.substrate[record.randomMicro?.substrate] || record.randomMicro?.substrate)}${fld("Nachylenie", LABELS.slope[record.randomMicro?.slope] || record.randomMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.randomMicro?.microrelief] || record.randomMicro?.microrelief)}${photoGrid(record.randomMicro?.photos, "Zdjęcie kontroli")}`],
+      ["Kontrola jakości", `${fld("Zdjęcie dokumentacyjne", LABELS.yesNoUnknown[record.docPhotoDone] || record.docPhotoDone)}${fld("Zdjęcie 1m²", LABELS.yesNoUnknown[record.nestOneMPhotoDone] || record.nestOneMPhotoDone)}${fld("Punkt losowy", LABELS.yesNoUnknown[record.randomPointDone] || record.randomPointDone)}`],
+      ["Notatki / podsumowanie", `${fld("Notatki", record.notes)}${fld("Notatki identyfikacja", record.moduleNotes?.identification)}${fld("Notatki mikro gniazda", record.moduleNotes?.nestMicro)}${fld("Notatki mikro kontroli", record.moduleNotes?.randomMicro)}${fld("Notatki mezohabitat", record.moduleNotes?.meso)}`]
     ];
-    const customPairs = Object.entries(record).filter(([k]) => !["uid","nestId","season","obsDate","obsTime","observer","species","sector","lat","lon","gpsAccuracyM","eggCount","nestStatus","possibleRenest","docPhotoDone","nestOneMPhotoDone","randomPointDone","nestMicro","randomMicro","meso","qualityControl","moduleNotes","notes","protocolVersion"].includes(k));
-    if (customPairs.length) sections.push(["Pola własne / dodatkowe", `<pre class="readonly-json">${escapeHtml(JSON.stringify(Object.fromEntries(customPairs), null, 2))}</pre>`]);
-    return `<div class="readonly-carousel">${sections.map(([title,html],i)=>`<section class="readonly-section${i===0?" active":""}"><h3>${title}</h3>${html}</section>`).join("")}</div><div class="readonly-nav"><button type="button" id="readonly-prev-section">Poprzednia sekcja</button><button type="button" id="readonly-next-section">Następna sekcja</button></div>`;
+    return `<div class="readonly-carousel">${sections.map(([title, html], i) => `<section class="readonly-section${i===0?" active":""}"><h3>${title}</h3>${html}</section>`).join("")}</div><div class="readonly-nav"><button type="button" id="readonly-prev-section">Poprzednia karta</button><button type="button" id="readonly-next-section">Następna karta</button></div>`;
   }
   function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $("#record-readonly-content .readonly-photo-grid")?.addEventListener("click",(e)=>{ const img=e.target.closest("img"); if(img) window.open(img.src,"_blank","noopener");}); }
 
@@ -1167,9 +1175,10 @@
   }
   function renderMapHeading() {
     if (!recordsMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
-    const icon = L.divIcon({className:"map-heading", html:`<div style="transform:rotate(${latestMapHeadingDeg}deg)">▲</div>`});
-    if (!userHeadingMarker) userHeadingMarker = L.marker(latestUserLatLng,{icon,zIndexOffset:900}).addTo(recordsMap);
-    else { userHeadingMarker.setLatLng(latestUserLatLng); userHeadingMarker.setIcon(icon); }
+    if (!userHeadingMarker) userHeadingMarker = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(recordsMap);
+    else userHeadingMarker.setLatLng(latestUserLatLng);
+    const arrow = userHeadingMarker.getElement()?.querySelector("div");
+    if (arrow) arrow.style.transform = `rotate(${latestMapHeadingDeg}deg)`;
   }
 
   function setupGps() {
@@ -1212,6 +1221,7 @@
       showView("records");
     });
     $("#open-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
+    $("#open-working-map").addEventListener("click", () => showView("working-map"));
     $("#records-show-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
     $("#step-back").addEventListener("click", () => showStep(currentStep - 1));
     $("#step-next").addEventListener("click", () => showStep(currentStep + 1));
@@ -1256,8 +1266,10 @@
         else if (event.absolute === true && typeof event.alpha === "number") heading = event.alpha;
         else if (typeof event.alpha === "number") heading = 360 - event.alpha;
         if (Number.isFinite(heading)) {
-          latestMapHeadingDeg = ((heading % 360) + 360) % 360;
-          renderMapHeading();
+          const normalized = ((heading % 360) + 360) % 360;
+          if (latestMapHeadingDeg != null && Math.abs(normalized - latestMapHeadingDeg) < 3) return;
+          latestMapHeadingDeg = latestMapHeadingDeg == null ? normalized : (latestMapHeadingDeg * 0.7 + normalized * 0.3);
+          requestAnimationFrame(renderMapHeading);
           statusEl.textContent = "Twoja pozycja: aktywna (kierunek włączony)";
         }
       };
@@ -1294,6 +1306,10 @@
       renderPhotoPreviews();
     });
     $("#validation-override-summary")?.addEventListener("change", () => renderValidationAndPreview());
+    $("#working-map-back").addEventListener("click", () => showView("home"));
+    $("#working-add-gps").addEventListener("click", addWorkingNestFromGps);
+    $("#working-list").addEventListener("click", onWorkingListClick);
+
   }
 
   function setupCompass() {
