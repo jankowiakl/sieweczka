@@ -119,6 +119,10 @@
 
   let currentStep = 1;
   let editingUid = null;
+  let readonlyUid = null;
+  let recordsMap = null;
+  let mapMarkersLayer = null;
+  let mapFocusUid = null;
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
@@ -389,7 +393,10 @@
   function showView(name) {
     $("#home-screen").hidden = name !== "home";
     $("#records-screen").hidden = name !== "records";
+    $("#record-readonly-screen").hidden = name !== "readonly";
+    $("#map-screen").hidden = name !== "map";
     $("#form-screen").hidden = name !== "form";
+    if (name === "map") setTimeout(() => renderRecordsMap(mapFocusUid), 0);
     updateCounts();
   }
 
@@ -1008,6 +1015,7 @@
     filtered.forEach((entry) => {
       const card = document.createElement("article");
       card.className = "entry-card";
+      card.dataset.uid = entry.uid;
       card.innerHTML = `
         <div class="entry-main">
           <h3>${escapeHtml(entry.nestId || "(bez ID)")}</h3>
@@ -1022,6 +1030,82 @@
       `;
       list.appendChild(card);
     });
+  }
+
+
+  function toLatLon(lat, lon) {
+    const a = Number(lat); const b = Number(lon);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    return [a, b];
+  }
+
+  function navigateTo(lat, lon) {
+    const pos = toLatLon(lat, lon);
+    if (!pos) return alert("Brak poprawnych współrzędnych GPS.");
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${pos[0]},${pos[1]}`, "_blank", "noopener");
+  }
+
+  function showReadonlyRecord(uid) {
+    const record = getEntries().find((entry) => String(entry.uid) === String(uid));
+    if (!record) return;
+    readonlyUid = record.uid;
+    const randomPos = toLatLon(record.randomMicro?.lat, record.randomMicro?.lon);
+    $("#readonly-nav-random").hidden = !randomPos;
+    $("#record-readonly-content").innerHTML = `
+      <h3>${escapeHtml(record.nestId || "(bez ID)")}</h3>
+      <p><strong>Identyfikacja:</strong> ${escapeHtml(LABELS.species[record.species] || record.species || "-")}, ${escapeHtml(record.obsDate || "-")} ${escapeHtml(record.obsTime || "")}, obserwator: ${escapeHtml(record.observer || "-")}, sektor: ${escapeHtml(record.sector || "-")}</p>
+      <p><strong>GPS gniazda:</strong> ${record.lat ?? "brak"}, ${record.lon ?? "brak"}</p>
+      <p><strong>Punkt losowy/kontrola GPS:</strong> ${record.randomMicro?.lat ?? "brak"}, ${record.randomMicro?.lon ?? "brak"}</p>
+      <p><strong>Zdjęcia:</strong> gniazdo ${(record.nestMicro?.photos || []).length}, kontrola ${(record.randomMicro?.photos || []).length}</p>
+      <p><strong>Mikrohabitat gniazda:</strong> ${escapeHtml(record.nestMicro?.substrate || "-")}, nachylenie ${escapeHtml(record.nestMicro?.slope || "-")}</p>
+      <p><strong>Mezohabitat:</strong> piasek ${record.meso?.pctSand ?? 0}%, żwir ${record.meso?.pctGravel ?? 0}%, roślinność ${record.meso?.pctVegetation ?? 0}%</p>
+      <p><strong>Punkt losowy/kontrola:</strong> azymut ${record.randomMicro?.azimuthDeg ?? "-"}, podłoże ${escapeHtml(record.randomMicro?.substrate || "-")}</p>
+      <p><strong>Kontrola jakości:</strong> reakcja ${escapeHtml(LABELS.qcReaction[record.qualityControl?.birdReaction] || record.qualityControl?.birdReaction || "-")}, czas ${escapeHtml(LABELS.qcTime[record.qualityControl?.timeAtNest] || record.qualityControl?.timeAtNest || "-")}</p>
+      <p><strong>Notatki:</strong> ${escapeHtml(record.notes || "brak")}</p>`;
+    showView("readonly");
+  }
+
+  function renderRecordsMap(focusUid = null) {
+    const mapEl = $("#records-map");
+    if (!mapEl || typeof L === "undefined") { $("#map-info").textContent = "Mapa niedostępna offline (brak biblioteki Leaflet)."; return; }
+    if (!recordsMap) {
+      const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
+      const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
+      const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
+      const baseLayers = {
+        "Esri Imagery + Labels": esriImgLbl,
+        "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
+        "Esri World Imagery": esriImg,
+        "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"),
+        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png"),
+        "CARTO Positron": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"),
+        "CARTO Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"),
+        "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
+      };
+      recordsMap = L.map(mapEl, { layers: [esriImgLbl] });
+      L.control.layers(baseLayers).addTo(recordsMap);
+      mapMarkersLayer = L.layerGroup().addTo(recordsMap);
+    }
+    mapMarkersLayer.clearLayers();
+    const entries = getEntries();
+    const points = [];
+    let missingNest = 0, missingCtrl = 0;
+    entries.forEach((entry) => {
+      const nestPos = toLatLon(entry.lat, entry.lon);
+      const ctrlPos = toLatLon(entry.randomMicro?.lat, entry.randomMicro?.lon);
+      if (nestPos) points.push({entry, pos:nestPos, type:"gniazdo"}); else missingNest++;
+      if (ctrlPos) points.push({entry, pos:ctrlPos, type:"kontrola"}); else missingCtrl++;
+    });
+    points.forEach((p)=>{
+      const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div>${p.type==='gniazdo'?'G':'K'}</div>`});
+      const m = L.marker(p.pos,{icon}).addTo(mapMarkersLayer);
+      const e=p.entry;
+      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> <button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button> <button data-map-action='delete' data-uid='${e.uid}'>Usuń</button> <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
+      if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
+    });
+    if (!points.length) {$("#map-info").textContent="Brak zapisanych rekordów z GPS do pokazania na mapie."; recordsMap.setView([52,19],6); return;}
+    $("#map-info").textContent = `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`;
+    recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
   }
 
   function setupGps() {
@@ -1063,6 +1147,8 @@
       renderEntries();
       showView("records");
     });
+    $("#open-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
+    $("#records-show-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
     $("#step-back").addEventListener("click", () => showStep(currentStep - 1));
     $("#step-next").addEventListener("click", () => showStep(currentStep + 1));
     $("#save-final").addEventListener("click", () => saveFinalRecord().catch((error) => {
@@ -1078,9 +1164,30 @@
     $("#record-search").addEventListener("input", renderEntries);
     $("#entries-list").addEventListener("click", (event) => {
       const btn = event.target.closest("button[data-action]");
+      if (btn) {
+        event.stopPropagation();
+        if (btn.dataset.action === "edit") editRecord(btn.dataset.uid);
+        if (btn.dataset.action === "delete") deleteRecord(btn.dataset.uid);
+        return;
+      }
+      const card = event.target.closest(".entry-card");
+      if (card?.dataset.uid) showReadonlyRecord(card.dataset.uid);
+    });
+    $("#readonly-back, #readonly-back-btn").addEventListener("click", () => showView("records"));
+    $("#readonly-edit").addEventListener("click", () => readonlyUid && editRecord(readonlyUid));
+    $("#readonly-delete").addEventListener("click", () => { if (readonlyUid) { deleteRecord(readonlyUid); showView("records"); } });
+    $("#readonly-nav-nest").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.lat,r.lon); });
+    $("#readonly-nav-random").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.randomMicro?.lat,r.randomMicro?.lon); });
+    $("#readonly-show-map").addEventListener("click", () => { mapFocusUid = readonlyUid; showView("map"); });
+    $("#map-back").addEventListener("click", () => showView("records"));
+    $("#map-screen").addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-map-action]");
       if (!btn) return;
-      if (btn.dataset.action === "edit") editRecord(btn.dataset.uid);
-      if (btn.dataset.action === "delete") deleteRecord(btn.dataset.uid);
+      const action = btn.dataset.mapAction;
+      if (action === "view") showReadonlyRecord(btn.dataset.uid);
+      if (action === "edit") editRecord(btn.dataset.uid);
+      if (action === "delete") deleteRecord(btn.dataset.uid);
+      if (action === "nav") navigateTo(btn.dataset.lat, btn.dataset.lon);
     });
 
     $("#nest-photos").addEventListener("change", () => {
