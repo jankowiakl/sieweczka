@@ -1225,10 +1225,10 @@
       const focusNest = toLatLon(focusRecord?.lat, focusRecord?.lon);
       const focusCtrl = toLatLon(focusRecord?.randomMicro?.lat, focusRecord?.randomMicro?.lon);
       const focusPos = focusNest || focusCtrl;
-      if (focusPos) recordsMap.setView(focusPos, 18);
+      if (focusPos) recordsMap.setView(focusPos, 19);
       else $("#map-info").textContent = "Wybrany rekord nie ma poprawnych współrzędnych GPS.";
     }
-    if (!points.length) {$("#map-info").textContent="Brak zapisanych punktów z GPS do pokazania na mapie."; recordsMap.setView([52,19],6);}
+    if (!points.length) {$("#map-info").textContent="Brak zapisanych punktów z GPS do pokazania na mapie."; recordsMap.setView([52,19],7);}
     $("#map-info").textContent = `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`;
     if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
@@ -1249,7 +1249,7 @@
           else userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(coords.accuracy);
         }
         renderMapHeading();
-        if (!mapHasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 17); mapHasAutoCenteredOnUser = true; }
+        if (!mapHasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 18); mapHasAutoCenteredOnUser = true; }
       }, () => { $("#map-user-status").textContent = "Twoja pozycja: niedostępna"; if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie."; }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
     } else $("#map-user-status").textContent = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
   }
@@ -1336,7 +1336,7 @@
     $("#map-back").addEventListener("click", () => showView("records"));
     $("#map-center-user").addEventListener("click", () => {
       if (!latestUserLatLng) return alert("Twoja pozycja jest jeszcze niedostępna.");
-      recordsMap?.setView(latestUserLatLng, 17);
+      recordsMap?.setView(latestUserLatLng, 18);
     });
     $("#map-enable-heading").addEventListener("click", async () => {
       const statusEl = $("#map-user-status");
@@ -1392,7 +1392,7 @@
       try {
         await showMyLocationOnMap(workingMap, "#map-user-status");
         syncUserLocationLayers(workingMap);
-        workingMap?.setView(latestUserLatLng, 17);
+        workingMap?.setView(latestUserLatLng, 18);
       } catch {
         alert("Nie udało się pobrać mojej pozycji. Sprawdź uprawnienia lokalizacji.");
       }
@@ -1691,8 +1691,8 @@
   function fitWorkingMapBounds() {
     const points = getWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
     if (points.length) workingMap?.fitBounds(L.latLngBounds(points), { padding: [30, 30] });
-    else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 17);
-    else workingMap?.setView([52, 19], 6);
+    else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 18);
+    else workingMap?.setView([52, 19], 7);
   }
   function addWorkingNestFromGps() {
     if (!navigator.geolocation) return alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
@@ -1745,7 +1745,7 @@
     enriched.forEach(({w,pos}) => {
       const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }) }).addTo(workingLayer);
       m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> <button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button><br><select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>`);
-      if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,18); m.openPopup(); }
+      if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
     $("#working-map-info").textContent = `Punkty robocze: ${enriched.length}`;
     $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button><button data-w-action="edit" data-working-id="${w.id}">Edytuj</button><button class="danger" data-w-action="delete" data-working-id="${w.id}">Usuń</button><select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select></div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
