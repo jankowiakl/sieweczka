@@ -25,27 +25,199 @@
   function setSyncConfig(cfg) { localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(cfg)); }
   function getLastSyncAt() { try { return JSON.parse(localStorage.getItem(SYNC_STATE_KEY) || "{}").lastSyncAt || null; } catch { return null; } }
   function setLastSyncAt(v) { localStorage.setItem(SYNC_STATE_KEY, JSON.stringify({ lastSyncAt: v })); }
+
+  function getSyncApiBase(cfg = getSyncConfig()) {
+    return String(cfg.apiUrl || "").trim().replace(/\/+$/, "");
+  }
+
+  function syncUrl(path, cfg = getSyncConfig()) {
+    const base = getSyncApiBase(cfg);
+    if (!base) return path;
+    const cleanPath = path.startsWith("/") ? path : `/${path}`;
+    // Reverse proxy on QNAP is often configured as https://host/api -> container root.
+    // In that setup /api/sync must become https://host/api/sync, not https://host/api/api/sync.
+    if (base.endsWith("/api") && cleanPath.startsWith("/api/")) return `${base}${cleanPath.slice(4)}`;
+    return `${base}${cleanPath}`;
+  }
+
+  function syncAuthHeaders(cfg, extra = {}) {
+    return { ...extra, Authorization: `Bearer ${cfg.token}` };
+  }
+
+  function photoIdFromRef(ref) {
+    const text = String(ref || "");
+    if (!text.startsWith("idb:")) return "";
+    return text.slice(4);
+  }
+
+  function photoRefFromId(id) {
+    return `idb:${String(id || "")}`;
+  }
+
+  function safeFilenamePart(text) {
+    return String(text || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "photo";
+  }
+
+  function photoExtension(mimeType = "") {
+    if (mimeType.includes("png")) return "png";
+    if (mimeType.includes("webp")) return "webp";
+    if (mimeType.includes("heic")) return "heic";
+    if (mimeType.includes("heif")) return "heif";
+    return "jpg";
+  }
+
+  function photoFilename(record, kind, position, blob) {
+    const base = safeFilenamePart(record?.nestId || record?.uid || "record");
+    return `${base}_${kind}_${position}.${photoExtension(blob?.type || "image/jpeg")}`;
+  }
+
+  async function collectPhotoSyncItems(entries) {
+    const items = [];
+    const seen = new Set();
+    const add = async (record, ref, kind, index) => {
+      const id = photoIdFromRef(ref);
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      let blob = null;
+      try { blob = await getPhotoBlob(ref); } catch { blob = null; }
+      items.push({
+        id,
+        recordUid: record.uid,
+        kind,
+        position: index + 1,
+        filename: photoFilename(record, kind, index + 1, blob),
+        mimeType: blob?.type || "image/jpeg",
+        sizeBytes: Number.isFinite(blob?.size) ? blob.size : null,
+        updatedAt: record.updatedAt || record.createdAt || new Date().toISOString(),
+        clientId: getClientId(),
+        localRef: ref,
+      });
+    };
+
+    for (const record of entries || []) {
+      const nestPhotos = record?.nestMicro?.photos || [];
+      const randomPhotos = record?.randomMicro?.photos || [];
+      for (let i = 0; i < nestPhotos.length; i += 1) await add(record, nestPhotos[i], "nest", i);
+      for (let i = 0; i < randomPhotos.length; i += 1) await add(record, randomPhotos[i], "random", i);
+    }
+    return items;
+  }
+
+  function photoSyncPayload(items) {
+    return (items || []).map(({ localRef, ...item }) => item);
+  }
+
+  async function uploadMissingPhotos(cfg, photoItems, missingPhotoIds = []) {
+    const byId = new Map((photoItems || []).map((item) => [String(item.id), item]));
+    let uploaded = 0;
+    for (const id of missingPhotoIds || []) {
+      const item = byId.get(String(id));
+      if (!item) continue;
+      const blob = await getPhotoBlob(item.localRef);
+      if (!blob) continue;
+      const res = await fetch(syncUrl(`/api/photos/${encodeURIComponent(id)}/content`, cfg), {
+        method: "PUT",
+        headers: syncAuthHeaders(cfg, { "Content-Type": blob.type || item.mimeType || "application/octet-stream" }),
+        body: blob,
+      });
+      if (!res.ok) throw new Error(`Upload zdjęcia ${id}: HTTP ${res.status}`);
+      uploaded += 1;
+    }
+    return { uploaded };
+  }
+
+  function collectPhotoIdsFromRecords(entries) {
+    const ids = new Set();
+    const collect = (refs = []) => refs.forEach((ref) => { const id = photoIdFromRef(ref); if (id) ids.add(id); });
+    (entries || []).forEach((record) => {
+      collect(record?.nestMicro?.photos || []);
+      collect(record?.randomMicro?.photos || []);
+    });
+    return ids;
+  }
+
+  async function hasLocalPhoto(id) {
+    try { return !!(await getPhotoBlob(photoRefFromId(id))); } catch { return false; }
+  }
+
+  async function downloadMissingPhotos(cfg, serverPhotos = [], entries = []) {
+    const wanted = new Map();
+    for (const meta of serverPhotos || []) {
+      if (!meta?.id || meta.hasData === false) continue;
+      wanted.set(String(meta.id), meta);
+    }
+    collectPhotoIdsFromRecords(entries).forEach((id) => {
+      if (!wanted.has(id)) wanted.set(id, { id, mimeType: "image/jpeg" });
+    });
+
+    let downloaded = 0;
+    let failed = 0;
+    for (const [id, meta] of wanted.entries()) {
+      if (await hasLocalPhoto(id)) continue;
+      try {
+        const res = await fetch(syncUrl(`/api/photos/${encodeURIComponent(id)}/content`, cfg), {
+          headers: syncAuthHeaders(cfg),
+        });
+        if (res.status === 404) continue;
+        if (!res.ok) { failed += 1; continue; }
+        const blob = await res.blob();
+        const type = blob.type || meta.mimeType || "image/jpeg";
+        const filename = meta.filename || `${id}.${photoExtension(type)}`;
+        const stored = typeof File !== "undefined" ? new File([blob], filename, { type }) : blob;
+        await putPhotoBlob(id, stored);
+        downloaded += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    return { downloaded, failed };
+  }
+
   async function testSyncConnection() {
     const cfg = getSyncConfig();
-    const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/health`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+    if (!getSyncApiBase(cfg) || !cfg.token) throw new Error("Brak URL API lub tokenu");
+    const res = await fetch(syncUrl("/health", cfg), { headers: syncAuthHeaders(cfg) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }
+
   async function syncNow() {
     const cfg = getSyncConfig();
-    if (!cfg.apiUrl || !cfg.token) throw new Error("Brak konfiguracji synchronizacji");
+    if (!getSyncApiBase(cfg) || !cfg.token) throw new Error("Brak konfiguracji synchronizacji");
     const entries = getEntries();
     const workingNests = getWorkingNests();
-    const payload = { clientId: getClientId(), lastSyncAt: getLastSyncAt(), records: entries, workingNests };
-    const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/sync`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` }, body: JSON.stringify(payload) });
+    const photoItems = await collectPhotoSyncItems(entries);
+    const payload = {
+      clientId: getClientId(),
+      lastSyncAt: getLastSyncAt(),
+      records: entries,
+      workingNests,
+      photos: photoSyncPayload(photoItems),
+    };
+
+    const res = await fetch(syncUrl("/api/sync", cfg), {
+      method: "POST",
+      headers: syncAuthHeaders(cfg, { "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
     if (!res.ok) throw new Error(`Sync HTTP ${res.status}`);
     const data = await res.json();
+
+    const uploadStats = await uploadMissingPhotos(cfg, photoItems, data.missingPhotoIds || []);
+
     const local = new Map(getEntries().map((r)=>[String(r.uid), r]));
     for (const rec of (data.records || [])) {
       const existing = local.get(String(rec.uid));
       if (!existing || new Date(rec.updatedAt || 0) >= new Date(existing.updatedAt || 0)) local.set(String(rec.uid), normalizeEntry(rec));
     }
-    setEntries(Array.from(local.values()));
+    const mergedEntries = Array.from(local.values()).map((entry) => ({ ...normalizeEntry(entry), syncStatus: "synced" }));
+    setEntries(mergedEntries);
+
     const localWorking = new Map(getWorkingNests().map((w)=>[String(w.id), normalizeWorkingNest(w)]));
     for (const wn of (data.workingNests || [])) {
       const incoming = normalizeWorkingNest(wn);
@@ -54,8 +226,10 @@
     }
     setWorkingNests(Array.from(localWorking.values()));
     if (workingMap) renderWorkingMap();
+
+    const downloadStats = await downloadMissingPhotos(cfg, data.photos || [], mergedEntries);
     setLastSyncAt(data.serverTime || new Date().toISOString());
-    return data;
+    return { ...data, photoUploads: uploadStats.uploaded, photoDownloads: downloadStats.downloaded, photoDownloadErrors: downloadStats.failed };
   }
   function markSyncStatus(uid, status) {
     const entries = getEntries();
@@ -74,7 +248,14 @@
       try { await testSyncConnection(); $("#sync-status").textContent = "Połączenie OK."; } catch (e) { $("#sync-status").textContent = `Błąd: ${e.message}`; }
     });
     $("#sync-now")?.addEventListener("click", async () => {
-      try { await syncNow(); $("#sync-status").textContent = "Synchronizacja zakończona."; renderEntries(); } catch (e) { $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`; }
+      try {
+        const result = await syncNow();
+        const errors = result.photoDownloadErrors ? `, błędy pobierania: ${result.photoDownloadErrors}` : "";
+        $("#sync-status").textContent = `Synchronizacja zakończona. Zdjęcia wysłane: ${result.photoUploads || 0}, pobrane: ${result.photoDownloads || 0}${errors}.`;
+        renderEntries();
+      } catch (e) {
+        $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`;
+      }
     });
     window.addEventListener("online", () => { syncNow().catch(()=>{}); });
   }
@@ -364,6 +545,23 @@
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => reject(req.error);
     });
+  }
+
+  async function putPhotoBlob(id, blob) {
+    if (!id || !blob) return false;
+    const db = await openPhotoDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(PHOTO_STORE, "readwrite");
+      tx.objectStore(PHOTO_STORE).put(blob, String(id));
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    const ref = photoRefFromId(id);
+    if (photoUrlCache.has(ref)) {
+      URL.revokeObjectURL(photoUrlCache.get(ref));
+      photoUrlCache.delete(ref);
+    }
+    return true;
   }
 
   async function resolvePhotoSrc(ref) {
@@ -1337,641 +1535,644 @@
         "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
         "Esri World Imagery": esriImg,
         "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"),
-        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png"),
-        "CARTO Positron": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"),
-        "CARTO Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"),
-        "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
       }
     };
   }
 
-  async function showMyLocationOnMap(map, statusSelector) {
-    if (!navigator.geolocation || !map) {
-      if (statusSelector) $(statusSelector).textContent = "Twoja pozycja: niedostępna";
-      throw new Error("gps-unavailable");
-    }
-    if (statusSelector) $(statusSelector).textContent = "Twoja pozycja: pobieranie…";
-    return new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(({ coords }) => {
-        latestUserLatLng = [coords.latitude, coords.longitude];
-        latestUserAccuracy = coords.accuracy;
-        if (statusSelector) $(statusSelector).textContent = "Twoja pozycja: aktywna";
-        resolve(latestUserLatLng);
-      }, () => {
-        if (statusSelector) $(statusSelector).textContent = "Twoja pozycja: niedostępna";
-        reject(new Error("gps-failed"));
-      }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
+  function markerHtml({ color = "#2563eb", label = "", muted = false } = {}) {
+    const bg = muted ? "#94a3b8" : color;
+    return `<div class="map-marker" style="background:${bg};">${escapeHtml(label || "")}</div>`;
+  }
+
+  function makeDivIcon(options = {}) {
+    return L.divIcon({
+      className: "custom-map-marker-wrap",
+      html: markerHtml(options),
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      popupAnchor: [0, -14]
     });
   }
 
-  function getMapUserState(targetMap) {
-    if (targetMap === workingMap) return mapUserState.working;
-    return mapUserState.records;
+  function createHeadingIcon(deg = 0) {
+    return L.divIcon({
+      className: "heading-marker-wrap",
+      html: `<div class="heading-marker" style="transform: rotate(${Number(deg) || 0}deg);"></div>`,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18]
+    });
   }
 
-  function syncUserLocationLayers(target) {
-    const targetMap = target === "records" ? recordsMap : target === "working" ? workingMap : target;
-    if (!targetMap || !latestUserLatLng) return;
-    const state = getMapUserState(targetMap);
-    if (!state.userLocationMarker || !targetMap.hasLayer(state.userLocationMarker)) {
-      if (state.userLocationMarker) targetMap.removeLayer(state.userLocationMarker);
-      state.userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(targetMap);
-    } else state.userLocationMarker.setLatLng(latestUserLatLng);
-    if (Number.isFinite(latestUserAccuracy)) {
-      if (!state.userAccuracyCircle || !targetMap.hasLayer(state.userAccuracyCircle)) {
-        if (state.userAccuracyCircle) targetMap.removeLayer(state.userAccuracyCircle);
-        state.userAccuracyCircle = L.circle(latestUserLatLng,{radius:latestUserAccuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(targetMap);
-      } else state.userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(latestUserAccuracy);
+  function updateLocationMarkerForMap(target, lat, lon, accuracyM = null, headingDeg = null) {
+    const state = mapUserState[target];
+    const map = target === "records" ? recordsMap : workingMap;
+    if (!state || !map || typeof L === "undefined") return;
+    const pos = [lat, lon];
+    if (!state.userLocationMarker) {
+      state.userLocationMarker = L.circleMarker(pos, {
+        radius: 7,
+        color: "#0f172a",
+        weight: 2,
+        fillColor: "#38bdf8",
+        fillOpacity: 1
+      }).addTo(map);
+    } else {
+      state.userLocationMarker.setLatLng(pos);
     }
-    renderMapHeading(targetMap);
+    if (Number.isFinite(Number(accuracyM))) {
+      if (!state.userAccuracyCircle) {
+        state.userAccuracyCircle = L.circle(pos, {
+          radius: Math.max(1, Number(accuracyM)),
+          color: "#38bdf8",
+          weight: 1,
+          fillColor: "#38bdf8",
+          fillOpacity: 0.08
+        }).addTo(map);
+      } else {
+        state.userAccuracyCircle.setLatLng(pos);
+        state.userAccuracyCircle.setRadius(Math.max(1, Number(accuracyM)));
+      }
+    }
+    if (Number.isFinite(Number(headingDeg))) {
+      if (!state.userHeadingMarker) state.userHeadingMarker = L.marker(pos, { icon: createHeadingIcon(headingDeg), interactive: false }).addTo(map);
+      else { state.userHeadingMarker.setLatLng(pos); state.userHeadingMarker.setIcon(createHeadingIcon(headingDeg)); }
+    }
   }
 
-  
-  function toRad(v){ return (Number(v)||0)*Math.PI/180; }
-  function distanceM(a,b){ const R=6371000; const dLat=toRad(b[0]-a[0]); const dLon=toRad(b[1]-a[1]); const sa=Math.sin(dLat/2)**2+Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(sa)); }
-  function bearingDeg(a,b){ const y=Math.sin(toRad(b[1]-a[1]))*Math.cos(toRad(b[0])); const x=Math.cos(toRad(a[0]))*Math.sin(toRad(b[0]))-Math.sin(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.cos(toRad(b[1]-a[1])); return ((Math.atan2(y,x)*180/Math.PI)+360)%360; }
-  function bearingLabel(d){ return ["N","NE","E","SE","S","SW","W","NW"][Math.round(d/45)%8]; }
-  function nextWorkingLabel(items){ const d=new Date(); const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'); const key=`${y}${m}${day}`; const nums=items.map(i=>/^R-(\d{8})-(\d{3})$/.exec(i.label||"")).filter(Boolean).filter(x=>x[1]===key).map(x=>Number(x[2])); const n=(Math.max(0,...nums)+1); return `R-${key}-${String(n).padStart(3,'0')}`; }
-  function workingStatusLabel(v){ return ({do_sprawdzenia:'Do sprawdzenia',prawdopodobne:'Prawdopodobne',potwierdzone:'Potwierdzone',odrzucone:'Odrzucone',przepisane:'Przepisane do rekordu'})[v]||'Do sprawdzenia'; }
-  function workingStatusOptions(selected){ return ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].map(k=>`<option value="${k}" ${k===selected?'selected':''}>${workingStatusLabel(k)}</option>`).join(''); }
-  function workingStatusMarkerText(status){ return ({do_sprawdzenia:'?',prawdopodobne:'P',potwierdzone:'✓',odrzucone:'×',przepisane:'Z'})[status]||'?'; }
-  function normalizeWorkingNest(w) {
-    const now = new Date().toISOString();
-    const normalizedStatus = ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].includes(w?.status) ? w.status : 'do_sprawdzenia';
-    return { ...w, id: w?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), lat: Number(w?.lat), lon: Number(w?.lon), status: normalizedStatus, note: String(w?.note ?? w?.notes ?? ""), notes: String(w?.notes ?? w?.note ?? ""), createdAt: w?.createdAt || now, updatedAt: w?.updatedAt || w?.createdAt || now };
+  function startUserLocationTracking() {
+    if (!navigator.geolocation) return;
+    if (userLocationWatchId != null) return;
+    userLocationWatchId = navigator.geolocation.watchPosition((pos) => {
+      latestUserLatLng = [pos.coords.latitude, pos.coords.longitude];
+      latestUserAccuracy = pos.coords.accuracy;
+      updateLocationMarkerForMap("records", pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, latestMapHeadingDeg);
+      updateLocationMarkerForMap("working", pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, latestMapHeadingDeg);
+    }, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+
+    window.addEventListener("deviceorientationabsolute", handleDeviceOrientation, true);
+    window.addEventListener("deviceorientation", handleDeviceOrientation, true);
   }
 
-  function navigateTo(lat, lon) {
-    const pos = toLatLon(lat, lon);
-    if (!pos) return alert("Brak poprawnych współrzędnych GPS.");
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${pos[0]},${pos[1]}`, "_blank", "noopener");
+  function handleDeviceOrientation(event) {
+    const raw = typeof event.webkitCompassHeading === "number" ? event.webkitCompassHeading : (360 - (event.alpha || 0));
+    if (!Number.isFinite(raw)) return;
+    latestMapHeadingDeg = ((raw % 360) + 360) % 360;
+    if (latestUserLatLng) {
+      updateLocationMarkerForMap("records", latestUserLatLng[0], latestUserLatLng[1], latestUserAccuracy, latestMapHeadingDeg);
+      updateLocationMarkerForMap("working", latestUserLatLng[0], latestUserLatLng[1], latestUserAccuracy, latestMapHeadingDeg);
+    }
   }
 
-  function showReadonlyRecord(uid) {
-    const record = getEntries().find((entry) => String(entry.uid) === String(uid));
-    if (!record) return;
-    readonlyUid = record.uid;
-    const nestPos = toLatLon(record.lat, record.lon);
-    const randomPos = toLatLon(record.randomMicro?.lat, record.randomMicro?.lon);
-    $("#readonly-nav-random").hidden = !randomPos;
-    $("#readonly-nav-random").disabled = !randomPos;
-    $("#readonly-nav-nest").disabled = !nestPos;
-    $("#record-readonly-content").innerHTML = buildReadonlySections(record);
-    initReadonlyCarousel();
-    showView("readonly");
+  function enableMapHeading() {
+    mapHeadingEnabled = true;
+    startUserLocationTracking();
   }
-
-  function buildReadonlySections(record) {
-    const val = (v) => (v == null || String(v).trim() === "" ? "—" : String(v));
-    const fld = (label, v) => `<div class="readonly-field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(val(v))}</div></div>`;
-    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>`<img src="" data-photo-ref="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="${alt}">`).join("") || "<p>—</p>"}</div>`;
-    const sections = [
-      ["Identyfikacja", `${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
-      ["GPS i zdjęcia gniazda", `${fld("Lat", record.lat)}${fld("Lon", record.lon)}${fld("Dokładność [m]", record.gpsAccuracyM)}${photoGrid(record.nestMicro?.photos, "Zdjęcie gniazda")}`],
-      ["Mikrohabitat gniazda", `${fld("Podłoże", LABELS.substrate[record.nestMicro?.substrate] || record.nestMicro?.substrate)}${fld("Piasek [%]", record.nestMicro?.coverage?.pctSand)}${fld("Drobny żwir [%]", record.nestMicro?.coverage?.pctFineGravel)}${fld("Gruby żwir/kamienie [%]", record.nestMicro?.coverage?.pctCoarse)}${fld("Muszle [%]", record.nestMicro?.coverage?.pctShells)}${fld("Roślinność żywa [%]", record.nestMicro?.coverage?.pctLiveVeg)}${fld("Roślinność sucha [%]", record.nestMicro?.coverage?.pctDryVeg)}${fld("Drewno/szczątki [%]", record.nestMicro?.coverage?.pctOrganic)}${fld("Antropogeniczne [%]", record.nestMicro?.coverage?.pctAnthro)}${fld("Suma pokrycia [%]", coverageSum(record.nestMicro?.coverage||{}))}${fld("Odległość do rośliny [cm]", record.nestMicro?.distPlantCm)}${fld("Wysokość rośliny [cm]", record.nestMicro?.heightPlantCm)}${fld("Odległość do obiektu [cm]", record.nestMicro?.distObjectCm)}${fld("Wysokość obiektu [cm]", record.nestMicro?.heightObjectCm)}${fld("Nachylenie", LABELS.slope[record.nestMicro?.slope] || record.nestMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.nestMicro?.microrelief] || record.nestMicro?.microrelief)}`],
-      ["Mezohabitat", `${Object.entries(record.meso||{}).filter(([k])=>k.startsWith("pct")).map(([k,v])=>fld(`Pokrycie ${k}` ,v)).join("")}${fld("Suma pokrycia [%]", Object.entries(record.meso||{}).filter(([k])=>k.startsWith("pct")).reduce((a,[,v])=>a+(Number(v)||0),0))}${fld("Sposób oceny buforu", LABELS.assessmentMethod?.[record.meso?.assessmentMethod] || record.meso?.assessmentMethod)}${fld("Odległość do wody [m]", record.meso?.distWaterM)}${fld("Odległość do krawędzi roślinności [m]", record.meso?.distVegEdgeM)}${fld("Odległość do wysokiego obiektu [m]", record.meso?.distVerticalStructureM)}${fld("Duże obiekty w 15 m", LABELS.yesNoUnknown?.[record.meso?.bigObjects] || record.meso?.bigObjects)}${fld("Odległość do płatu drobnego żwiru [m]", record.meso?.distFineGravelPatchM)}${fld("Odległość do płatu grubszego żwiru [m]", record.meso?.distCoarseGravelPatchM)}${fld("Odległość do najbliższego gniazda obrożnej [m]", record.meso?.distNearestHiaticulaM)}${fld("Odległość do najbliższego gniazda rzecznej [m]", record.meso?.distNearestDubiusM)}${fld("Uwagi przestrzenne", record.meso?.spatialNotes)}`],
-      ["Punkt losowy / kontrola", `${fld("Azymut [°]", record.randomMicro?.azimuthDeg)}${fld("Ponowne losowanie", LABELS.yesNoUnknown[record.randomMicro?.wasRerolled] || record.randomMicro?.wasRerolled)}${fld("Powód ponownego losowania", record.randomMicro?.rerollReason)}${fld("GPS kontroli lat", record.randomMicro?.lat)}${fld("GPS kontroli lon", record.randomMicro?.lon)}${fld("Dokładność GPS kontroli [m]", record.randomMicro?.gpsAccuracyM)}`],
-      ["Mikrohabitat kontroli", `${fld("Podłoże", LABELS.substrate[record.randomMicro?.substrate] || record.randomMicro?.substrate)}${fld("Piasek [%]", record.randomMicro?.coverage?.pctSand)}${fld("Drobny żwir [%]", record.randomMicro?.coverage?.pctFineGravel)}${fld("Gruby żwir/kamienie [%]", record.randomMicro?.coverage?.pctCoarse)}${fld("Muszle [%]", record.randomMicro?.coverage?.pctShells)}${fld("Roślinność żywa [%]", record.randomMicro?.coverage?.pctLiveVeg)}${fld("Roślinność sucha [%]", record.randomMicro?.coverage?.pctDryVeg)}${fld("Drewno/szczątki [%]", record.randomMicro?.coverage?.pctOrganic)}${fld("Antropogeniczne [%]", record.randomMicro?.coverage?.pctAnthro)}${fld("Suma pokrycia [%]", coverageSum(record.randomMicro?.coverage||{}))}${fld("Odległość do rośliny [cm]", record.randomMicro?.distPlantCm)}${fld("Wysokość rośliny [cm]", record.randomMicro?.heightPlantCm)}${fld("Odległość do obiektu [cm]", record.randomMicro?.distObjectCm)}${fld("Wysokość obiektu [cm]", record.randomMicro?.heightObjectCm)}${fld("Nachylenie", LABELS.slope[record.randomMicro?.slope] || record.randomMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.randomMicro?.microrelief] || record.randomMicro?.microrelief)}${photoGrid(record.randomMicro?.photos, "Zdjęcie kontroli")}`],
-      ["Kontrola jakości", `${fld("Zdjęcie dokumentacyjne", LABELS.yesNoUnknown[record.docPhotoDone] || record.docPhotoDone)}${fld("Zdjęcie 1m²", LABELS.yesNoUnknown[record.nestOneMPhotoDone] || record.nestOneMPhotoDone)}${fld("Punkt losowy", LABELS.yesNoUnknown[record.randomPointDone] || record.randomPointDone)}`],
-      ["Notatki / podsumowanie", `${fld("Notatki", record.notes)}${fld("Notatki identyfikacja", record.moduleNotes?.identification)}${fld("Notatki mikro gniazda", record.moduleNotes?.nestMicro)}${fld("Notatki mikro kontroli", record.moduleNotes?.randomMicro)}${fld("Notatki mezohabitat", record.moduleNotes?.meso)}`]
-    ];
-    return `<div class="readonly-carousel">${sections.map(([title, html], i) => `<section class="readonly-section${i===0?" active":""}"><h3>${title}</h3>${html}</section>`).join("")}</div><div class="readonly-nav"><button type="button" id="readonly-prev-section">Poprzednia karta</button><button type="button" id="readonly-next-section">Następna karta</button></div>`;
-  }
-  function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $$("#record-readonly-content img[data-photo-ref]").forEach((img)=>{ resolvePhotoSrc(img.dataset.photoRef).then((src)=>{ if(src) img.src=src; });}); $("#record-readonly-content").addEventListener("click",(e)=>{ const img=e.target.closest("img[data-photo-ref]"); if(img?.src) window.open(img.src,"_blank","noopener");}); }
 
   function renderRecordsMap(focusUid = null) {
-    const mapEl = $("#records-map");
-    if (!mapEl || typeof L === "undefined") { $("#map-info").textContent = "Mapa niedostępna offline (brak biblioteki Leaflet)."; return; }
+    if (typeof L === "undefined") return;
+    const entries = getEntries().filter((entry) => hasValidCoords(entry.lat, entry.lon));
     if (!recordsMap) {
       const base = createBaseLayers();
-      recordsMap = L.map(mapEl, { layers: [base.defaultLayer] });
-      recordsMap.attributionControl.setPrefix("");
-      L.control.layers(base.layers).addTo(recordsMap);
-      mapMarkersLayer = L.layerGroup().addTo(recordsMap);
+      recordsMap = L.map("records-map", { layers: [base.defaultLayer] }).setView([52.069, 15.95], 13);
+      L.control.layers(base.layers, {}, { collapsed: true }).addTo(recordsMap);
+      addGridToMap(recordsMap, "records");
+      recordsMap.on("locationfound", (event) => updateLocationMarkerForMap("records", event.latlng.lat, event.latlng.lng, event.accuracy, latestMapHeadingDeg));
+      recordsMap.on("locationerror", () => {});
+      recordsMap.locate({ watch: true, enableHighAccuracy: true, maximumAge: 5000 });
+      startUserLocationTracking();
     }
-    if ($("#records-grid-toggle")?.checked) {
-      if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
-      else if (!recordsMap.hasLayer(recordsGridLayer)) recordsGridLayer.addTo(recordsMap);
-    } else if (recordsGridLayer && recordsMap.hasLayer(recordsGridLayer)) {
-      recordsMap.removeLayer(recordsGridLayer);
-    }
-    mapMarkersLayer.clearLayers();
-    const entries = getEntries();
-    const points = [];
-    let missingNest = 0, missingCtrl = 0;
+    if (mapMarkersLayer) mapMarkersLayer.remove();
+    mapMarkersLayer = L.layerGroup().addTo(recordsMap);
+    const bounds = [];
     entries.forEach((entry) => {
-      const nestPos = toLatLon(entry.lat, entry.lon);
-      const ctrlPos = toLatLon(entry.randomMicro?.lat, entry.randomMicro?.lon);
-      if (nestPos) points.push({entry, pos:nestPos, type:"gniazdo"}); else missingNest++;
-      if (ctrlPos) points.push({entry, pos:ctrlPos, type:"kontrola"}); else missingCtrl++;
+      const label = recordSpeciesLabelsVisible ? speciesCode(entry.species) : "";
+      const marker = L.marker([Number(entry.lat), Number(entry.lon)], { icon: makeDivIcon({ color: "#2563eb", label }) })
+        .bindPopup(`<strong>${escapeHtml(entry.nestId || "(bez ID)")}</strong><br>${escapeHtml(LABELS.species[entry.species] || entry.species || "")}<br>${escapeHtml(entry.obsDate || "")} ${escapeHtml(entry.obsTime || "")}<br><button type="button" data-map-edit="${entry.uid}">Otwórz rekord</button>`);
+      marker.addTo(mapMarkersLayer);
+      bounds.push([Number(entry.lat), Number(entry.lon)]);
     });
-    points.forEach((p)=>{
-      const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div class="pin"><span>${p.type==='gniazdo'?'G':'K'}</span></div>`});
-      const m = L.marker(p.pos,{icon}).addTo(mapMarkersLayer);
-      if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(LABELS.species[p.entry.species] || p.entry.species || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
-      const e=p.entry;
-      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> <button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button> <button data-map-action='delete' data-uid='${e.uid}'>Usuń</button> <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
-      if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
-    });
-    if (focusUid) {
-      const focusRecord = entries.find((e) => String(e.uid) === String(focusUid));
-      const focusNest = toLatLon(focusRecord?.lat, focusRecord?.lon);
-      const focusCtrl = toLatLon(focusRecord?.randomMicro?.lat, focusRecord?.randomMicro?.lon);
-      const focusPos = focusNest || focusCtrl;
-      if (focusPos) recordsMap.setView(focusPos, 19);
-      else $("#map-info").textContent = "Wybrany rekord nie ma poprawnych współrzędnych GPS.";
+    if (bounds.length) {
+      const target = entries.find((entry) => String(entry.uid) === String(focusUid));
+      if (target) recordsMap.setView([Number(target.lat), Number(target.lon)], Math.max(recordsMap.getZoom(), 17));
+      else recordsMap.fitBounds(bounds, { padding: [20, 20], maxZoom: 17 });
     }
-    if (!points.length) {$("#map-info").textContent="Brak zapisanych punktów z GPS do pokazania na mapie."; recordsMap.setView([52,19],7);}
-    $("#map-info").textContent = `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`;
-    if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
-    recordsMap.invalidateSize();
-    ensureUserLocationTracking(points, focusUid); syncUserLocationLayers("records");
+    setTimeout(() => recordsMap.invalidateSize(), 50);
   }
 
-  function ensureUserLocationTracking(points, focusUid) {
-    if (!navigator.geolocation) {
-      $("#map-user-status").textContent = "Twoja pozycja: niedostępna";
-      $("#working-user-status").textContent = "Twoja pozycja: niedostępna";
-      return;
-    }
-    if (userLocationWatchId == null) {
-      userLocationWatchId = navigator.geolocation.watchPosition(({coords}) => {
-        latestUserLatLng = [coords.latitude, coords.longitude];
-        latestUserAccuracy = coords.accuracy;
-        $("#map-user-status").textContent = "Twoja pozycja: aktywna";
-        $("#working-user-status").textContent = "Twoja pozycja: aktywna";
-        syncUserLocationLayers("records");
-        syncUserLocationLayers("working");
-        if (recordsMap && !mapUserState.records.hasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 18); mapUserState.records.hasAutoCenteredOnUser = true; }
-      }, () => {
-        $("#map-user-status").textContent = "Twoja pozycja: niedostępna";
-        $("#working-user-status").textContent = "Twoja pozycja: niedostępna";
-        if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie.";
-      }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
-    } else {
-      const statusText = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
-      $("#map-user-status").textContent = statusText;
-      $("#working-user-status").textContent = statusText;
-      syncUserLocationLayers("records");
-      syncUserLocationLayers("working");
+  function focusRecordOnMap(uid) {
+    mapFocusUid = uid;
+    showView("map");
+  }
+
+  function getWorkingNests() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(WORKING_NESTS_KEY) || "[]");
+      return Array.isArray(parsed) ? parsed.map(normalizeWorkingNest) : [];
+    } catch {
+      return [];
     }
   }
-  function renderMapHeading(targetMap = recordsMap) {
-    if (!targetMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
-    const state = getMapUserState(targetMap);
-    if (!mapHeadingEnabled) {
-      if (state.userHeadingMarker && targetMap.hasLayer(state.userHeadingMarker)) targetMap.removeLayer(state.userHeadingMarker);
-      state.userHeadingMarker = null;
-      return;
-    }
-    if (!state.userHeadingMarker) state.userHeadingMarker = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(targetMap);
-    else state.userHeadingMarker.setLatLng(latestUserLatLng);
-    const arrow = state.userHeadingMarker.getElement()?.querySelector("div");
-    if (arrow) arrow.style.transform = `rotate(${latestMapHeadingDeg}deg)`;
-  }
 
-  function setupGps() {
-    const getGps = (latSelector, lonSelector, accSelector, statusSelector, label) => {
-      const status = $(statusSelector);
-      if (!navigator.geolocation) {
-        if (status) status.textContent = `${label}: GPS niedostępny`;
-        return;
-      }
-      if (status) status.textContent = `${label}: pobieranie...`;
-      navigator.geolocation.getCurrentPosition(
-        ({ coords }) => {
-          setValue(latSelector, coords.latitude.toFixed(6));
-          setValue(lonSelector, coords.longitude.toFixed(6));
-          setValue(accSelector, Math.round(coords.accuracy));
-          if (latSelector === "#lat" && lonSelector === "#lon") void autoFillSectorFromGrid();
-          if (status) status.textContent = `${label}: dokładność ±${Math.round(coords.accuracy)} m (${gpsQuality(coords.accuracy)})`;
-        },
-        () => {
-          if (status) status.textContent = `${label}: błąd pobierania`;
-        },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
-      );
-    };
-    $("#gps-btn").addEventListener("click", () => getGps("#lat", "#lon", "#gps-accuracy", "#gps-status", "GPS gniazda"));
-    $("#random-gps-btn").addEventListener("click", () => getGps("#random-lat", "#random-lon", "#random-gps-accuracy", "#random-gps-status", "GPS punktu"));
-  }
-
-  function gpsQuality(acc) {
-    if (acc <= 5) return "dobry";
-    if (acc <= 10) return "średni";
-    return "słaby";
-  }
-
-  function setupNavigation() {
-    $("#home-shortcut").addEventListener("click", () => showView("home"));
-    $$(".back-home").forEach((btn) => btn.addEventListener("click", () => showView("home")));
-    $("#start-new").addEventListener("click", () => { editReturnToReadonly = false; startNewRecord(); });
-    $("#open-records").addEventListener("click", () => {
-      renderEntries();
-      showView("records");
-    });
-    $("#open-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
-    $("#open-working-map").addEventListener("click", () => showView("working-map"));
-    $("#records-show-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
-    $("#step-back").addEventListener("click", () => showStep(currentStep - 1));
-    $("#step-next").addEventListener("click", () => showStep(currentStep + 1));
-    $("#save-final").addEventListener("click", () => saveFinalRecord().catch((error) => {
-      console.error(error);
-      alert(`Zapis nie powiódł się: ${error.message || error}`);
-    }));
-    $("#save-draft").addEventListener("click", saveDraft);
-    $("#cancel-edit").addEventListener("click", () => {
-      resetForm();
-      showView("records");
-    });
-    $("#random-azimuth-btn").addEventListener("click", () => setValue("#random-azimuth", String(Math.floor(Math.random() * 360))));
-    $("#record-search").addEventListener("input", renderEntries);
-    $("#sector").addEventListener("input", () => {
-      const sectorEl = $("#sector");
-      if (!sectorEl) return;
-      if (sectorEl.dataset.auto === "1") return;
-      sectorEl.dataset.manual = String(sectorEl.value || "").trim() ? "1" : "";
-      if (!sectorEl.dataset.manual) delete sectorEl.dataset.manual;
-    });
-    $("#entries-list").addEventListener("click", (event) => {
-      const btn = event.target.closest("button[data-action]");
-      if (btn) {
-        event.stopPropagation();
-        if (btn.dataset.action === "share") void shareRecord(btn.dataset.uid);
-        if (btn.dataset.action === "edit") editRecord(btn.dataset.uid);
-        if (btn.dataset.action === "delete") deleteRecord(btn.dataset.uid);
-        return;
-      }
-      const card = event.target.closest(".entry-card");
-      if (card?.dataset.uid) showReadonlyRecord(card.dataset.uid);
-    });
-    $("#readonly-back, #readonly-back-btn").addEventListener("click", () => showView("records"));
-    $("#readonly-edit").addEventListener("click", () => { editReturnToReadonly = true; readonlyUid && editRecord(readonlyUid); });
-    $("#readonly-delete").addEventListener("click", () => { if (readonlyUid) { deleteRecord(readonlyUid); showView("records"); } });
-    $("#readonly-nav-nest").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.lat,r.lon); });
-    $("#readonly-nav-random").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.randomMicro?.lat,r.randomMicro?.lon); });
-    $("#readonly-show-map").addEventListener("click", () => { mapFocusUid = readonlyUid; showView("map"); });
-    $("#map-back").addEventListener("click", () => showView("records"));
-    $("#map-center-user").addEventListener("click", () => {
-      if (!latestUserLatLng) return alert("Twoja pozycja jest jeszcze niedostępna.");
-      recordsMap?.setView(latestUserLatLng, 18);
-    });
-    $("#map-enable-heading").addEventListener("click", async () => {
-      const statusEl = $("#map-user-status");
-      const onOrientation = (event) => {
-        let heading = null;
-        if (typeof event.webkitCompassHeading === "number") heading = event.webkitCompassHeading;
-        else if (event.absolute === true && typeof event.alpha === "number") heading = event.alpha;
-        else if (typeof event.alpha === "number") heading = 360 - event.alpha;
-        if (Number.isFinite(heading)) {
-          const normalized = ((heading % 360) + 360) % 360;
-          if (latestMapHeadingDeg != null && Math.abs(normalized - latestMapHeadingDeg) < 3) return;
-          latestMapHeadingDeg = latestMapHeadingDeg == null ? normalized : (latestMapHeadingDeg * 0.7 + normalized * 0.3);
-          requestAnimationFrame(() => { renderMapHeading(recordsMap); renderMapHeading(workingMap); });
-          statusEl.textContent = "Twoja pozycja: aktywna (kierunek włączony)";
-        }
-      };
-      if (!("DeviceOrientationEvent" in window)) return alert("Kierunek niedostępny na tym urządzeniu lub w tej przeglądarce.");
-      if (!mapHeadingEnabled) {
-        const req = window.DeviceOrientationEvent?.requestPermission;
-        if (typeof req === "function") {
-          const permission = await req.call(window.DeviceOrientationEvent);
-          if (permission !== "granted") return alert("Kierunek niedostępny na tym urządzeniu lub w tej przeglądarce.");
-        }
-        window.addEventListener("deviceorientationabsolute", onOrientation, true);
-        window.addEventListener("deviceorientation", onOrientation, true);
-        mapHeadingEnabled = true;
-        alert("Porusz telefonem ósemką, aby skalibrować kompas.");
-      }
-    });
-    $("#map-screen").addEventListener("click", (event) => {
-      const btn = event.target.closest("button[data-map-action]");
-      if (!btn) return;
-      const action = btn.dataset.mapAction;
-      if (action === "view") showReadonlyRecord(btn.dataset.uid);
-      if (action === "share") void shareRecord(btn.dataset.uid);
-      if (action === "edit") editRecord(btn.dataset.uid);
-      if (action === "delete") deleteRecord(btn.dataset.uid);
-      if (action === "nav") navigateTo(btn.dataset.lat, btn.dataset.lon);
-    });
-    $("#records-grid-toggle")?.addEventListener("change", () => {
-      if (!recordsMap) return;
-      if ($("#records-grid-toggle").checked) {
-        if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
-        else recordsGridLayer.addTo(recordsMap);
-      } else if (recordsGridLayer) recordsMap.removeLayer(recordsGridLayer);
-    });
-
-    $("#records-species-labels-toggle")?.addEventListener("change", () => {
-      recordSpeciesLabelsVisible = !!$("#records-species-labels-toggle")?.checked;
-      renderRecordsMap(mapFocusUid);
-    });
-
-    $("#nest-photos").addEventListener("change", () => {
-      setValue("#nest-one-m-photo-done", "yes");
-      renderPhotoPreviews();
-    });
-    $("#random-photos").addEventListener("change", () => {
-      setValue("#random-point-done", "yes");
-      setValue("#doc-photo-done", "yes");
-      renderPhotoPreviews();
-    });
-    $("#validation-override-summary")?.addEventListener("change", () => renderValidationAndPreview());
-    $("#working-map-back").addEventListener("click", () => showView("home"));
-    $("#working-add-gps").addEventListener("click", addWorkingNestFromGps);
-    $("#working-center-user").addEventListener("click", async () => {
-      try {
-        await showMyLocationOnMap(workingMap, "#working-user-status");
-        ensureUserLocationTracking([], null);
-        syncUserLocationLayers("working");
-        workingMap?.setView(latestUserLatLng, 18);
-        mapUserState.working.hasAutoCenteredOnUser = true;
-      } catch {
-        alert("Nie udało się pobrać mojej pozycji. Sprawdź uprawnienia lokalizacji.");
-      }
-    });
-    $("#working-fit").addEventListener("click", () => fitWorkingMapBounds());
-    $("#working-enable-heading").addEventListener("click", () => $("#map-enable-heading")?.click());
-    $("#working-show-map").addEventListener("click",()=>{workingViewMode="map";renderWorkingMap();});
-    $("#working-show-list").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap();});
-    $("#working-nearest").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap(true);});
-    $("#working-grid-toggle")?.addEventListener("change", () => {
-      if (!workingMap) return;
-      if ($("#working-grid-toggle").checked) {
-        if (!workingGridLayer) void addGridToMap(workingMap, "working");
-        else workingGridLayer.addTo(workingMap);
-      } else if (workingGridLayer) workingMap.removeLayer(workingGridLayer);
-    });
-    $("#working-notes-toggle")?.addEventListener("change", () => {
-      workingNotesVisible = !!$("#working-notes-toggle")?.checked;
-      renderWorkingMap();
-    });
-    $("#working-map-screen").addEventListener("click", onWorkingScreenClick);
-    $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
-    $("#working-edit-form").addEventListener("submit", onWorkingEditSubmit);
-    $("#working-edit-cancel").addEventListener("click", closeWorkingEditPanel);
-    $("#working-edit-delete").addEventListener("click", () => { if (editingWorkingId && confirm("Usunąć punkt roboczy?")) deleteWorkingNest(editingWorkingId); });
-    $("#back-to-readonly")?.addEventListener("click", () => {
-      if (readonlyUid) showReadonlyRecord(readonlyUid);
-    });
-    $("#lat")?.addEventListener("input", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
-    $("#lat")?.addEventListener("change", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
-    $("#lon")?.addEventListener("input", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
-    $("#lon")?.addEventListener("change", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
-
-  }
-
-  function setupCompass() {
-    const statusEl = $("#compass-status");
-    const degEl = $("#compass-deg");
-    const dirEl = $("#compass-dir");
-    const arrowEl = $("#compass-arrow");
-    const enableBtn = $("#compass-enable-btn");
-    if (!statusEl || !degEl || !dirEl || !arrowEl) return;
-
-    const toDir = (deg) => ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
-    const normalize = (deg) => ((deg % 360) + 360) % 360;
-    let gotData = false;
-    let started = false;
-    let timeoutId = null;
-    const render = (deg) => {
-      const n = normalize(deg);
-      gotData = true;
-      degEl.textContent = `${Math.round(n)}°`;
-      dirEl.textContent = toDir(n);
-      arrowEl.style.transform = `rotate(${n}deg)`;
-      statusEl.textContent = "Kompas aktywny.";
-    };
-
-    const onOrientation = (event) => {
-      let heading = null;
-      if (typeof event.webkitCompassHeading === "number") heading = event.webkitCompassHeading;
-      else if (event.absolute === true && typeof event.alpha === "number") heading = event.alpha;
-      else if (typeof event.alpha === "number") heading = 360 - event.alpha;
-      if (typeof heading === "number" && Number.isFinite(heading)) render(heading);
-    };
-
-    const start = () => {
-      if (started) return;
-      started = true;
-      gotData = false;
-      window.addEventListener("deviceorientationabsolute", onOrientation, true);
-      window.addEventListener("deviceorientation", onOrientation, true);
-      statusEl.textContent = "Kompas: oczekuję na dane z kompasu...";
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        if (!gotData) {
-          statusEl.textContent = "Brak danych z kompasu. Sprawdź, czy przeglądarka ma dostęp do czujników ruchu/orientacji i czy urządzenie ma magnetometr.";
-        }
-      }, 7000);
-    };
-
-    const hasApi = "DeviceOrientationEvent" in window;
-    if (!hasApi) {
-      statusEl.textContent = "Kompas niedostępny w tej przeglądarce lub na tym urządzeniu.";
-      enableBtn.disabled = true;
-      return;
-    }
-    statusEl.textContent = "Kompas gotowy. Kliknij „Uruchom kompas”.";
-    enableBtn.addEventListener("click", async () => {
-      const requestPermission = window.DeviceOrientationEvent?.requestPermission;
-      if (typeof requestPermission === "function") {
-        try {
-          const permission = await requestPermission.call(window.DeviceOrientationEvent);
-          if (permission !== "granted") {
-            statusEl.textContent = "Kompas niedostępny bez zgody użytkownika.";
-            return;
-          }
-        } catch {
-          statusEl.textContent = "Kompas niedostępny w tej przeglądarce lub na tym urządzeniu.";
-          return;
-        }
-      }
-      start();
-    });
-  }
-
-  function setupExports() {
-    $("#export-json").addEventListener("click", () => {
-      downloadText(`sieweczka-records-${dateStamp()}.json`, JSON.stringify(getEntries(), null, 2), "application/json");
-    });
-    $("#export-csv").addEventListener("click", () => {
-      downloadText(`sieweczka-records-${dateStamp()}.csv`, buildCsv(getEntries()), "text/csv;charset=utf-8");
-    });
-    $("#export-zip").addEventListener("click", exportZip);
-    $("#export-kml")?.addEventListener("click", exportKml);
-  }
-
-  function flattenEntry(entry) {
+  function normalizeWorkingNest(nest) {
+    const now = new Date().toISOString();
+    const id = nest.id || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
     return {
-      uid: entry.uid,
-      protocolVersion: entry.protocolVersion,
-      createdAt: entry.createdAt,
-      updatedAt: entry.updatedAt,
-      nestId: entry.nestId,
-      season: entry.season,
-      obsDate: entry.obsDate,
-      obsTime: entry.obsTime,
-      observer: entry.observer,
-      species: entry.species,
-      sector: entry.sector,
-      lat: entry.lat,
-      lon: entry.lon,
-      gpsAccuracyM: entry.gpsAccuracyM,
-      nestStatus: entry.nestStatus,
-      eggCount: entry.eggCount,
-      possibleRenest: entry.possibleRenest,
-      docPhotoDone: entry.docPhotoDone,
-      nestOneMPhotoDone: entry.nestOneMPhotoDone,
-      randomPointDone: entry.randomPointDone,
-
-      nestSubstrate: entry.nestMicro?.substrate,
-      nestPctSand: entry.nestMicro?.coverage?.pctSand,
-      nestPctFineGravel: entry.nestMicro?.coverage?.pctFineGravel,
-      nestPctCoarse: entry.nestMicro?.coverage?.pctCoarse,
-      nestPctShells: entry.nestMicro?.coverage?.pctShells,
-      nestPctLiveVeg: entry.nestMicro?.coverage?.pctLiveVeg,
-      nestPctDryVeg: entry.nestMicro?.coverage?.pctDryVeg,
-      nestPctOrganic: entry.nestMicro?.coverage?.pctOrganic,
-      nestPctAnthro: entry.nestMicro?.coverage?.pctAnthro,
-      nestDistPlantCm: entry.nestMicro?.distPlantCm,
-      nestHeightPlantCm: entry.nestMicro?.heightPlantCm,
-      nestDistObjectCm: entry.nestMicro?.distObjectCm,
-      nestHeightObjectCm: entry.nestMicro?.heightObjectCm,
-      nestSlope: entry.nestMicro?.slope,
-      nestMicrorelief: entry.nestMicro?.microrelief,
-      nestPhotoCount: entry.nestMicro?.photos?.length || 0,
-
-      randomAzimuthDeg: entry.randomMicro?.azimuthDeg,
-      randomWasRerolled: entry.randomMicro?.wasRerolled,
-      randomRerollReason: entry.randomMicro?.rerollReason,
-      randomLat: entry.randomMicro?.lat,
-      randomLon: entry.randomMicro?.lon,
-      randomGpsAccuracyM: entry.randomMicro?.gpsAccuracyM,
-      randomSubstrate: entry.randomMicro?.substrate,
-      randomPctSand: entry.randomMicro?.coverage?.pctSand,
-      randomPctFineGravel: entry.randomMicro?.coverage?.pctFineGravel,
-      randomPctCoarse: entry.randomMicro?.coverage?.pctCoarse,
-      randomPctShells: entry.randomMicro?.coverage?.pctShells,
-      randomPctLiveVeg: entry.randomMicro?.coverage?.pctLiveVeg,
-      randomPctDryVeg: entry.randomMicro?.coverage?.pctDryVeg,
-      randomPctOrganic: entry.randomMicro?.coverage?.pctOrganic,
-      randomPctAnthro: entry.randomMicro?.coverage?.pctAnthro,
-      randomDistPlantCm: entry.randomMicro?.distPlantCm,
-      randomHeightPlantCm: entry.randomMicro?.heightPlantCm,
-      randomDistObjectCm: entry.randomMicro?.distObjectCm,
-      randomHeightObjectCm: entry.randomMicro?.heightObjectCm,
-      randomSlope: entry.randomMicro?.slope,
-      randomMicrorelief: entry.randomMicro?.microrelief,
-      randomPhotoCount: entry.randomMicro?.photos?.length || 0,
-
-      mesoPctSand: entry.meso?.pctSand,
-      mesoPctGravel: entry.meso?.pctGravel,
-      mesoPctVegetation: entry.meso?.pctVegetation,
-      mesoPctWater: entry.meso?.pctWater,
-      mesoPctOther: entry.meso?.pctOther,
-      mesoAssessmentMethod: entry.meso?.assessmentMethod,
-      distWaterM: entry.meso?.distWaterM,
-      distVegEdgeM: entry.meso?.distVegEdgeM,
-      distVerticalStructureM: entry.meso?.distVerticalStructureM,
-      distNearestHiaticulaM: entry.meso?.distNearestHiaticulaM,
-      distNearestDubiusM: entry.meso?.distNearestDubiusM,
-      mesoBigObjects: entry.meso?.bigObjects,
-      distFineGravelPatchM: entry.meso?.distFineGravelPatchM,
-      distCoarseGravelPatchM: entry.meso?.distCoarseGravelPatchM,
-      mesoSpatialNotes: entry.meso?.spatialNotes,
-
-      qcBirdReaction: entry.qualityControl?.birdReaction,
-      qcTimeAtNest: entry.qualityControl?.timeAtNest,
-      qcAborted: entry.qualityControl?.aborted,
-      qcTracksVisible: entry.qualityControl?.tracksVisible,
-      qcTracksNotes: entry.qualityControl?.tracksNotes,
-
-      notesIdentification: entry.moduleNotes?.identification,
-      notesNestMicro: entry.moduleNotes?.nestMicro,
-      notesRandomMicro: entry.moduleNotes?.randomMicro,
-      notesMeso: entry.moduleNotes?.meso,
-      notes: entry.notes,
+      ...nest,
+      id,
+      createdAt: nest.createdAt || now,
+      updatedAt: nest.updatedAt || nest.createdAt || now,
+      status: nest.status || "active",
+      lat: nest.lat == null || nest.lat === "" ? null : Number(nest.lat),
+      lon: nest.lon == null || nest.lon === "" ? null : Number(nest.lon),
+      notes: nest.notes || nest.note || "",
     };
   }
 
-  function buildCsv(entries) {
-    const rows = entries.map(flattenEntry);
-    const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
-    const escape = (cell) => {
-      const text = cell == null ? "" : String(cell);
-      return /[",\n;]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-    };
-    return [headers.join(";"), ...rows.map((row) => headers.map((header) => escape(row[header])).join(";"))].join("\n");
+  function setWorkingNests(nests) {
+    localStorage.setItem(WORKING_NESTS_KEY, JSON.stringify(nests.map(normalizeWorkingNest)));
+    updateWorkingCount();
   }
 
-  async function exportZip() {
-    const entries = getEntries();
-    if (!window.JSZip) {
-      alert("Biblioteka ZIP nie jest dostępna. Eksportuję CSV i JSON osobno.");
-      downloadText(`sieweczka-records-${dateStamp()}.csv`, buildCsv(entries), "text/csv;charset=utf-8");
-      downloadText(`sieweczka-records-${dateStamp()}.json`, JSON.stringify(entries, null, 2), "application/json");
+  function updateWorkingCount() {
+    const el = $("#working-count");
+    if (!el) return;
+    el.textContent = String(getWorkingNests().filter((n)=>n.status !== "done" && !n.deletedAt).length);
+  }
+
+  function renderWorkingMap() {
+    if (typeof L === "undefined") return;
+    const nests = getWorkingNests().filter((n) => !n.deletedAt && n.status !== "done" && hasValidCoords(n.lat, n.lon));
+    if (!workingMap) {
+      const base = createBaseLayers();
+      workingMap = L.map("working-map", { layers: [base.defaultLayer] }).setView([52.069, 15.95], 13);
+      L.control.layers(base.layers, {}, { collapsed: true }).addTo(workingMap);
+      addGridToMap(workingMap, "working");
+      workingMap.on("locationfound", (event) => updateLocationMarkerForMap("working", event.latlng.lat, event.latlng.lng, event.accuracy, latestMapHeadingDeg));
+      workingMap.on("locationerror", () => {});
+      workingMap.locate({ watch: true, enableHighAccuracy: true, maximumAge: 5000 });
+      startUserLocationTracking();
+    }
+    if (workingLayer) workingLayer.remove();
+    workingLayer = L.layerGroup().addTo(workingMap);
+    const bounds = [];
+    nests.forEach((nest) => {
+      const marker = L.marker([Number(nest.lat), Number(nest.lon)], { icon: makeDivIcon({ color: nest.status === "checked" ? "#16a34a" : "#f97316", label: nest.status === "checked" ? "✓" : "?" }) })
+        .bindPopup(`<strong>${escapeHtml(nest.id)}</strong><br>${escapeHtml(nest.notes || "")}${nest.lastVisitedAt ? `<br>Ostatnio: ${escapeHtml(nest.lastVisitedAt)}` : ""}<br><button type="button" data-working-focus="${nest.id}">Pokaż</button>`);
+      marker.addTo(workingLayer);
+      bounds.push([Number(nest.lat), Number(nest.lon)]);
+    });
+    if (bounds.length) {
+      const target = nests.find((nest) => String(nest.id) === String(workingFocusId));
+      if (target) workingMap.setView([Number(target.lat), Number(target.lon)], Math.max(workingMap.getZoom(), 17));
+      else workingMap.fitBounds(bounds, { padding: [20, 20], maxZoom: 17 });
+    }
+    setTimeout(() => workingMap.invalidateSize(), 50);
+    renderWorkingList();
+  }
+
+  function workingStatusLabel(status) {
+    if (status === "checked") return "sprawdzone";
+    if (status === "done") return "zakończone";
+    return "do sprawdzenia";
+  }
+
+  function renderWorkingList() {
+    const list = $("#working-list");
+    if (!list) return;
+    const nests = getWorkingNests().filter((n)=>!n.deletedAt && n.status !== "done");
+    if (!nests.length) {
+      list.innerHTML = `<p class="muted">Brak roboczych gniazd.</p>`;
       return;
     }
-    const zip = new JSZip();
-    zip.file("records.csv", buildCsv(entries));
-    zip.file("records.json", JSON.stringify(entries, null, 2));
-    const photos = zip.folder("photos");
+    const rows = nests.map((nest) => `
+      <article class="entry-card working-card${String(nest.id) === String(workingFocusId) ? " selected" : ""}" data-working-id="${escapeHtml(nest.id)}">
+        <div class="entry-main">
+          <h3>${escapeHtml(nest.id)}</h3>
+          <p>${escapeHtml(workingStatusLabel(nest.status))}</p>
+          <p class="muted">GPS: ${nest.lat ?? "brak"}, ${nest.lon ?? "brak"}</p>
+          ${workingNotesVisible ? `<p class="muted">${escapeHtml(nest.notes || "brak notatek")}</p>` : ""}
+        </div>
+        <div class="entry-actions">
+          <button type="button" data-working-action="focus" data-id="${escapeHtml(nest.id)}">Pokaż</button>
+          <button type="button" data-working-action="edit" data-id="${escapeHtml(nest.id)}">Edytuj</button>
+          <button type="button" data-working-action="checked" data-id="${escapeHtml(nest.id)}">Sprawdzone</button>
+          <button type="button" data-working-action="done" data-id="${escapeHtml(nest.id)}">Zakończ</button>
+          <button type="button" data-working-action="delete" data-id="${escapeHtml(nest.id)}" class="danger">Usuń</button>
+        </div>
+      </article>
+    `).join("");
+    list.innerHTML = rows;
+  }
 
-    for (const entry of entries) {
-      const nestPhotos = entry.nestMicro?.photos || [];
-      const randomPhotos = entry.randomMicro?.photos || [];
-      let i = 1;
-      for (const ref of nestPhotos) {
-        const blob = await getPhotoBlob(ref);
-        if (blob) photos.file(`${safeFile(entry.nestId)}_nest_${String(i++).padStart(2, "0")}.jpg`, blob);
-      }
-      i = 1;
-      for (const ref of randomPhotos) {
-        const blob = await getPhotoBlob(ref);
-        if (blob) photos.file(`${safeFile(entry.nestId)}_random_${String(i++).padStart(2, "0")}.jpg`, blob);
-      }
+  function setWorkingViewMode(mode) {
+    workingViewMode = mode === "list" ? "list" : "map";
+    const mapEl = $("#working-map");
+    const listEl = $("#working-list");
+    if (mapEl) mapEl.hidden = workingViewMode !== "map";
+    if (listEl) listEl.hidden = workingViewMode !== "list";
+    $$("[data-working-view]").forEach((btn) => btn.classList.toggle("primary", btn.dataset.workingView === workingViewMode));
+    if (workingViewMode === "map") setTimeout(() => renderWorkingMap(), 0);
+    else renderWorkingList();
+  }
+
+  function addWorkingNestFromInputs() {
+    const id = trim("#working-id") || `W-${new Date().toISOString().slice(0, 10)}-${Math.random().toString(16).slice(2, 5)}`;
+    const lat = getNumber("#working-lat", latestUserLatLng?.[0] ?? null);
+    const lon = getNumber("#working-lon", latestUserLatLng?.[1] ?? null);
+    if (!hasValidCoords(lat, lon)) {
+      alert("Brakuje poprawnych współrzędnych roboczego gniazda.");
+      return;
     }
-
-    const blob = await zip.generateAsync({ type: "blob" });
-    downloadBlob(`sieweczka-export-${dateStamp()}.zip`, blob);
+    const nests = getWorkingNests();
+    const now = new Date().toISOString();
+    const row = normalizeWorkingNest({ id, lat, lon, notes: trim("#working-notes"), status: "active", createdAt: now, updatedAt: now });
+    const idx = nests.findIndex((n)=>String(n.id)===String(row.id));
+    if (idx >= 0) nests[idx] = { ...nests[idx], ...row };
+    else nests.unshift(row);
+    setWorkingNests(nests);
+    setValue("#working-id", ""); setValue("#working-notes", "");
+    workingFocusId = row.id;
+    renderWorkingMap();
   }
 
-
-  function escapeXml(value) {
-    return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
+  function updateWorkingNestStatus(id, status) {
+    const nests = getWorkingNests();
+    const idx = nests.findIndex((n)=>String(n.id)===String(id));
+    if (idx < 0) return;
+    nests[idx].status = status;
+    nests[idx].updatedAt = new Date().toISOString();
+    if (status === "checked") nests[idx].lastVisitedAt = new Date().toISOString();
+    setWorkingNests(nests);
+    renderWorkingMap();
   }
 
-  function exportKml() {
-    const entries = getEntries();
-    const placemarks = [];
-    const buildDescription = (entry, pos) => [
-      `ID gniazda: ${entry.nestId || "(bez ID)"}`,`Gatunek: ${LABELS.species[entry.species] || entry.species || "-"}`,`Data: ${entry.obsDate || "-"}`,`Liczba jaj: ${entry.eggCount ?? "brak"}`,`Obserwator: ${entry.observer || "-"}`,`Sektor: ${entry.sector || "-"}`,`Lat/Lon: ${pos[0]}, ${pos[1]}`
-    ].join("\n");
-    for (const entry of entries) {
-      const nestPos = toLatLon(entry.lat, entry.lon);
-      const ctrlPos = toLatLon(entry.randomMicro?.lat, entry.randomMicro?.lon);
-      if (nestPos) placemarks.push(`<Placemark><name>${escapeXml(entry.nestId || "(bez ID)")}</name><description>${escapeXml(buildDescription(entry, nestPos))}</description><Point><coordinates>${nestPos[1]},${nestPos[0]},0</coordinates></Point></Placemark>`);
-      if (ctrlPos) placemarks.push(`<Placemark><name>${escapeXml(`${entry.nestId || "(bez ID)"} – kontrola`)}</name><description>${escapeXml(`Punkt kontroli\nLat/Lon: ${ctrlPos[0]}, ${ctrlPos[1]}`)}</description><Point><coordinates>${ctrlPos[1]},${ctrlPos[0]},0</coordinates></Point></Placemark>`);
+  function editWorkingNest(id) {
+    const nest = getWorkingNests().find((n)=>String(n.id)===String(id));
+    if (!nest) return;
+    editingWorkingId = nest.id;
+    setValue("#working-id", nest.id);
+    setValue("#working-lat", nest.lat ?? "");
+    setValue("#working-lon", nest.lon ?? "");
+    setValue("#working-notes", nest.notes || "");
+    showView("working-map");
+    setWorkingViewMode("map");
+  }
+
+  function deleteWorkingNest(id) {
+    if (!confirm("Usunąć robocze gniazdo?")) return;
+    const nests = getWorkingNests().map((n)=>String(n.id)===String(id) ? { ...n, deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } : n);
+    setWorkingNests(nests);
+    renderWorkingMap();
+  }
+
+  function startRecordFromWorking(id) {
+    const nest = getWorkingNests().find((n)=>String(n.id)===String(id));
+    startNewRecord();
+    if (nest) {
+      setValue("#nest-id", nest.id);
+      setValue("#lat", nest.lat ?? "");
+      setValue("#lon", nest.lon ?? "");
+      if (nest.notes) setValue("#notes-identification", nest.notes);
+      workingFocusId = nest.id;
     }
-    if (!placemarks.length) { alert("Brak rekordów z poprawnym GPS do eksportu KML."); return; }
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>sieweczka-records</name>\n${placemarks.join("\n")}\n</Document>\n</kml>`;
-    downloadText(`sieweczka-records-${new Date().toISOString().slice(0,10)}.kml`, kml, "application/vnd.google-earth.kml+xml;charset=utf-8");
   }
 
-  function dateStamp() {
-    return new Date().toISOString().slice(0, 19).replaceAll(":", "-");
+  function setupWorkingNests() {
+    $("#working-map-open")?.addEventListener("click", () => { showView("working-map"); setWorkingViewMode("map"); });
+    $("#back-home-from-working")?.addEventListener("click", () => showView("home"));
+    $("#working-add")?.addEventListener("click", addWorkingNestFromInputs);
+    $("#working-current-gps")?.addEventListener("click", () => {
+      if (!latestUserLatLng) { alert("Nie mam jeszcze aktualnej pozycji GPS."); return; }
+      setValue("#working-lat", latestUserLatLng[0].toFixed(6));
+      setValue("#working-lon", latestUserLatLng[1].toFixed(6));
+    });
+    $("#working-refresh-map")?.addEventListener("click", renderWorkingMap);
+    $("#working-show-me")?.addEventListener("click", () => {
+      if (!workingMap) return;
+      if (latestUserLatLng) workingMap.setView(latestUserLatLng, Math.max(workingMap.getZoom(), 17));
+      workingMap.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true });
+    });
+    $("#working-heading")?.addEventListener("click", enableMapHeading);
+    $("#working-toggle-notes")?.addEventListener("click", () => { workingNotesVisible = !workingNotesVisible; renderWorkingList(); });
+    $$("[data-working-view]").forEach((btn) => btn.addEventListener("click", () => setWorkingViewMode(btn.dataset.workingView)));
+    document.addEventListener("click", (event) => {
+      const actionBtn = event.target.closest("[data-working-action]");
+      if (actionBtn) {
+        const id = actionBtn.dataset.id;
+        const action = actionBtn.dataset.workingAction;
+        if (action === "focus") { workingFocusId = id; setWorkingViewMode("map"); renderWorkingMap(); }
+        if (action === "edit") editWorkingNest(id);
+        if (action === "checked") updateWorkingNestStatus(id, "checked");
+        if (action === "done") updateWorkingNestStatus(id, "done");
+        if (action === "delete") deleteWorkingNest(id);
+        return;
+      }
+      const popupBtn = event.target.closest("[data-working-focus]");
+      if (popupBtn) { workingFocusId = popupBtn.dataset.workingFocus; renderWorkingMap(); return; }
+    });
+    renderWorkingList();
+    updateWorkingCount();
   }
 
-  function safeFile(name) {
-    return String(name || "record").replace(/[^\p{L}\p{N}_-]+/gu, "_");
+  function normalizeText(value) {
+    return String(value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
   }
 
-  function downloadText(filename, text, type) {
-    downloadBlob(filename, new Blob([text], { type }));
+  function isNoValue(value) {
+    const v = normalizeText(value);
+    return ["", "brak", "nie", "no", "n", "0", "false"].includes(v);
   }
 
-  function downloadBlob(filename, blob) {
+  function classifyYesNo(value, unknown = "unknown") {
+    const v = normalizeText(value);
+    if (["tak", "yes", "y", "1", "true", "prawda"].includes(v)) return "yes";
+    if (["nie", "no", "n", "0", "false", "brak", "none"].includes(v)) return "no";
+    return unknown;
+  }
+
+  function speciesFromText(value) {
+    const v = normalizeText(value);
+    if (!v) return "unknown";
+    if (v.includes("obroz") || v.includes("hiaticula") || v === "sob") return "charadrius-hiaticula";
+    if (v.includes("rzecz") || v.includes("dubius") || v === "srz") return "charadrius-dubius";
+    if (v.includes("czaj") || v.includes("vanellus") || v === "cz") return "vanellus-vanellus";
+    if (v.includes("krwaw") || v.includes("totanus") || v === "kr") return "tringa-totanus";
+    if (v.includes("bialoczel") || v.includes("sternula") || v === "rb") return "sternula-albifrons";
+    if (v.includes("smiesz") || v.includes("ridibundus") || v === "sm") return "chroicocephalus-ridibundus";
+    return `custom:${slugify(value) || "unknown"}`;
+  }
+
+  function substrateFromText(value) {
+    const v = normalizeText(value);
+    if (v.includes("drob") || v.includes("fine")) return "fine-gravel";
+    if (v.includes("grub") || v.includes("kam")) return "coarse-gravel";
+    if (v.includes("muszl") || v.includes("shell")) return "stones";
+    if (v.includes("miesz")) return "mixed";
+    if (v.includes("piasek") || v.includes("sand")) return "sand";
+    return "sand";
+  }
+
+  function slopeFromText(value) {
+    const v = normalizeText(value);
+    if (v.includes("strom") || v.includes("steep") || v.includes("duz")) return "steep";
+    if (v.includes("lek") || v.includes("slight") || v.includes("mal")) return "slight";
+    return "flat";
+  }
+
+  function microreliefFromText(value) {
+    const v = normalizeText(value);
+    if (v.includes("zag") || v.includes("depress")) return "depression";
+    if (v.includes("grzb") || v.includes("ridge") || v.includes("garb")) return "ridge";
+    if (v.includes("miedzy") || v.includes("między") || v.includes("between")) return "between-stones";
+    return "flat";
+  }
+
+  function assessmentFromText(value) {
+    const v = normalizeText(value);
+    if (v.includes("gis") || v.includes("orto") || v.includes("map")) return "gis";
+    if (v.includes("teren") || v.includes("field")) return "field";
+    return "unknown";
+  }
+
+  function findFirst(row, candidates) {
+    for (const key of candidates) {
+      if (row[key] != null && String(row[key]).trim() !== "") return row[key];
+      const normalizedKey = normalizeText(key);
+      const match = Object.keys(row).find((k) => normalizeText(k) === normalizedKey);
+      if (match && row[match] != null && String(row[match]).trim() !== "") return row[match];
+    }
+    return "";
+  }
+
+  function toNumberOrNull(value) {
+    if (value == null || String(value).trim() === "") return null;
+    const text = String(value).replace(",", ".").replace(/[^0-9.+-]/g, "");
+    if (!text) return null;
+    const n = Number(text);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function buildEntryFromImportedRow(row, index) {
+    const now = new Date().toISOString();
+    const nestId = String(findFirst(row, ["nest_id", "ID gniazda", "id", "gniazdo", "nestId"])).trim() || `import-${index + 1}`;
+    const obsDate = String(findFirst(row, ["date", "obs_date", "data", "Data"])).trim();
+    const obsTime = String(findFirst(row, ["time", "obs_time", "godzina", "Godzina"])).trim();
+    const species = speciesFromText(findFirst(row, ["species", "gatunek", "Gatunek", "kod gatunku"]));
+    const sector = String(findFirst(row, ["sector", "sektor", "część wyspy", "czesc wyspy"])).trim();
+    const observer = String(findFirst(row, ["observer", "obserwator", "Obserwator"])).trim();
+    const lat = toNumberOrNull(findFirst(row, ["lat", "latitude", "szerokość", "szerokosc", "GPS lat", "gps_lat"]));
+    const lon = toNumberOrNull(findFirst(row, ["lon", "lng", "longitude", "długość", "dlugosc", "GPS lon", "gps_lon"]));
+    const eggCount = toNumberOrNull(findFirst(row, ["egg_count", "eggs", "liczba jaj", "jaja", "Liczba jaj"]));
+    const createdAt = String(findFirst(row, ["created_at", "createdAt"])).trim() || now;
+    const updatedAt = String(findFirst(row, ["updated_at", "updatedAt"])).trim() || createdAt;
+    return normalizeEntry({
+      uid: String(findFirst(row, ["uid", "record_uid", "record id"])).trim() || `${nestId}-${createdAt}-${index}`,
+      protocolVersion: String(findFirst(row, ["protocolVersion", "protocol_version"])).trim() || PROTOCOL_VERSION,
+      createdAt,
+      updatedAt,
+      nestId,
+      season: String(findFirst(row, ["season", "sezon", "rok"])).trim() || (obsDate ? obsDate.slice(0, 4) : ""),
+      obsDate,
+      obsTime,
+      observer,
+      species,
+      sector,
+      lat,
+      lon,
+      gpsAccuracyM: toNumberOrNull(findFirst(row, ["gps_accuracy_m", "gpsAccuracyM", "dokładność gps", "dokladnosc gps"])),
+      nestStatus: "unknown",
+      eggCount,
+      possibleRenest: classifyYesNo(findFirst(row, ["possible_renest", "renest", "powtórne gniazdo"])),
+      docPhotoDone: classifyYesNo(findFirst(row, ["doc_photo_done", "docPhotoDone", "zdjęcie dokumentacyjne", "zdjecie dokumentacyjne"])),
+      nestOneMPhotoDone: classifyYesNo(findFirst(row, ["nest_1m_photo_done", "nestOneMPhotoDone", "zdjęcie 1m", "zdjecie 1m"])),
+      randomPointDone: classifyYesNo(findFirst(row, ["random_point_done", "randomPointDone", "punkt losowy"])),
+      nestMicro: {
+        photos: [],
+        substrate: substrateFromText(findFirst(row, ["nest_substrate", "podłoże gniazda", "podloze gniazda"])),
+        coverage: {
+          pctSand: toNumberOrNull(findFirst(row, ["nest_pct_sand", "pct_piasek_gniazdo"])) || 0,
+          pctFineGravel: toNumberOrNull(findFirst(row, ["nest_pct_fine_gravel", "pct_drobny_zwir_gniazdo"])) || 0,
+          pctCoarse: toNumberOrNull(findFirst(row, ["nest_pct_coarse", "pct_gruby_zwir_gniazdo"])) || 0,
+          pctShells: toNumberOrNull(findFirst(row, ["nest_pct_shells", "pct_muszle_gniazdo"])) || 0,
+          pctLiveVeg: toNumberOrNull(findFirst(row, ["nest_pct_live_veg", "pct_rosliny_zywe_gniazdo"])) || 0,
+          pctDryVeg: toNumberOrNull(findFirst(row, ["nest_pct_dry_veg", "pct_rosliny_suche_gniazdo"])) || 0,
+          pctOrganic: toNumberOrNull(findFirst(row, ["nest_pct_organic", "pct_organiczne_gniazdo"])) || 0,
+          pctAnthro: toNumberOrNull(findFirst(row, ["nest_pct_anthro", "pct_antropogeniczne_gniazdo"])) || 0,
+        },
+        distPlantCm: toNumberOrNull(findFirst(row, ["nest_dist_plant_cm", "dist_plant_cm"])),
+        heightPlantCm: toNumberOrNull(findFirst(row, ["nest_height_plant_cm", "height_plant_cm"])),
+        distObjectCm: toNumberOrNull(findFirst(row, ["nest_dist_object_cm", "dist_object_cm"])),
+        heightObjectCm: toNumberOrNull(findFirst(row, ["nest_height_object_cm", "height_object_cm"])),
+        slope: slopeFromText(findFirst(row, ["nest_slope", "nachylenie_gniazdo"])),
+        microrelief: microreliefFromText(findFirst(row, ["nest_microrelief", "mikrorzezba_gniazdo"])),
+      },
+      randomMicro: {
+        azimuthDeg: toNumberOrNull(findFirst(row, ["random_azimuth_deg", "azimuth", "azymut"])),
+        wasRerolled: classifyYesNo(findFirst(row, ["random_was_rerolled", "reroll", "losowanie ponowne"]), "no"),
+        rerollReason: "none",
+        lat: toNumberOrNull(findFirst(row, ["random_lat", "control_lat"])),
+        lon: toNumberOrNull(findFirst(row, ["random_lon", "control_lon"])),
+        gpsAccuracyM: toNumberOrNull(findFirst(row, ["random_gps_accuracy_m", "control_gps_accuracy_m"])),
+        photos: [],
+        substrate: substrateFromText(findFirst(row, ["random_substrate", "podłoże punktu", "podloze punktu"])),
+        coverage: {
+          pctSand: toNumberOrNull(findFirst(row, ["random_pct_sand"])) || 0,
+          pctFineGravel: toNumberOrNull(findFirst(row, ["random_pct_fine_gravel"])) || 0,
+          pctCoarse: toNumberOrNull(findFirst(row, ["random_pct_coarse"])) || 0,
+          pctShells: toNumberOrNull(findFirst(row, ["random_pct_shells"])) || 0,
+          pctLiveVeg: toNumberOrNull(findFirst(row, ["random_pct_live_veg"])) || 0,
+          pctDryVeg: toNumberOrNull(findFirst(row, ["random_pct_dry_veg"])) || 0,
+          pctOrganic: toNumberOrNull(findFirst(row, ["random_pct_organic"])) || 0,
+          pctAnthro: toNumberOrNull(findFirst(row, ["random_pct_anthro"])) || 0,
+        },
+        distPlantCm: toNumberOrNull(findFirst(row, ["random_dist_plant_cm"])),
+        heightPlantCm: toNumberOrNull(findFirst(row, ["random_height_plant_cm"])),
+        distObjectCm: toNumberOrNull(findFirst(row, ["random_dist_object_cm"])),
+        heightObjectCm: toNumberOrNull(findFirst(row, ["random_height_object_cm"])),
+        slope: slopeFromText(findFirst(row, ["random_slope"])),
+        microrelief: microreliefFromText(findFirst(row, ["random_microrelief"])),
+      },
+      meso: {
+        pctSand: toNumberOrNull(findFirst(row, ["pct_sand", "meso_pct_sand"])) || 0,
+        pctGravel: toNumberOrNull(findFirst(row, ["pct_gravel", "meso_pct_gravel"])) || 0,
+        pctVegetation: toNumberOrNull(findFirst(row, ["pct_vegetation", "meso_pct_vegetation"])) || 0,
+        pctWater: toNumberOrNull(findFirst(row, ["pct_water", "meso_pct_water"])) || 0,
+        pctOther: toNumberOrNull(findFirst(row, ["pct_other", "meso_pct_other"])) || 0,
+        assessmentMethod: assessmentFromText(findFirst(row, ["assessment_method", "metoda_oceny"])),
+        distWaterM: toNumberOrNull(findFirst(row, ["dist_water_m", "odległość od wody", "odleglosc od wody"])),
+        distVegEdgeM: toNumberOrNull(findFirst(row, ["dist_veg_edge_m", "odległość od roślinności", "odleglosc od roslinnosci"])),
+        distVerticalStructureM: toNumberOrNull(findFirst(row, ["dist_vertical_structure_m"])),
+        distNearestHiaticulaM: toNumberOrNull(findFirst(row, ["dist_nearest_hiaticula_m"])),
+        distNearestDubiusM: toNumberOrNull(findFirst(row, ["dist_nearest_dubius_m"])),
+        bigObjects: String(findFirst(row, ["meso_big_objects", "big_objects"])).trim() || "unknown",
+        distFineGravelPatchM: toNumberOrNull(findFirst(row, ["dist_fine_gravel_patch_m"])),
+        distCoarseGravelPatchM: toNumberOrNull(findFirst(row, ["dist_coarse_gravel_patch_m"])),
+        spatialNotes: String(findFirst(row, ["spatial_notes", "uwagi przestrzenne"])).trim(),
+      },
+      qualityControl: {},
+      moduleNotes: {},
+      notes: String(findFirst(row, ["notes", "uwagi", "notatki"])).trim(),
+    });
+  }
+
+  function parseCsvLine(line) {
+    const values = [];
+    let current = "";
+    let inside = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inside && line[i + 1] === '"') { current += '"'; i += 1; }
+        else inside = !inside;
+      } else if (ch === "," && !inside) {
+        values.push(current); current = "";
+      } else current += ch;
+    }
+    values.push(current);
+    return values;
+  }
+
+  function parseCsv(text) {
+    const lines = String(text || "").replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim() !== "");
+    if (!lines.length) return [];
+    const headers = parseCsvLine(lines[0]).map((h) => String(h).trim());
+    return lines.slice(1).map((line) => {
+      const vals = parseCsvLine(line);
+      const row = {};
+      headers.forEach((h, i) => { row[h] = vals[i] ?? ""; });
+      return row;
+    });
+  }
+
+  function parseDelimitedText(text) {
+    const raw = String(text || "");
+    if (!raw.trim()) return [];
+    if (raw.includes(",") && raw.split(/\r?\n/)[0]?.includes(",")) return parseCsv(raw);
+    const lines = raw.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim() !== "");
+    const headerLine = lines[0] || "";
+    const delimiter = headerLine.includes("\t") ? "\t" : headerLine.includes(";") ? ";" : ",";
+    const headers = headerLine.split(delimiter).map((h) => h.trim());
+    return lines.slice(1).map((line) => {
+      const values = delimiter === "," ? parseCsvLine(line) : line.split(delimiter);
+      const row = {};
+      headers.forEach((h, i) => { row[h] = values[i] ?? ""; });
+      return row;
+    });
+  }
+
+  function setupDataImport() {
+    const fileInput = $("#import-file");
+    const btn = $("#import-data");
+    if (!fileInput || !btn) return;
+    btn.addEventListener("click", async () => {
+      const file = fileInput.files?.[0];
+      if (!file) { alert("Wybierz plik CSV/TXT wyeksportowany z Excela."); return; }
+      try {
+        const text = await file.text();
+        const rows = parseDelimitedText(text);
+        if (!rows.length) { alert("Nie znaleziono danych do importu."); return; }
+        const imported = rows.map(buildEntryFromImportedRow).filter(Boolean);
+        const current = getEntries();
+        const byUid = new Map(current.map((entry) => [String(entry.uid), entry]));
+        imported.forEach((entry) => byUid.set(String(entry.uid), entry));
+        if (!setEntries(Array.from(byUid.values()))) return;
+        renderEntries();
+        updateCounts();
+        alert(`Zaimportowano/uzupełniono rekordy: ${imported.length}.`);
+      } catch (error) {
+        console.error(error);
+        alert("Nie udało się zaimportować pliku. Sprawdź format CSV/TXT.");
+      }
+    });
+  }
+
+  function csvHeaders() {
+    return [
+      "uid", "nest_id", "season", "obs_date", "obs_time", "observer", "species", "sector", "lat", "lon", "gps_accuracy_m",
+      "nest_status", "egg_count", "possible_renest", "doc_photo_done", "nest_1m_photo_done", "random_point_done",
+      "nest_substrate", "nest_pct_sand", "nest_pct_fine_gravel", "nest_pct_coarse", "nest_pct_shells", "nest_pct_live_veg", "nest_pct_dry_veg", "nest_pct_organic", "nest_pct_anthro",
+      "nest_dist_plant_cm", "nest_height_plant_cm", "nest_dist_object_cm", "nest_height_object_cm", "nest_slope", "nest_microrelief",
+      "random_azimuth_deg", "random_was_rerolled", "random_reroll_reason", "random_lat", "random_lon", "random_gps_accuracy_m",
+      "random_substrate", "random_pct_sand", "random_pct_fine_gravel", "random_pct_coarse", "random_pct_shells", "random_pct_live_veg", "random_pct_dry_veg", "random_pct_organic", "random_pct_anthro",
+      "random_dist_plant_cm", "random_height_plant_cm", "random_dist_object_cm", "random_height_object_cm", "random_slope", "random_microrelief",
+      "pct_sand", "pct_gravel", "pct_vegetation", "pct_water", "pct_other", "meso_assessment_method", "meso_big_objects",
+      "dist_water_m", "dist_veg_edge_m", "dist_vertical_structure_m", "dist_fine_gravel_patch_m", "dist_coarse_gravel_patch_m", "dist_nearest_hiaticula_m", "dist_nearest_dubius_m", "meso_spatial_notes",
+      "qc_bird_reaction", "qc_time_at_nest", "qc_aborted", "qc_tracks", "qc_tracks_notes",
+      "notes_identification", "notes_nest_micro", "notes_random_micro", "notes_meso", "notes",
+      "nest_photo_refs", "random_photo_refs", "all_photo_refs", "nest_photo_link", "random_photo_link", "created_at", "updated_at"
+    ];
+  }
+
+  function csvRow(record) {
+    const nestRefs = (record.nestMicro?.photos || []).map((_, i) => `${record.uid}_nest_${i + 1}.jpg`);
+    const randomRefs = (record.randomMicro?.photos || []).map((_, i) => `${record.uid}_random_${i + 1}.jpg`);
+    const allRefs = [...nestRefs, ...randomRefs];
+    const values = [
+      record.uid, record.nestId, record.season, record.obsDate, record.obsTime, record.observer, record.species, record.sector, record.lat, record.lon, record.gpsAccuracyM,
+      record.nestStatus, record.eggCount, record.possibleRenest, record.docPhotoDone, record.nestOneMPhotoDone, record.randomPointDone,
+      record.nestMicro?.substrate, record.nestMicro?.coverage?.pctSand, record.nestMicro?.coverage?.pctFineGravel, record.nestMicro?.coverage?.pctCoarse, record.nestMicro?.coverage?.pctShells, record.nestMicro?.coverage?.pctLiveVeg, record.nestMicro?.coverage?.pctDryVeg, record.nestMicro?.coverage?.pctOrganic, record.nestMicro?.coverage?.pctAnthro,
+      record.nestMicro?.distPlantCm, record.nestMicro?.heightPlantCm, record.nestMicro?.distObjectCm, record.nestMicro?.heightObjectCm, record.nestMicro?.slope, record.nestMicro?.microrelief,
+      record.randomMicro?.azimuthDeg, record.randomMicro?.wasRerolled, record.randomMicro?.rerollReason, record.randomMicro?.lat, record.randomMicro?.lon, record.randomMicro?.gpsAccuracyM,
+      record.randomMicro?.substrate, record.randomMicro?.coverage?.pctSand, record.randomMicro?.coverage?.pctFineGravel, record.randomMicro?.coverage?.pctCoarse, record.randomMicro?.coverage?.pctShells, record.randomMicro?.coverage?.pctLiveVeg, record.randomMicro?.coverage?.pctDryVeg, record.randomMicro?.coverage?.pctOrganic, record.randomMicro?.coverage?.pctAnthro,
+      record.randomMicro?.distPlantCm, record.randomMicro?.heightPlantCm, record.randomMicro?.distObjectCm, record.randomMicro?.heightObjectCm, record.randomMicro?.slope, record.randomMicro?.microrelief,
+      record.meso?.pctSand, record.meso?.pctGravel, record.meso?.pctVegetation, record.meso?.pctWater, record.meso?.pctOther, record.meso?.assessmentMethod, record.meso?.bigObjects,
+      record.meso?.distWaterM, record.meso?.distVegEdgeM, record.meso?.distVerticalStructureM, record.meso?.distFineGravelPatchM, record.meso?.distCoarseGravelPatchM, record.meso?.distNearestHiaticulaM, record.meso?.distNearestDubiusM, record.meso?.spatialNotes,
+      record.qualityControl?.birdReaction, record.qualityControl?.timeAtNest, record.qualityControl?.aborted, record.qualityControl?.tracksVisible, record.qualityControl?.tracksNotes,
+      record.moduleNotes?.identification, record.moduleNotes?.nestMicro, record.moduleNotes?.randomMicro, record.moduleNotes?.meso, record.notes,
+      nestRefs.join(";"), randomRefs.join(";"), allRefs.join(";"),
+      nestRefs[0] ? `=HIPERŁĄCZE("${nestRefs[0]}";"picture_nest")` : "",
+      randomRefs[0] ? `=HIPERŁĄCZE("${randomRefs[0]}";"picture_random")` : "",
+      record.createdAt, record.updatedAt,
+    ];
+    return values.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(",");
+  }
+
+  function downloadBlob(filename, type, content) {
+    const blob = content instanceof Blob ? content : new Blob([content], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1979,171 +2180,318 @@
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    URL.revokeObjectURL(url);
   }
 
-  function getWorkingNests() { try { const v = JSON.parse(localStorage.getItem(WORKING_NESTS_KEY) || "[]"); return Array.isArray(v) ? v.map(normalizeWorkingNest) : []; } catch { return []; } }
-  function setWorkingNests(nests) { localStorage.setItem(WORKING_NESTS_KEY, JSON.stringify((Array.isArray(nests) ? nests : []).map(normalizeWorkingNest))); }
-  const saveWorkingNests = setWorkingNests;
-  function findWorkingNest(id) { return getWorkingNests().find((w) => String(w.id) === String(id)) || null; }
-  function updateWorkingNest(id, patch) {
-    const items = getWorkingNests();
-    const idx = items.findIndex((w) => String(w.id) === String(id));
-    if (idx < 0) return null;
-    const updated = normalizeWorkingNest({ ...items[idx], ...patch, updatedAt: new Date().toISOString() });
-    items[idx] = updated;
-    setWorkingNests(items);
-    renderWorkingMap();
-    return updated;
-  }
-  function deleteWorkingNest(id) {
-    const items = getWorkingNests();
-    const next = items.filter((w) => String(w.id) !== String(id));
-    if (next.length === items.length) return false;
-    setWorkingNests(next);
-    if (editingWorkingId && String(editingWorkingId) === String(id)) closeWorkingEditPanel();
-    renderWorkingMap();
-    return true;
-  }
-  function openWorkingEditPanel(id) {
-    const item = findWorkingNest(id);
-    const panel = $("#working-edit-panel");
-    if (!panel || !item) return;
-    editingWorkingId = item.id;
-    panel.hidden = false;
-    $("#working-edit-id").value = item.id;
-    $("#working-edit-label").textContent = item.label || "—";
-    $("#working-edit-status").value = item.status || "do_sprawdzenia";
-    $("#working-edit-note").value = item.note || "";
-    $("#working-edit-lat").value = Number.isFinite(item.lat) ? item.lat : "";
-    $("#working-edit-lon").value = Number.isFinite(item.lon) ? item.lon : "";
-  }
-  function closeWorkingEditPanel() { editingWorkingId = null; const panel = $("#working-edit-panel"); if (panel) panel.hidden = true; }
-  function fitWorkingMapBounds() {
-    const points = getWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
-    if (points.length) workingMap?.fitBounds(L.latLngBounds(points), { padding: [30, 30] });
-    else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 18);
-    else workingMap?.setView([52, 19], 7);
-  }
-  function addWorkingNestFromGps() {
-    if (!navigator.geolocation) return alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
-    navigator.geolocation.getCurrentPosition(({ coords }) => {
-      const items = getWorkingNests();
-      const pos=[+coords.latitude.toFixed(6), +coords.longitude.toFixed(6)];
-      const label=nextWorkingLabel(items);
-      const point=normalizeWorkingNest({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia' });
-      setWorkingNests([point,...getWorkingNests()]);
-      workingFocusId=point.id;
-      workingViewMode='map';
-      renderWorkingMap();
-    }, () => alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
-  }
-  function onWorkingScreenClick(event) {
-    const btn = event.target.closest("[data-w-action]"); if (!btn) return;
-    const id = btn.dataset.workingId; const item = findWorkingNest(id); if (!item) return;
-    if (btn.dataset.wAction === "show") { workingViewMode='map'; workingFocusId=item.id; renderWorkingMap(); return; }
-    if (btn.dataset.wAction === "nav") { navigateTo(item.lat, item.lon); return; }
-    if (btn.dataset.wAction === "delete" && confirm("Usunąć punkt roboczy?")) { deleteWorkingNest(item.id); return; }
-    if (btn.dataset.wAction === "edit") { openWorkingEditPanel(item.id); return; }
-  }
-  function onWorkingScreenChange(event) {
-    const select = event.target.closest("select[data-w-action='status'][data-working-id]"); if (!select) return;
-    updateWorkingNest(select.dataset.workingId, { status: select.value });
-  }
-  function onWorkingEditSubmit(event) {
-    event.preventDefault();
-    if (!editingWorkingId) return;
-    const lat = Number($("#working-edit-lat").value);
-    const lon = Number($("#working-edit-lon").value);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return alert("Podaj poprawne współrzędne.");
-    updateWorkingNest(editingWorkingId, { status: $("#working-edit-status").value, note: $("#working-edit-note").value, notes: $("#working-edit-note").value, lat, lon });
-    closeWorkingEditPanel();
-  }
-  function renderWorkingMap(showNearest = false) {
-    const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
-    if (!workingMap) {
-      const base = createBaseLayers();
-      workingMap = L.map(mapEl, { layers: [base.defaultLayer] });
-      workingMap.attributionControl.setPrefix("");
-      L.control.layers(base.layers).addTo(workingMap);
-      workingLayer = L.layerGroup().addTo(workingMap);
+  async function exportPhotosZip(entries) {
+    const zip = new JSZip();
+    const photos = zip.folder("photos");
+    let count = 0;
+    for (const record of entries) {
+      const addPhoto = async (ref, kind, index) => {
+        const blob = await getPhotoBlob(ref);
+        if (!blob) return;
+        photos.file(`${record.uid}_${kind}_${index + 1}.jpg`, blob);
+        count += 1;
+      };
+      for (let i = 0; i < (record.nestMicro?.photos || []).length; i += 1) await addPhoto(record.nestMicro.photos[i], "nest", i);
+      for (let i = 0; i < (record.randomMicro?.photos || []).length; i += 1) await addPhoto(record.randomMicro.photos[i], "random", i);
     }
-    if ($("#working-grid-toggle")?.checked) {
-      if (!workingGridLayer) void addGridToMap(workingMap, "working");
-      else if (!workingMap.hasLayer(workingGridLayer)) workingGridLayer.addTo(workingMap);
-    } else if (workingGridLayer && workingMap.hasLayer(workingGridLayer)) {
-      workingMap.removeLayer(workingGridLayer);
-    }
-    workingLayer.clearLayers();
-    const items = getWorkingNests();
-    const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
-    enriched.forEach(({w,pos}) => {
-      const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }) }).addTo(workingLayer);
-      const noteText = String(w.note ?? w.notes ?? "").trim();
-      if (workingNotesVisible && noteText) m.bindTooltip(escapeHtml(noteText), { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
-      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> <button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button><br><select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>`);
-      if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
+    if (!count) return null;
+    return zip.generateAsync({ type: "blob" });
+  }
+
+  async function exportExcel(entries) {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Sieweczka");
+    const headers = csvHeaders();
+    sheet.addRow(headers);
+    entries.forEach((record) => {
+      const raw = csvRow(record).split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map((v) => v.replace(/^"|"$/g, "").replaceAll('""', '"'));
+      sheet.addRow(raw);
     });
-    $("#working-map-info").textContent = `Punkty robocze: ${enriched.length}`;
-    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button><button data-w-action="edit" data-working-id="${w.id}">Edytuj</button><button class="danger" data-w-action="delete" data-working-id="${w.id}">Usuń</button><select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select></div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
-    $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
-    $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
-    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); ensureUserLocationTracking([], null); syncUserLocationLayers("working");} 
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadBlob(`sieweczka-${new Date().toISOString().slice(0, 10)}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", new Blob([buffer]));
+  }
+
+  function setupExports() {
+    $("#export-csv")?.addEventListener("click", async () => {
+      const entries = getEntries();
+      if (!entries.length) { alert("Brak danych do eksportu."); return; }
+      const csv = [csvHeaders().join(","), ...entries.map(csvRow)].join("\n");
+      downloadBlob(`sieweczka-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv;charset=utf-8", "\uFEFF" + csv);
+      const zip = await exportPhotosZip(entries);
+      if (zip) downloadBlob(`sieweczka-zdjecia-${new Date().toISOString().slice(0, 10)}.zip`, "application/zip", zip);
+      alert(zip ? "Pobrano CSV i paczkę zdjęć ZIP." : "Pobrano CSV. Brak zdjęć do ZIP.");
+    });
+    $("#export-excel")?.addEventListener("click", async () => {
+      const entries = getEntries();
+      if (!entries.length) { alert("Brak danych do eksportu."); return; }
+      if (typeof ExcelJS === "undefined") { alert("Biblioteka ExcelJS nie jest dostępna."); return; }
+      try { await exportExcel(entries); } catch (error) { console.error(error); alert("Nie udało się wyeksportować XLSX."); }
+    });
+  }
+
+  function setupPhotoInputs() {
+    ["#nest-photos", "#random-photos"].forEach((selector) => $(selector)?.addEventListener("change", renderPhotoPreviews));
   }
 
   function setupFieldMode() {
-    const key = "sieweczka-field-mode";
-    const apply = () => {
-      const on = localStorage.getItem(key) === "1";
-      document.body.classList.toggle("field-mode", on);
-      $("#field-mode-toggle").textContent = on ? "Tryb terenowy: ON" : "Tryb terenowy";
-    };
-    $("#field-mode-toggle").addEventListener("click", () => {
+    const root = document.body;
+    const key = "sieweczka-field-mode-v1";
+    const apply = () => root.classList.toggle("field-mode", localStorage.getItem(key) === "1");
+    apply();
+    $("#field-mode-toggle")?.addEventListener("click", () => {
       localStorage.setItem(key, localStorage.getItem(key) === "1" ? "0" : "1");
       apply();
     });
-    apply();
   }
 
-  function registerServiceWorker() {
-    if (!("serviceWorker" in navigator)) return;
-    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.warn));
+  function setupHelpBubbles() {
+    document.addEventListener("click", (event) => {
+      const btn = event.target.closest(".help-bubble");
+      if (!btn) return;
+      const isOpen = btn.classList.toggle("open");
+      btn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    });
+  }
+
+  function setupSheetEditor() {
+    const btn = $("#sheet-toggle");
+    const wrap = $("#sheet-editor");
+    if (!btn || !wrap) return;
+    btn.addEventListener("click", () => {
+      wrap.hidden = !wrap.hidden;
+      if (!wrap.hidden) renderSheetEditor();
+    });
+    $("#sheet-save-all")?.addEventListener("click", async () => {
+      const rows = $$("#sheet-editor tbody tr");
+      const entries = getEntries();
+      for (const row of rows) {
+        const uid = row.dataset.uid;
+        const target = entries.find((entry) => String(entry.uid) === String(uid));
+        if (!target) continue;
+        const get = (col) => row.querySelector(`[data-col="${col}"]`)?.value ?? "";
+        target.nestId = get("nestId").trim();
+        target.obsDate = get("obsDate");
+        target.obsTime = get("obsTime");
+        target.observer = get("observer").trim();
+        target.sector = get("sector").trim();
+        target.eggCount = toNumberOrNull(get("eggCount"));
+        target.lat = toNumberOrNull(get("lat"));
+        target.lon = toNumberOrNull(get("lon"));
+        target.notes = get("notes");
+        const nestUploadInput = row.querySelector('[data-col="nestPhotosUpload"]');
+        const randomUploadInput = row.querySelector('[data-col="randomPhotosUpload"]');
+        const newNestPhotos = nestUploadInput ? await saveSelectedFilesForElement(nestUploadInput, 4) : [];
+        const newRandomPhotos = randomUploadInput ? await saveSelectedFilesForElement(randomUploadInput, 4) : [];
+        if (!target.nestMicro) target.nestMicro = {};
+        if (!target.randomMicro) target.randomMicro = {};
+        if (newNestPhotos.length) target.nestMicro.photos = [...(target.nestMicro.photos || []), ...newNestPhotos];
+        if (newRandomPhotos.length) target.randomMicro.photos = [...(target.randomMicro.photos || []), ...newRandomPhotos];
+        target.updatedAt = new Date().toISOString();
+      }
+      if (!setEntries(entries)) return;
+      renderEntries(); renderSheetEditor();
+      alert("Zapisano zmiany w arkuszu.");
+    });
+  }
+
+  async function saveSelectedFilesForElement(input, maxFiles = 8) {
+    const selected = input?.files ? Array.from(input.files).slice(0, maxFiles) : [];
+    const refs = [];
+    for (const file of selected) refs.push(await savePhotoFile(file));
+    return refs;
+  }
+
+  function renderSheetEditor() {
+    const tbody = $("#sheet-editor tbody");
+    if (!tbody) return;
+    const entries = getEntries();
+    if (!entries.length) {
+      tbody.innerHTML = `<tr><td colspan="12" class="muted">Brak rekordów.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = entries.map((entry) => `
+      <tr data-uid="${escapeHtml(entry.uid)}">
+        <td><input data-col="nestId" value="${escapeHtml(entry.nestId || "")}"></td>
+        <td><input data-col="obsDate" type="date" value="${escapeHtml(entry.obsDate || "")}"></td>
+        <td><input data-col="obsTime" type="time" value="${escapeHtml(entry.obsTime || "")}"></td>
+        <td><input data-col="observer" value="${escapeHtml(entry.observer || "")}"></td>
+        <td><input data-col="sector" value="${escapeHtml(entry.sector || "")}"></td>
+        <td><input data-col="eggCount" type="number" value="${entry.eggCount ?? ""}"></td>
+        <td><input data-col="lat" type="number" step="any" value="${entry.lat ?? ""}"></td>
+        <td><input data-col="lon" type="number" step="any" value="${entry.lon ?? ""}"></td>
+        <td><input data-col="notes" value="${escapeHtml(entry.notes || "")}"></td>
+        <td>${(entry.nestMicro?.photos || []).length} <input data-col="nestPhotosUpload" type="file" accept="image/*" multiple></td>
+        <td>${(entry.randomMicro?.photos || []).length} <input data-col="randomPhotosUpload" type="file" accept="image/*" multiple></td>
+      </tr>
+    `).join("");
+  }
+
+  function setupRecordBrowser() {
+    $("#record-search")?.addEventListener("input", renderEntries);
+    $("#entries-list")?.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-action]");
+      if (!btn) return;
+      const { action, uid } = btn.dataset;
+      if (action === "edit") { editReturnToReadonly = false; editRecord(uid); }
+      if (action === "delete") deleteRecord(uid);
+      if (action === "share") shareRecord(uid);
+    });
   }
 
   function escapeHtml(text) {
-    return String(text ?? "").replace(/[&<>"']/g, (char) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;",
-    }[char]));
+    return String(text ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
   }
 
-  function init() {
-    migrateLegacyEntries();
-    setupPercentGroups();
-    setupTiles();
-    setDefaultDateTime();
-    setupNestIdAutofill();
-    setupSmartLists();
-    setupCustomSpecies();
-    setupNavigation();
-    setupGps();
-    setupCompass();
-    ["#species"].forEach((sel) => $(sel)?.addEventListener("change", autoFillNearestDistances));
-    ["#dist-nearest-hiaticula", "#dist-nearest-dubius"].forEach((sel) => $(sel)?.addEventListener("input", (event) => { event.target.dataset.manual = "1"; }));
-    setupExports();
-    setupFieldMode();
-    setupSyncUI();
-    syncTilesFromInputs();
-    updatePercentSummaries();
-    renderEntries();
-    updateCounts();
-    showView("home");
-    showStep(1);
-    registerServiceWorker();
+  function setupFormNavigation() {
+    $("#step-next")?.addEventListener("click", () => showStep(currentStep + 1));
+    $("#step-back")?.addEventListener("click", () => showStep(currentStep - 1));
+    $("#save-final")?.addEventListener("click", saveFinalRecord);
+    $("#save-draft")?.addEventListener("click", saveDraft);
+    $("#cancel-form")?.addEventListener("click", () => { resetForm(); showView("records"); });
+    $("#entry-form")?.addEventListener("submit", (event) => event.preventDefault());
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  function setupGpsButtons() {
+    const fill = (latSel, lonSel, accSel) => {
+      if (!navigator.geolocation) { alert("Geolokalizacja niedostępna."); return; }
+      navigator.geolocation.getCurrentPosition((pos) => {
+        setValue(latSel, pos.coords.latitude.toFixed(6));
+        setValue(lonSel, pos.coords.longitude.toFixed(6));
+        setValue(accSel, pos.coords.accuracy.toFixed(1));
+        autoFillNearestDistances();
+        autoFillSectorFromGrid();
+      }, () => alert("Nie udało się pobrać GPS."), { enableHighAccuracy: true, timeout: 15000 });
+    };
+    $("#gps-current")?.addEventListener("click", () => fill("#lat", "#lon", "#gps-accuracy"));
+    $("#random-gps-current")?.addEventListener("click", () => fill("#random-lat", "#random-lon", "#random-gps-accuracy"));
+  }
+
+  function setupInstallPrompt() {
+    let deferredPrompt = null;
+    const btn = $("#install-app");
+    window.addEventListener("beforeinstallprompt", (event) => { event.preventDefault(); deferredPrompt = event; if (btn) btn.hidden = false; });
+    btn?.addEventListener("click", async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      btn.hidden = true;
+    });
+    if (window.matchMedia("(display-mode: standalone)").matches && btn) btn.hidden = true;
+  }
+
+  function setupFieldHelp() {
+    const help = $("#field-help");
+    if (!help) return;
+    help.innerHTML = `
+      <details><summary>Jak mierzyć odległości?</summary><p>Użyj centymetrów dla mikrohabitatów i metrów dla mezohabitatu. Notuj brak pomiaru jako puste pole, nie zero.</p></details>
+      <details><summary>Zdjęcia</summary><p>Dodaj co najmniej jedno zdjęcie gniazda i jedno zdjęcie punktu losowego/kontroli. Aplikacja zapisuje zdjęcia lokalnie w telefonie i dołącza je do eksportu ZIP.</p></details>
+      <details><summary>Pokrycie procentowe</summary><p>Suma powinna wynosić 100%. Dopuszczalne są niewielkie odchylenia tylko przy szybkim szacowaniu terenowym.</p></details>
+    `;
+  }
+
+  function registerServiceWorker() {
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+
+  function handleReadonlyActions() {
+    $("#back-to-records")?.addEventListener("click", () => showView("records"));
+    $("#readonly-edit")?.addEventListener("click", () => { editReturnToReadonly = true; editRecord(readonlyUid); });
+    $("#readonly-map")?.addEventListener("click", () => focusRecordOnMap(readonlyUid));
+    $("#back-to-readonly")?.addEventListener("click", () => { if (readonlyUid) showReadonlyRecord(readonlyUid); else showView("records"); });
+  }
+
+  function showReadonlyRecord(uid) {
+    const record = getEntries().find((entry) => String(entry.uid) === String(uid));
+    if (!record) return;
+    readonlyUid = uid;
+    const wrap = $("#record-readonly-content");
+    wrap.innerHTML = `
+      <h2>${escapeHtml(record.nestId || "(bez ID)")}</h2>
+      <p>${escapeHtml(LABELS.species[record.species] || record.species || "")} • ${escapeHtml(record.obsDate || "")} ${escapeHtml(record.obsTime || "")}</p>
+      <p>GPS: ${record.lat ?? "brak"}, ${record.lon ?? "brak"}</p>
+      <p>Jaja: ${record.eggCount ?? "brak"} • Sektor: ${escapeHtml(record.sector || "brak")}</p>
+      <h3>Notatki</h3><p>${escapeHtml(record.notes || "brak")}</p>
+      <div id="readonly-photos" class="photo-preview"></div>
+    `;
+    showView("readonly");
+    const refs = [...(record.nestMicro?.photos || []), ...(record.randomMicro?.photos || [])];
+    const photos = $("#readonly-photos");
+    refs.forEach((ref) => {
+      const tile = document.createElement("div");
+      tile.className = "photo-tile";
+      tile.innerHTML = `<img alt="zdjęcie"><small>zdjęcie</small>`;
+      photos.appendChild(tile);
+      resolvePhotoSrc(ref).then((src) => { if (src) tile.querySelector("img").src = src; });
+    });
+  }
+
+  function setupReadonlyOpen() {
+    $("#entries-list")?.addEventListener("click", (event) => {
+      const card = event.target.closest(".entry-card");
+      if (!card || event.target.closest("button")) return;
+      showReadonlyRecord(card.dataset.uid);
+    });
+    document.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-map-edit]");
+      if (btn) showReadonlyRecord(btn.dataset.mapEdit);
+    });
+  }
+
+  function setupAzimuth() {
+    $("#random-azimuth-generate")?.addEventListener("click", () => setValue("#random-azimuth", String(Math.floor(Math.random() * 360))));
+  }
+
+  function setupDistanceManualFlags() {
+    ["#dist-nearest-hiaticula", "#dist-nearest-dubius", "#sector"].forEach((sel) => $(sel)?.addEventListener("input", (event) => { event.target.dataset.manual = "1"; }));
+  }
+
+  function setupNavigationButtons() {
+    $("#new-record")?.addEventListener("click", startNewRecord);
+    $("#open-records")?.addEventListener("click", () => showView("records"));
+    $("#open-map")?.addEventListener("click", () => { mapFocusUid = null; showView("map"); });
+    $("#back-home-from-records")?.addEventListener("click", () => showView("home"));
+    $("#back-home-from-map")?.addEventListener("click", () => showView("home"));
+    $("#refresh-map")?.addEventListener("click", () => renderRecordsMap(mapFocusUid));
+    $("#locate-me")?.addEventListener("click", () => {
+      if (!recordsMap) return;
+      if (latestUserLatLng) recordsMap.setView(latestUserLatLng, Math.max(recordsMap.getZoom(), 17));
+      recordsMap.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true });
+    });
+    $("#enable-heading")?.addEventListener("click", enableMapHeading);
+    $("#toggle-record-labels")?.addEventListener("click", () => { recordSpeciesLabelsVisible = !recordSpeciesLabelsVisible; renderRecordsMap(mapFocusUid); });
+  }
+
+  migrateLegacyEntries();
+  setupPercentGroups();
+  setupTiles();
+  setupSmartLists();
+  setupCustomSpecies();
+  setupNestIdAutofill();
+  setupFormNavigation();
+  setupGpsButtons();
+  setupPhotoInputs();
+  setupNavigationButtons();
+  setupRecordBrowser();
+  setupReadonlyOpen();
+  handleReadonlyActions();
+  setupAzimuth();
+  setupInstallPrompt();
+  setupHelpBubbles();
+  setupSheetEditor();
+  setupDataImport();
+  setupWorkingNests();
+  setupDistanceManualFlags();
+  setupExports();
+  setupFieldMode();
+  setupSyncUI();
+  syncTilesFromInputs();
+  updatePercentSummaries();
+  renderEntries();
+  updateCounts();
+  setDefaultDateTime();
+  registerServiceWorker();
 })();
