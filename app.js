@@ -125,10 +125,10 @@
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
-  let userLocationMarker = null;
-  let userAccuracyCircle = null;
-  let userHeadingMarker = null;
-  let mapUserWatchId = null;
+  const mapUserState = {
+    records: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, mapUserWatchId: null },
+    working: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, mapUserWatchId: null }
+  };
   let latestUserLatLng = null;
   let latestUserAccuracy = null;
   let mapHasAutoCenteredOnUser = false;
@@ -136,11 +136,123 @@
   let latestMapHeadingDeg = null;
   let workingMap = null;
   let workingLayer = null;
+  let recordsGridLayer = null;
+  let workingGridLayer = null;
+  let gridGeoJsonData = null;
+  let gridGeoJsonPromise = null;
   let workingViewMode = "map";
   let workingFocusId = null;
+  let editingWorkingId = null;
+  let workingNotesVisible = true;
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
+
+  async function loadGridGeoJson() {
+    if (gridGeoJsonData) return gridGeoJsonData;
+    if (!gridGeoJsonPromise) {
+      gridGeoJsonPromise = fetch("data/grid_vanvan.geojson", { cache: "force-cache" })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Nie udało się załadować gridu: ${response.status}`);
+          return response.json();
+        })
+        .then((json) => {
+          gridGeoJsonData = json;
+          return json;
+        })
+        .catch((error) => {
+          console.error(error);
+          gridGeoJsonPromise = null;
+          return null;
+        });
+    }
+    return gridGeoJsonPromise;
+  }
+
+  async function addGridToMap(map, target) {
+    if (!map || typeof L === "undefined") return null;
+    const data = await loadGridGeoJson();
+    if (!data) return null;
+    const gridLayer = L.geoJSON(data, {
+      pane: "overlayPane",
+      interactive: false,
+      style: {
+        color: "rgba(15, 23, 42, 0.7)",
+        weight: 1,
+        fillColor: "rgba(255, 255, 255, 0.06)",
+        fillOpacity: 0.1
+      },
+      onEachFeature(feature, layer) {
+        const gridId = feature?.properties?.id;
+        if (gridId == null) return;
+        layer.bindTooltip(String(gridId), {
+          permanent: true,
+          direction: "center",
+          className: "grid-label"
+        });
+      }
+    });
+    gridLayer.addTo(map);
+    if (target === "records") recordsGridLayer = gridLayer;
+    if (target === "working") workingGridLayer = gridLayer;
+    return gridLayer;
+  }
+
+  function pointInRing(lon, lat, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1];
+      const xj = ring[j][0], yj = ring[j][1];
+      const intersect = ((yi > lat) !== (yj > lat)) && (lon < ((xj - xi) * (lat - yi)) / ((yj - yi) || Number.EPSILON) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function pointInPolygon(lon, lat, polygonCoords) {
+    if (!polygonCoords?.length || !pointInRing(lon, lat, polygonCoords[0])) return false;
+    for (let i = 1; i < polygonCoords.length; i++) if (pointInRing(lon, lat, polygonCoords[i])) return false;
+    return true;
+  }
+
+  async function findGridIdForPoint(lat, lon) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+    const data = await loadGridGeoJson();
+    const features = data?.features || [];
+    for (const feature of features) {
+      const geometry = feature?.geometry;
+      if (!geometry) continue;
+      const coords = geometry.coordinates;
+      if (geometry.type === "Polygon" && pointInPolygon(lon, lat, coords)) return feature?.properties?.id ?? "";
+      if (geometry.type === "MultiPolygon" && (coords || []).some((polygon) => pointInPolygon(lon, lat, polygon))) return feature?.properties?.id ?? "";
+    }
+    return "";
+  }
+
+  async function autoFillSectorFromGrid() {
+    const sectorEl = $("#sector");
+    if (!sectorEl || sectorEl.dataset.manual === "1") return;
+    const lat = getNumber("#lat", null);
+    const lon = getNumber("#lon", null);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      if (sectorEl.dataset.auto === "1") {
+        sectorEl.value = "";
+        delete sectorEl.dataset.auto;
+      }
+      return;
+    }
+    const gridId = await findGridIdForPoint(lat, lon);
+    if (gridId !== "") {
+      const val = String(gridId);
+      if (!sectorEl.value || sectorEl.dataset.auto === "1") {
+        sectorEl.value = val;
+        sectorEl.dataset.auto = "1";
+      }
+    } else if (sectorEl.dataset.auto === "1") {
+      sectorEl.value = "";
+      delete sectorEl.dataset.auto;
+    }
+  }
 
   function openPhotoDb() {
     return new Promise((resolve, reject) => {
@@ -851,6 +963,11 @@
     $("#nest-photo-preview").innerHTML = "";
     $("#random-photo-preview").innerHTML = "";
     if ($("#validation-override-summary")) $("#validation-override-summary").checked = false;
+    const sectorEl = $("#sector");
+    if (sectorEl) {
+      delete sectorEl.dataset.manual;
+      delete sectorEl.dataset.auto;
+    }
     $("#edit-banner").hidden = true;
     $("#form-mode-title").textContent = "Nowe gniazdo";
     syncTilesFromInputs();
@@ -877,6 +994,12 @@
     setValue("#observer", record.observer);
     setValue("#species", record.species || "unknown");
     setValue("#sector", record.sector);
+    const sectorEl = $("#sector");
+    if (sectorEl) {
+      delete sectorEl.dataset.manual;
+      delete sectorEl.dataset.auto;
+      if (String(record.sector || "").trim()) sectorEl.dataset.manual = "1";
+    }
     setValue("#lat", record.lat);
     setValue("#lon", record.lon);
     setValue("#gps-accuracy", record.gpsAccuracyM);
@@ -946,6 +1069,7 @@
 
     syncTilesFromInputs();
     updatePercentSummaries();
+    void autoFillSectorFromGrid();
     showView("form");
     showStep(1);
   }
@@ -1125,18 +1249,25 @@
     });
   }
 
+  function getMapUserState(targetMap) {
+    if (targetMap === workingMap) return mapUserState.working;
+    return mapUserState.records;
+  }
+
   function syncUserLocationLayers(targetMap) {
     if (!targetMap || !latestUserLatLng) return;
-    if (!userLocationMarker || !targetMap.hasLayer(userLocationMarker)) {
-      if (userLocationMarker && recordsMap?.hasLayer(userLocationMarker)) recordsMap.removeLayer(userLocationMarker);
-      userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(targetMap);
-    } else userLocationMarker.setLatLng(latestUserLatLng);
+    const state = getMapUserState(targetMap);
+    if (!state.userLocationMarker || !targetMap.hasLayer(state.userLocationMarker)) {
+      if (state.userLocationMarker) targetMap.removeLayer(state.userLocationMarker);
+      state.userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(targetMap);
+    } else state.userLocationMarker.setLatLng(latestUserLatLng);
     if (Number.isFinite(latestUserAccuracy)) {
-      if (!userAccuracyCircle || !targetMap.hasLayer(userAccuracyCircle)) {
-        if (userAccuracyCircle && recordsMap?.hasLayer(userAccuracyCircle)) recordsMap.removeLayer(userAccuracyCircle);
-        userAccuracyCircle = L.circle(latestUserLatLng,{radius:latestUserAccuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(targetMap);
-      } else userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(latestUserAccuracy);
+      if (!state.userAccuracyCircle || !targetMap.hasLayer(state.userAccuracyCircle)) {
+        if (state.userAccuracyCircle) targetMap.removeLayer(state.userAccuracyCircle);
+        state.userAccuracyCircle = L.circle(latestUserLatLng,{radius:latestUserAccuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(targetMap);
+      } else state.userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(latestUserAccuracy);
     }
+    renderMapHeading(targetMap);
   }
 
   
@@ -1197,6 +1328,12 @@
       L.control.layers(base.layers).addTo(recordsMap);
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
     }
+    if ($("#records-grid-toggle")?.checked) {
+      if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
+      else if (!recordsMap.hasLayer(recordsGridLayer)) recordsGridLayer.addTo(recordsMap);
+    } else if (recordsGridLayer && recordsMap.hasLayer(recordsGridLayer)) {
+      recordsMap.removeLayer(recordsGridLayer);
+    }
     mapMarkersLayer.clearLayers();
     const entries = getEntries();
     const points = [];
@@ -1219,10 +1356,10 @@
       const focusNest = toLatLon(focusRecord?.lat, focusRecord?.lon);
       const focusCtrl = toLatLon(focusRecord?.randomMicro?.lat, focusRecord?.randomMicro?.lon);
       const focusPos = focusNest || focusCtrl;
-      if (focusPos) recordsMap.setView(focusPos, 18);
+      if (focusPos) recordsMap.setView(focusPos, 19);
       else $("#map-info").textContent = "Wybrany rekord nie ma poprawnych współrzędnych GPS.";
     }
-    if (!points.length) {$("#map-info").textContent="Brak zapisanych punktów z GPS do pokazania na mapie."; recordsMap.setView([52,19],6);}
+    if (!points.length) {$("#map-info").textContent="Brak zapisanych punktów z GPS do pokazania na mapie."; recordsMap.setView([52,19],7);}
     $("#map-info").textContent = `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`;
     if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
@@ -1236,22 +1373,22 @@
         latestUserLatLng = [coords.latitude, coords.longitude];
         latestUserAccuracy = coords.accuracy;
         $("#map-user-status").textContent = "Twoja pozycja: aktywna";
-        if (!userLocationMarker) userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(recordsMap);
-        else userLocationMarker.setLatLng(latestUserLatLng);
-        if (Number.isFinite(coords.accuracy)) {
-          if (!userAccuracyCircle) userAccuracyCircle = L.circle(latestUserLatLng,{radius:coords.accuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(recordsMap);
-          else userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(coords.accuracy);
-        }
-        renderMapHeading();
-        if (!mapHasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 17); mapHasAutoCenteredOnUser = true; }
+        syncUserLocationLayers(recordsMap);
+        if (!mapHasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 18); mapHasAutoCenteredOnUser = true; }
       }, () => { $("#map-user-status").textContent = "Twoja pozycja: niedostępna"; if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie."; }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
     } else $("#map-user-status").textContent = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
   }
-  function renderMapHeading() {
-    if (!recordsMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
-    if (!userHeadingMarker) userHeadingMarker = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(recordsMap);
-    else userHeadingMarker.setLatLng(latestUserLatLng);
-    const arrow = userHeadingMarker.getElement()?.querySelector("div");
+  function renderMapHeading(targetMap = recordsMap) {
+    if (!targetMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
+    const state = getMapUserState(targetMap);
+    if (!mapHeadingEnabled) {
+      if (state.userHeadingMarker && targetMap.hasLayer(state.userHeadingMarker)) targetMap.removeLayer(state.userHeadingMarker);
+      state.userHeadingMarker = null;
+      return;
+    }
+    if (!state.userHeadingMarker) state.userHeadingMarker = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(targetMap);
+    else state.userHeadingMarker.setLatLng(latestUserLatLng);
+    const arrow = state.userHeadingMarker.getElement()?.querySelector("div");
     if (arrow) arrow.style.transform = `rotate(${latestMapHeadingDeg}deg)`;
   }
 
@@ -1268,6 +1405,7 @@
           setValue(latSelector, coords.latitude.toFixed(6));
           setValue(lonSelector, coords.longitude.toFixed(6));
           setValue(accSelector, Math.round(coords.accuracy));
+          if (latSelector === "#lat" && lonSelector === "#lon") void autoFillSectorFromGrid();
           if (status) status.textContent = `${label}: dokładność ±${Math.round(coords.accuracy)} m (${gpsQuality(coords.accuracy)})`;
         },
         () => {
@@ -1310,6 +1448,13 @@
     });
     $("#random-azimuth-btn").addEventListener("click", () => setValue("#random-azimuth", String(Math.floor(Math.random() * 360))));
     $("#record-search").addEventListener("input", renderEntries);
+    $("#sector").addEventListener("input", () => {
+      const sectorEl = $("#sector");
+      if (!sectorEl) return;
+      if (sectorEl.dataset.auto === "1") return;
+      sectorEl.dataset.manual = String(sectorEl.value || "").trim() ? "1" : "";
+      if (!sectorEl.dataset.manual) delete sectorEl.dataset.manual;
+    });
     $("#entries-list").addEventListener("click", (event) => {
       const btn = event.target.closest("button[data-action]");
       if (btn) {
@@ -1330,7 +1475,7 @@
     $("#map-back").addEventListener("click", () => showView("records"));
     $("#map-center-user").addEventListener("click", () => {
       if (!latestUserLatLng) return alert("Twoja pozycja jest jeszcze niedostępna.");
-      recordsMap?.setView(latestUserLatLng, 17);
+      recordsMap?.setView(latestUserLatLng, 18);
     });
     $("#map-enable-heading").addEventListener("click", async () => {
       const statusEl = $("#map-user-status");
@@ -1343,7 +1488,7 @@
           const normalized = ((heading % 360) + 360) % 360;
           if (latestMapHeadingDeg != null && Math.abs(normalized - latestMapHeadingDeg) < 3) return;
           latestMapHeadingDeg = latestMapHeadingDeg == null ? normalized : (latestMapHeadingDeg * 0.7 + normalized * 0.3);
-          requestAnimationFrame(renderMapHeading);
+          requestAnimationFrame(() => { renderMapHeading(recordsMap); renderMapHeading(workingMap); });
           statusEl.textContent = "Twoja pozycja: aktywna (kierunek włączony)";
         }
       };
@@ -1369,6 +1514,13 @@
       if (action === "delete") deleteRecord(btn.dataset.uid);
       if (action === "nav") navigateTo(btn.dataset.lat, btn.dataset.lon);
     });
+    $("#records-grid-toggle")?.addEventListener("change", () => {
+      if (!recordsMap) return;
+      if ($("#records-grid-toggle").checked) {
+        if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
+        else recordsGridLayer.addTo(recordsMap);
+      } else if (recordsGridLayer) recordsMap.removeLayer(recordsGridLayer);
+    });
 
     $("#nest-photos").addEventListener("change", () => {
       setValue("#nest-one-m-photo-done", "yes");
@@ -1386,7 +1538,7 @@
       try {
         await showMyLocationOnMap(workingMap, "#map-user-status");
         syncUserLocationLayers(workingMap);
-        workingMap?.setView(latestUserLatLng, 17);
+        workingMap?.setView(latestUserLatLng, 18);
       } catch {
         alert("Nie udało się pobrać mojej pozycji. Sprawdź uprawnienia lokalizacji.");
       }
@@ -1396,11 +1548,29 @@
     $("#working-show-map").addEventListener("click",()=>{workingViewMode="map";renderWorkingMap();});
     $("#working-show-list").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap();});
     $("#working-nearest").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap(true);});
-    $("#working-list").addEventListener("click", onWorkingListClick);
-    $("#working-map-screen").addEventListener("click", onWorkingListClick);
+    $("#working-grid-toggle")?.addEventListener("change", () => {
+      if (!workingMap) return;
+      if ($("#working-grid-toggle").checked) {
+        if (!workingGridLayer) void addGridToMap(workingMap, "working");
+        else workingGridLayer.addTo(workingMap);
+      } else if (workingGridLayer) workingMap.removeLayer(workingGridLayer);
+    });
+    $("#working-notes-toggle")?.addEventListener("change", () => {
+      workingNotesVisible = !!$("#working-notes-toggle")?.checked;
+      renderWorkingMap();
+    });
+    $("#working-map-screen").addEventListener("click", onWorkingScreenClick);
+    $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
+    $("#working-edit-form").addEventListener("submit", onWorkingEditSubmit);
+    $("#working-edit-cancel").addEventListener("click", closeWorkingEditPanel);
+    $("#working-edit-delete").addEventListener("click", () => { if (editingWorkingId && confirm("Usunąć punkt roboczy?")) deleteWorkingNest(editingWorkingId); });
     $("#back-to-readonly")?.addEventListener("click", () => {
       if (readonlyUid) showReadonlyRecord(readonlyUid);
     });
+    $("#lat")?.addEventListener("input", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
+    $("#lat")?.addEventListener("change", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
+    $("#lon")?.addEventListener("input", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
+    $("#lon")?.addEventListener("change", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
 
   }
 
@@ -1642,38 +1812,82 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function getWorkingNests() { try { const v = JSON.parse(localStorage.getItem(WORKING_NESTS_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } }
-  function saveWorkingNests(items) { localStorage.setItem(WORKING_NESTS_KEY, JSON.stringify(items)); }
+  function getWorkingNests() { try { const v = JSON.parse(localStorage.getItem(WORKING_NESTS_KEY) || "[]"); return Array.isArray(v) ? v.map(normalizeWorkingNest) : []; } catch { return []; } }
+  function setWorkingNests(nests) { localStorage.setItem(WORKING_NESTS_KEY, JSON.stringify((Array.isArray(nests) ? nests : []).map(normalizeWorkingNest))); }
+  const saveWorkingNests = setWorkingNests;
+  function findWorkingNest(id) { return getWorkingNests().find((w) => String(w.id) === String(id)) || null; }
+  function updateWorkingNest(id, patch) {
+    const items = getWorkingNests();
+    const idx = items.findIndex((w) => String(w.id) === String(id));
+    if (idx < 0) return null;
+    const updated = normalizeWorkingNest({ ...items[idx], ...patch, updatedAt: new Date().toISOString() });
+    items[idx] = updated;
+    setWorkingNests(items);
+    renderWorkingMap();
+    return updated;
+  }
+  function deleteWorkingNest(id) {
+    const items = getWorkingNests();
+    const next = items.filter((w) => String(w.id) !== String(id));
+    if (next.length === items.length) return false;
+    setWorkingNests(next);
+    if (editingWorkingId && String(editingWorkingId) === String(id)) closeWorkingEditPanel();
+    renderWorkingMap();
+    return true;
+  }
+  function openWorkingEditPanel(id) {
+    const item = findWorkingNest(id);
+    const panel = $("#working-edit-panel");
+    if (!panel || !item) return;
+    editingWorkingId = item.id;
+    panel.hidden = false;
+    $("#working-edit-id").value = item.id;
+    $("#working-edit-label").textContent = item.label || "—";
+    $("#working-edit-status").value = item.status || "do_sprawdzenia";
+    $("#working-edit-note").value = item.note || "";
+    $("#working-edit-lat").value = Number.isFinite(item.lat) ? item.lat : "";
+    $("#working-edit-lon").value = Number.isFinite(item.lon) ? item.lon : "";
+  }
+  function closeWorkingEditPanel() { editingWorkingId = null; const panel = $("#working-edit-panel"); if (panel) panel.hidden = true; }
   function fitWorkingMapBounds() {
     const points = getWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
     if (points.length) workingMap?.fitBounds(L.latLngBounds(points), { padding: [30, 30] });
-    else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 17);
-    else workingMap?.setView([52, 19], 6);
+    else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 18);
+    else workingMap?.setView([52, 19], 7);
   }
   function addWorkingNestFromGps() {
     if (!navigator.geolocation) return alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       const items = getWorkingNests();
       const pos=[+coords.latitude.toFixed(6), +coords.longitude.toFixed(6)];
-      const dup=items.map(i=>({i,pos2:toLatLon(i.lat,i.lon)})).filter(x=>x.pos2).map(x=>({item:x.i,dist:distanceM(pos,x.pos2)})).sort((a,b)=>a.dist-b.dist)[0];
-      const savePoint=()=>{ const label=nextWorkingLabel(items); const point={ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia' }; saveWorkingNests([point,...getWorkingNests()]); workingFocusId=point.id; workingViewMode='map'; renderWorkingMap(); };
-      if (dup && dup.dist<=20) {
-        const choice=prompt(`W pobliżu jest już gniazdo robocze ${dup.item.label||'—'}, odległość ${Math.round(dup.dist)} m. Wpisz: pokaz / dodaj / anuluj`, 'pokaz');
-        if (choice==='pokaz') { workingFocusId=dup.item.id; workingViewMode='map'; renderWorkingMap(); return; }
-        if (choice!=='dodaj') return;
-      }
-      savePoint();
+      const label=nextWorkingLabel(items);
+      const point=normalizeWorkingNest({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia' });
+      setWorkingNests([point,...getWorkingNests()]);
+      workingFocusId=point.id;
+      workingViewMode='map';
+      renderWorkingMap();
     }, () => alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
   }
-  function onWorkingListClick(event) {
-    const btn = event.target.closest("button[data-w-action]"); if (!btn) return;
-    const items=getWorkingNests();
-    const item = items.find((x) => String(x.id) === String(btn.dataset.id)); if (!item) return;
-    if (btn.dataset.wAction === "show") { workingViewMode='map'; workingFocusId=item.id; renderWorkingMap(); }
-    if (btn.dataset.wAction === "nav") navigateTo(item.lat, item.lon);
-    if (btn.dataset.wAction === "delete" && confirm("Usunąć punkt roboczy?")) { saveWorkingNests(items.filter((x) => String(x.id) !== String(item.id))); renderWorkingMap(); }
-    if (btn.dataset.wAction === 'status') { item.status=btn.value; saveWorkingNests(items); renderWorkingMap(); }
-    if (btn.dataset.wAction === 'edit') { item.note=prompt('Notatka', item.note||'') ?? item.note; const st=prompt('Status: do_sprawdzenia/prawdopodobne/potwierdzone/odrzucone/przepisane', item.status||'do_sprawdzenia'); if(st) item.status=st; saveWorkingNests(items); renderWorkingMap(); }
+  function onWorkingScreenClick(event) {
+    const btn = event.target.closest("[data-w-action]"); if (!btn) return;
+    const id = btn.dataset.workingId; const item = findWorkingNest(id); if (!item) return;
+    if (btn.dataset.wAction === "show") { workingViewMode='map'; workingFocusId=item.id; renderWorkingMap(); return; }
+    if (btn.dataset.wAction === "nav") { navigateTo(item.lat, item.lon); return; }
+    if (btn.dataset.wAction === "delete" && confirm("Usunąć punkt roboczy?")) { deleteWorkingNest(item.id); return; }
+    if (btn.dataset.wAction === "edit") { openWorkingEditPanel(item.id); return; }
+  }
+  function onWorkingScreenChange(event) {
+    const select = event.target.closest("select[data-w-action='status'][data-working-id]"); if (!select) return;
+    updateWorkingNest(select.dataset.workingId, { status: select.value });
+  }
+  function onWorkingEditSubmit(event) {
+    event.preventDefault();
+    if (!editingWorkingId) return;
+    const lat = Number($("#working-edit-lat").value);
+    const lon = Number($("#working-edit-lon").value);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return alert("Podaj poprawne współrzędne.");
+    updateWorkingNest(editingWorkingId, { status: $("#working-edit-status").value, note: $("#working-edit-note").value, notes: $("#working-edit-note").value, lat, lon });
+    closeWorkingEditPanel();
   }
   function renderWorkingMap(showNearest = false) {
     const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
@@ -1684,6 +1898,12 @@
       L.control.layers(base.layers).addTo(workingMap);
       workingLayer = L.layerGroup().addTo(workingMap);
     }
+    if ($("#working-grid-toggle")?.checked) {
+      if (!workingGridLayer) void addGridToMap(workingMap, "working");
+      else if (!workingMap.hasLayer(workingGridLayer)) workingGridLayer.addTo(workingMap);
+    } else if (workingGridLayer && workingMap.hasLayer(workingGridLayer)) {
+      workingMap.removeLayer(workingGridLayer);
+    }
     workingLayer.clearLayers();
     const items = getWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
@@ -1693,8 +1913,8 @@
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,18); m.openPopup(); }
     });
     $("#working-map-info").textContent = `Punkty robocze: ${enriched.length}`;
-    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-id="${w.id}">Nawiguj</button><button data-w-action="edit" data-id="${w.id}">Edytuj notatkę</button><button class="danger" data-w-action="delete" data-id="${w.id}">Usuń</button><select data-w-action="status" data-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select></div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
-    $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
+    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button><button data-w-action="edit" data-working-id="${w.id}">Edytuj</button><button class="danger" data-w-action="delete" data-working-id="${w.id}">Usuń</button><select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select></div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
+    $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
     workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); syncUserLocationLayers(workingMap);} 
   }
@@ -1739,7 +1959,7 @@
     setupNavigation();
     setupGps();
     setupCompass();
-    ["#lat", "#lon", "#species"].forEach((sel) => $(sel)?.addEventListener("change", autoFillNearestDistances));
+    ["#species"].forEach((sel) => $(sel)?.addEventListener("change", autoFillNearestDistances));
     ["#dist-nearest-hiaticula", "#dist-nearest-dubius"].forEach((sel) => $(sel)?.addEventListener("input", (event) => { event.target.dataset.manual = "1"; }));
     setupExports();
     setupFieldMode();
