@@ -38,6 +38,7 @@
         <button id="export-csv" type="button" class="big">Eksport CSV</button>
         <button id="export-json" type="button" class="big">Eksport JSON</button>
         <button id="export-zip" type="button" class="big">Eksport ZIP + zdjęcia</button>
+        <button id="export-kml" type="button" class="big">Eksport KML</button>
         <a class="button-like big" href="instrukcja_terenowa_sieweczka.pdf" download>Instrukcja terenowa PDF</a>
       </div>
 
@@ -75,6 +76,7 @@
         <button id="map-center-user" type="button">Pokaż moją pozycję</button>
         <button id="map-enable-heading" type="button">Włącz kierunek</button>
         <label class="inline-check map-toggle"><input id="records-grid-toggle" type="checkbox" checked /> Pokaż grid</label>
+        <label class="inline-check map-toggle"><input id="records-species-labels-toggle" type="checkbox" checked /> Pokaż gatunki</label>
         <span id="map-user-status" class="muted">Twoja pozycja: oczekiwanie…</span>
       </div>
       <div class="map-legend muted"><span class="legend-dot g">G</span> — gniazdo • <span class="legend-dot k">K</span> — kontrola / punkt losowy</div>
@@ -189,6 +191,10 @@
               <div class="tile-group" data-target="species">
                 <button type="button" class="tile" data-value="charadrius-hiaticula">Sieweczka obrożna</button>
                 <button type="button" class="tile" data-value="charadrius-dubius">Sieweczka rzeczna</button>
+                <button type="button" class="tile" data-value="vanellus-vanellus">Czajka</button>
+                <button type="button" class="tile" data-value="tringa-totanus">Krwawodziób</button>
+                <button type="button" class="tile" data-value="sternula-albifrons">Rybitwa białoczelna</button>
+                <button type="button" class="tile" data-value="chroicocephalus-ridibundus">Śmieszka</button>
                 <button type="button" class="tile" data-value="unknown">Nieokreślony</button>
                 <button type="button" class="tile" data-value="custom:other">Inny gatunek</button>
               </div>
