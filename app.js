@@ -1872,20 +1872,98 @@
     return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
   }
 
+  function humanizeFieldName(key) {
+    return String(key || "")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (ch) => ch.toUpperCase())
+      .trim();
+  }
+
+  function kmlFieldMeta(key) {
+    const pretty = {
+      uid: "UID", nestId: "ID gniazda", species: "Gatunek", speciesCode: "Kod gatunku", obsDate: "Data", obsTime: "Godzina",
+      eggCount: "Liczba jaj", lat: "Szerokość geograficzna gniazda", lon: "Długość geograficzna gniazda", sector: "Sektor / część wyspy",
+      observer: "Obserwator", notes: "Notatki", typ_punktu: "Typ punktu"
+    };
+    return pretty[key] || humanizeFieldName(key);
+  }
+
+  function mapLabelValue(key, value) {
+    if (value == null || value === "") return "";
+    const maps = {
+      species: LABELS.species,
+      nestStatus: LABELS.nestStatus,
+      possibleRenest: LABELS.yesNoUnknown,
+      docPhotoDone: LABELS.yesNo,
+      nestOneMPhotoDone: LABELS.yesNo,
+      randomPointDone: LABELS.yesNo,
+      nestSubstrate: LABELS.substrate,
+      randomSubstrate: LABELS.substrate,
+      randomRerolled: LABELS.yesNo,
+      randomRerollReason: LABELS.rerollReason,
+      mesoAssessmentMethod: LABELS.assessment,
+      qcBirdReaction: LABELS.qcReaction,
+      qcTimeAtNest: LABELS.qcTime,
+      qcAborted: LABELS.yesNoUnknown,
+      qcTracksVisible: LABELS.yesNoUnknown,
+    };
+    return maps[key]?.[value] || value;
+  }
+
   function exportKml() {
     const entries = getEntries();
+    const rows = entries.map(flattenEntry);
+    const dataKeys = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+    const schemaFields = ["typ_punktu", ...dataKeys];
+
+    const buildDescription = (entry, pos, pointTypeLabel) => {
+      const row = flattenEntry(entry);
+      const speciesLabel = LABELS.species[entry.species] || entry.species || "-";
+      const rowsHtml = [
+        ["ID", entry.nestId || "(bez ID)"],
+        ["Gatunek", speciesLabel],
+        ["Data", entry.obsDate || "-"],
+        ["Liczba jaj", entry.eggCount ?? "brak"],
+        ["Sektor", entry.sector || "-"],
+        ["Obserwator", entry.observer || "-"],
+        ["Typ punktu", pointTypeLabel],
+        ["Współrzędne", `${pos[0]}, ${pos[1]}`],
+      ].map(([k, v]) => `<tr><th align="left">${escapeXml(k)}</th><td>${escapeXml(v)}</td></tr>`).join("");
+      return `<![CDATA[<table border="1" cellpadding="3" cellspacing="0">${rowsHtml}</table>]]>`;
+    };
+
     const placemarks = [];
-    const buildDescription = (entry, pos) => [
-      `ID gniazda: ${entry.nestId || "(bez ID)"}`,`Gatunek: ${LABELS.species[entry.species] || entry.species || "-"}`,`Data: ${entry.obsDate || "-"}`,`Liczba jaj: ${entry.eggCount ?? "brak"}`,`Obserwator: ${entry.observer || "-"}`,`Sektor: ${entry.sector || "-"}`,`Lat/Lon: ${pos[0]}, ${pos[1]}`
-    ].join("\n");
     for (const entry of entries) {
+      const baseRow = flattenEntry(entry);
+      const speciesLabel = LABELS.species[entry.species] || entry.species || "-";
       const nestPos = toLatLon(entry.lat, entry.lon);
       const ctrlPos = toLatLon(entry.randomMicro?.lat, entry.randomMicro?.lon);
-      if (nestPos) placemarks.push(`<Placemark><name>${escapeXml(entry.nestId || "(bez ID)")}</name><description>${escapeXml(buildDescription(entry, nestPos))}</description><Point><coordinates>${nestPos[1]},${nestPos[0]},0</coordinates></Point></Placemark>`);
-      if (ctrlPos) placemarks.push(`<Placemark><name>${escapeXml(`${entry.nestId || "(bez ID)"} – kontrola`)}</name><description>${escapeXml(`Punkt kontroli\nLat/Lon: ${ctrlPos[0]}, ${ctrlPos[1]}`)}</description><Point><coordinates>${ctrlPos[1]},${ctrlPos[0]},0</coordinates></Point></Placemark>`);
+
+      const buildSimpleData = (pointType) => schemaFields.map((key) => {
+        const rawVal = key === "typ_punktu" ? pointType : baseRow[key];
+        const mapped = mapLabelValue(key, rawVal);
+        return `<SimpleData name="${escapeXml(key)}">${escapeXml(mapped)}</SimpleData>`;
+      }).join("");
+
+      if (nestPos) {
+        placemarks.push(`<Placemark><name>${escapeXml(`${entry.nestId || "(bez ID)"} – ${speciesLabel} – gniazdo`)}</name><description>${buildDescription(entry, nestPos, "gniazdo")}</description><ExtendedData><SchemaData schemaUrl="#SieweczkaRecordSchema">${buildSimpleData("gniazdo")}</SchemaData></ExtendedData><Point><coordinates>${nestPos[1]},${nestPos[0]},0</coordinates></Point></Placemark>`);
+      }
+      if (ctrlPos) {
+        placemarks.push(`<Placemark><name>${escapeXml(`${entry.nestId || "(bez ID)"} – ${speciesLabel} – kontrola`)}</name><description>${buildDescription(entry, ctrlPos, "kontrola")}</description><ExtendedData><SchemaData schemaUrl="#SieweczkaRecordSchema">${buildSimpleData("kontrola")}</SchemaData></ExtendedData><Point><coordinates>${ctrlPos[1]},${ctrlPos[0]},0</coordinates></Point></Placemark>`);
+      }
     }
     if (!placemarks.length) { alert("Brak rekordów z poprawnym GPS do eksportu KML."); return; }
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>sieweczka-records</name>\n${placemarks.join("\n")}\n</Document>\n</kml>`;
+
+    const schema = `<Schema name="SieweczkaRecordSchema" id="SieweczkaRecordSchema">${schemaFields.map((key) => `<SimpleField name="${escapeXml(key)}" type="string"><displayName>${escapeXml(kmlFieldMeta(key))}</displayName></SimpleField>`).join("")}</Schema>`;
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<name>sieweczka-records</name>
+${schema}
+${placemarks.join("\n")}
+</Document>
+</kml>`;
     downloadText(`sieweczka-records-${new Date().toISOString().slice(0,10)}.kml`, kml, "application/vnd.google-earth.kml+xml;charset=utf-8");
   }
 
