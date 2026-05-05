@@ -39,6 +39,20 @@
         <button id="export-json" type="button" class="big">Eksport JSON</button>
         <button id="export-zip" type="button" class="big">Eksport ZIP + zdjęcia</button>
         <button id="export-kml" type="button" class="big">Eksport KML</button>
+        <div class="card" style="margin-top:12px;">
+          <h3>Google Sheets</h3>
+          <label>URL Google Apps Script
+            <input id="gsheets-webapp-url" type="url" placeholder="https://script.google.com/.../exec" />
+          </label>
+          <label>Token Google Sheets (opcjonalnie)
+            <input id="gsheets-token" type="text" placeholder="Opcjonalny token zgodny z Apps Script" />
+          </label>
+          <div class="row-actions">
+            <button id="gsheets-save-settings" type="button">Zapisz ustawienia Google Sheets</button>
+            <button id="gsheets-send-new" type="button" class="primary">Wyślij nowe do Google Sheets</button>
+            <button id="gsheets-reset-history" type="button">Resetuj historię wysyłki Google Sheets</button>
+          </div>
+        </div>
         <a class="button-like big" href="instrukcja_terenowa_sieweczka.pdf" download>Instrukcja terenowa PDF</a>
       </div>
 

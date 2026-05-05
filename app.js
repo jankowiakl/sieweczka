@@ -11,6 +11,9 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
+  const GOOGLE_SHEETS_WEBAPP_URL_KEY = "GOOGLE_SHEETS_WEBAPP_URL";
+  const GOOGLE_SHEETS_TOKEN_KEY = "GOOGLE_SHEETS_TOKEN";
+  const GOOGLE_SHEETS_EXPORTED_RECORD_IDS_KEY = "GOOGLE_SHEETS_EXPORTED_RECORD_IDS";
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -1730,6 +1733,92 @@
     });
     $("#export-zip").addEventListener("click", exportZip);
     $("#export-kml")?.addEventListener("click", exportKml);
+    setupGoogleSheetsExport();
+  }
+
+  function setupGoogleSheetsExport() {
+    const urlInput = $("#gsheets-webapp-url");
+    const tokenInput = $("#gsheets-token");
+    const saveBtn = $("#gsheets-save-settings");
+    const sendBtn = $("#gsheets-send-new");
+    const resetBtn = $("#gsheets-reset-history");
+    if (!urlInput || !tokenInput || !saveBtn || !sendBtn || !resetBtn) return;
+    urlInput.value = localStorage.getItem(GOOGLE_SHEETS_WEBAPP_URL_KEY) || "";
+    tokenInput.value = localStorage.getItem(GOOGLE_SHEETS_TOKEN_KEY) || "";
+    saveBtn.addEventListener("click", () => {
+      localStorage.setItem(GOOGLE_SHEETS_WEBAPP_URL_KEY, urlInput.value.trim());
+      localStorage.setItem(GOOGLE_SHEETS_TOKEN_KEY, tokenInput.value.trim());
+      alert("Zapisano ustawienia Google Sheets.");
+    });
+    sendBtn.addEventListener("click", sendNewRecordsToGoogleSheets);
+    resetBtn.addEventListener("click", () => {
+      if (!confirm("Zresetować historię wysyłki do Google Sheets?")) return;
+      localStorage.removeItem(GOOGLE_SHEETS_EXPORTED_RECORD_IDS_KEY);
+      alert("Zresetowano historię wysyłki Google Sheets.");
+    });
+  }
+
+  function readExportedRecordIds() { return new Set(readList(GOOGLE_SHEETS_EXPORTED_RECORD_IDS_KEY).map(String)); }
+  function addExportedRecordIds(ids) {
+    const current = readExportedRecordIds();
+    ids.map(String).forEach((id) => current.add(id));
+    saveList(GOOGLE_SHEETS_EXPORTED_RECORD_IDS_KEY, Array.from(current));
+  }
+
+  function isBinaryLike(value) {
+    if (!value) return false;
+    if (typeof Blob !== "undefined" && value instanceof Blob) return true;
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true;
+    if (typeof value === "string" && value.startsWith("data:") && value.includes(";base64,")) return true;
+    return false;
+  }
+
+  function recordToSheetsRow(record) {
+    const flat = flattenEntry(record);
+    const row = { id: record.nestId || record.uid || "", uid: record.uid || "", species_label: LABELS.species[record.species] || record.species || "" };
+    for (const [key, value] of Object.entries(flat)) {
+      const lk = key.toLowerCase();
+      if (["photo", "image", "attachment", "blob", "binary"].some((w) => lk.includes(w))) continue;
+      if (isBinaryLike(value)) continue;
+      if (value == null) { row[key] = ""; continue; }
+      if (["string", "number", "boolean"].includes(typeof value)) row[key] = value;
+      else if (value instanceof Date) row[key] = value.toISOString();
+      else row[key] = JSON.stringify(value);
+    }
+    row.species = row.species || (record.species || "");
+    row.date = row.date || row.obsDate || "";
+    row.eggs = row.eggs ?? row.eggCount ?? "";
+    row.lat = row.lat ?? record.lat ?? "";
+    row.lon = row.lon ?? record.lon ?? "";
+    row.sector = row.sector ?? record.sector ?? "";
+    return row;
+  }
+
+  function buildSheetsColumnDescriptions(records) {
+    const labelMap = { id:["ID rekordu / gniazda","Stabilny identyfikator używany do scalania danych w Google My Maps"], uid:["UID rekordu","Wewnętrzny identyfikator rekordu w aplikacji"], species:["Gatunek (kod)","Kod / wartość gatunku zapisana w aplikacji"], species_label:["Gatunek","Czytelna polska nazwa gatunku"], date:["Data","Data obserwacji / znalezienia"], eggs:["Liczba jaj","Liczba jaj"], lat:["Szerokość geograficzna","Szerokość geograficzna gniazda"], lon:["Długość geograficzna","Długość geograficzna gniazda"], sector:["Sektor","Sektor / część wyspy"], observer:["Obserwator","Obserwator"], notes:["Notatki","Notatki tekstowe"] };
+    const keys = Array.from(new Set(records.flatMap((r)=>Object.keys(r))));
+    return keys.map((key)=>({key,label:labelMap[key]?.[0]||key,description:labelMap[key]?.[1]||"Pole z rekordu aplikacji Sieweczka"}));
+  }
+
+  async function sendNewRecordsToGoogleSheets() {
+    const url = (localStorage.getItem(GOOGLE_SHEETS_WEBAPP_URL_KEY) || "").trim();
+    if (!url) return alert("Najpierw wklej URL Google Apps Script Web App.");
+    const token = (localStorage.getItem(GOOGLE_SHEETS_TOKEN_KEY) || "").trim();
+    const exportedIds = readExportedRecordIds();
+    const all = getEntries();
+    const fresh = all.filter((r) => !exportedIds.has(String(r.nestId || r.uid || "")));
+    if (!fresh.length) return alert("Brak nowych rekordów do wysłania do Google Sheets.");
+    const rows = fresh.map(recordToSheetsRow);
+    const payload = { token, records: rows, columns: buildSheetsColumnDescriptions(rows) };
+    try {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      addExportedRecordIds(fresh.map((r)=>String(r.nestId || r.uid || "")));
+      alert(`Wysłano ${data.inserted ?? fresh.length} nowych rekordów. Pominięto ${data.skipped_existing ?? 0} istniejących.`);
+    } catch (err) {
+      alert(`Błąd wysyłki do Google Sheets: ${err?.message || err}`);
+    }
   }
 
   function flattenEntry(entry) {
