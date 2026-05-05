@@ -30,6 +30,10 @@
   const SPECIES_CODE_MAP = {
     "charadrius-hiaticula": "SOb",
     "charadrius-dubius": "SRz",
+    "vanellus-vanellus": "Cz",
+    "tringa-totanus": "Kr",
+    "sternula-albifrons": "Rb",
+    "chroicocephalus-ridibundus": "Sm",
     unknown: "SN",
   };
 
@@ -37,6 +41,10 @@
     species: {
       "charadrius-hiaticula": "Sieweczka obrożna",
       "charadrius-dubius": "Sieweczka rzeczna",
+      "vanellus-vanellus": "Czajka",
+      "tringa-totanus": "Krwawodziób",
+      "sternula-albifrons": "Rybitwa białoczelna",
+      "chroicocephalus-ridibundus": "Śmieszka",
       unknown: "Nieokreślony",
     },
     nestStatus: {
@@ -134,6 +142,7 @@
   let userLocationWatchId = null;
   let mapHeadingEnabled = false;
   let latestMapHeadingDeg = null;
+  let recordSpeciesLabelsVisible = true;
   let workingMap = null;
   let workingLayer = null;
   let recordsGridLayer = null;
@@ -508,13 +517,15 @@
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
   function autoFillNearestDistances() {
-    const lat = getNumber("#lat", null), lon = getNumber("#lon", null), species = value("#species", "unknown");
+    const lat = getNumber("#lat", null), lon = getNumber("#lon", null);
     if (lat == null || lon == null) return;
     const entries = getEntries();
-    const nearest = (sp) => entries.filter((e) => e.species === sp && e.uid !== editingUid && e.lat != null && e.lon != null).reduce((best, e) => Math.min(best, haversineM(lat, lon, Number(e.lat), Number(e.lon))), Infinity);
+    const nearest = (sp) => entries
+      .filter((e) => e.species === sp && e.uid !== editingUid && hasValidCoords(e.lat, e.lon))
+      .reduce((best, e) => Math.min(best, haversineM(lat, lon, Number(e.lat), Number(e.lon))), Infinity);
     const hiEl = $("#dist-nearest-hiaticula"), duEl = $("#dist-nearest-dubius");
-    if (hiEl && !hiEl.dataset.manual && species === "charadrius-hiaticula") { const d = nearest("charadrius-hiaticula"); hiEl.value = Number.isFinite(d) ? d.toFixed(1) : ""; }
-    if (duEl && !duEl.dataset.manual && species === "charadrius-dubius") { const d = nearest("charadrius-dubius"); duEl.value = Number.isFinite(d) ? d.toFixed(1) : ""; }
+    if (hiEl && !hiEl.dataset.manual) { const d = nearest("charadrius-hiaticula"); hiEl.value = Number.isFinite(d) ? d.toFixed(1) : ""; }
+    if (duEl && !duEl.dataset.manual) { const d = nearest("charadrius-dubius"); duEl.value = Number.isFinite(d) ? d.toFixed(1) : ""; }
   }
 
   function showView(name) {
@@ -1185,6 +1196,7 @@
           <p class="muted">GPS: ${entry.lat ?? "brak"}, ${entry.lon ?? "brak"} • protokół: ${escapeHtml(entry.protocolVersion || "")}</p>
         </div>
         <div class="entry-actions">
+          <button type="button" data-action="share" data-uid="${entry.uid}">Udostępnij</button>
           <button type="button" data-action="edit" data-uid="${entry.uid}">Edytuj</button>
           <button type="button" data-action="delete" data-uid="${entry.uid}" class="danger">Usuń</button>
         </div>
@@ -1193,6 +1205,39 @@
     });
   }
 
+
+
+  function buildRecordShareText(record) {
+    const speciesLabel = LABELS.species[record?.species] || record?.species || "Nieokreślony";
+    const nestPos = toLatLon(record?.lat, record?.lon);
+    const gpsText = nestPos ? `${nestPos[0].toFixed(6)}, ${nestPos[1].toFixed(6)}` : "brak";
+    const mapUrl = nestPos ? `https://www.google.com/maps?q=${nestPos[0].toFixed(6)},${nestPos[1].toFixed(6)}` : null;
+    return [
+      `Gniazdo: ${record?.nestId || "(bez ID)"}`,
+      `Gatunek: ${speciesLabel}`,
+      `Data: ${record?.obsDate || "brak"}`,
+      `Liczba jaj: ${record?.eggCount ?? "brak"}`,
+      `GPS: ${gpsText}`,
+      ...(mapUrl ? [`Mapa: ${mapUrl}`] : []),
+    ].join("\n");
+  }
+
+  async function shareRecord(uid) {
+    const record = getEntries().find((entry) => String(entry.uid) === String(uid));
+    if (!record) return;
+    const text = buildRecordShareText(record);
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: record.nestId || "Rekord gniazda", text });
+        return;
+      } catch {}
+    }
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => alert("Skopiowano dane rekordu do schowka"), () => alert(text));
+      return;
+    }
+    alert(text);
+  }
 
   function hasValidCoords(lat, lon) {
     if (lat == null || lon == null) return false;
@@ -1353,6 +1398,7 @@
     points.forEach((p)=>{
       const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div class="pin"><span>${p.type==='gniazdo'?'G':'K'}</span></div>`});
       const m = L.marker(p.pos,{icon}).addTo(mapMarkersLayer);
+      if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(LABELS.species[p.entry.species] || p.entry.species || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
       m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> <button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button> <button data-map-action='delete' data-uid='${e.uid}'>Usuń</button> <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
@@ -1481,6 +1527,7 @@
       const btn = event.target.closest("button[data-action]");
       if (btn) {
         event.stopPropagation();
+        if (btn.dataset.action === "share") void shareRecord(btn.dataset.uid);
         if (btn.dataset.action === "edit") editRecord(btn.dataset.uid);
         if (btn.dataset.action === "delete") deleteRecord(btn.dataset.uid);
         return;
@@ -1532,6 +1579,7 @@
       if (!btn) return;
       const action = btn.dataset.mapAction;
       if (action === "view") showReadonlyRecord(btn.dataset.uid);
+      if (action === "share") void shareRecord(btn.dataset.uid);
       if (action === "edit") editRecord(btn.dataset.uid);
       if (action === "delete") deleteRecord(btn.dataset.uid);
       if (action === "nav") navigateTo(btn.dataset.lat, btn.dataset.lon);
@@ -1542,6 +1590,11 @@
         if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
         else recordsGridLayer.addTo(recordsMap);
       } else if (recordsGridLayer) recordsMap.removeLayer(recordsGridLayer);
+    });
+
+    $("#records-species-labels-toggle")?.addEventListener("change", () => {
+      recordSpeciesLabelsVisible = !!$("#records-species-labels-toggle")?.checked;
+      renderRecordsMap(mapFocusUid);
     });
 
     $("#nest-photos").addEventListener("change", () => {
@@ -1676,6 +1729,7 @@
       downloadText(`sieweczka-records-${dateStamp()}.csv`, buildCsv(getEntries()), "text/csv;charset=utf-8");
     });
     $("#export-zip").addEventListener("click", exportZip);
+    $("#export-kml")?.addEventListener("click", exportKml);
   }
 
   function flattenEntry(entry) {
@@ -1811,6 +1865,28 @@
 
     const blob = await zip.generateAsync({ type: "blob" });
     downloadBlob(`sieweczka-export-${dateStamp()}.zip`, blob);
+  }
+
+
+  function escapeXml(value) {
+    return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
+  }
+
+  function exportKml() {
+    const entries = getEntries();
+    const placemarks = [];
+    const buildDescription = (entry, pos) => [
+      `ID gniazda: ${entry.nestId || "(bez ID)"}`,`Gatunek: ${LABELS.species[entry.species] || entry.species || "-"}`,`Data: ${entry.obsDate || "-"}`,`Liczba jaj: ${entry.eggCount ?? "brak"}`,`Obserwator: ${entry.observer || "-"}`,`Sektor: ${entry.sector || "-"}`,`Lat/Lon: ${pos[0]}, ${pos[1]}`
+    ].join("\n");
+    for (const entry of entries) {
+      const nestPos = toLatLon(entry.lat, entry.lon);
+      const ctrlPos = toLatLon(entry.randomMicro?.lat, entry.randomMicro?.lon);
+      if (nestPos) placemarks.push(`<Placemark><name>${escapeXml(entry.nestId || "(bez ID)")}</name><description>${escapeXml(buildDescription(entry, nestPos))}</description><Point><coordinates>${nestPos[1]},${nestPos[0]},0</coordinates></Point></Placemark>`);
+      if (ctrlPos) placemarks.push(`<Placemark><name>${escapeXml(`${entry.nestId || "(bez ID)"} – kontrola`)}</name><description>${escapeXml(`Punkt kontroli\nLat/Lon: ${ctrlPos[0]}, ${ctrlPos[1]}`)}</description><Point><coordinates>${ctrlPos[1]},${ctrlPos[0]},0</coordinates></Point></Placemark>`);
+    }
+    if (!placemarks.length) { alert("Brak rekordów z poprawnym GPS do eksportu KML."); return; }
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>sieweczka-records</name>\n${placemarks.join("\n")}\n</Document>\n</kml>`;
+    downloadText(`sieweczka-records-${new Date().toISOString().slice(0,10)}.kml`, kml, "application/vnd.google-earth.kml+xml;charset=utf-8");
   }
 
   function dateStamp() {
