@@ -126,12 +126,12 @@
   let mapMarkersLayer = null;
   let mapFocusUid = null;
   const mapUserState = {
-    records: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, mapUserWatchId: null },
-    working: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, mapUserWatchId: null }
+    records: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false },
+    working: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false }
   };
   let latestUserLatLng = null;
   let latestUserAccuracy = null;
-  let mapHasAutoCenteredOnUser = false;
+  let userLocationWatchId = null;
   let mapHeadingEnabled = false;
   let latestMapHeadingDeg = null;
   let workingMap = null;
@@ -1254,7 +1254,8 @@
     return mapUserState.records;
   }
 
-  function syncUserLocationLayers(targetMap) {
+  function syncUserLocationLayers(target) {
+    const targetMap = target === "records" ? recordsMap : target === "working" ? workingMap : target;
     if (!targetMap || !latestUserLatLng) return;
     const state = getMapUserState(targetMap);
     if (!state.userLocationMarker || !targetMap.hasLayer(state.userLocationMarker)) {
@@ -1368,20 +1369,36 @@
     $("#map-info").textContent = `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`;
     if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
-    ensureUserLocationTracking(points, focusUid); syncUserLocationLayers(recordsMap);
+    ensureUserLocationTracking(points, focusUid); syncUserLocationLayers("records");
   }
 
   function ensureUserLocationTracking(points, focusUid) {
-    if (!navigator.geolocation || !recordsMap) { $("#map-user-status").textContent = "Twoja pozycja: niedostępna"; return; }
-    if (mapUserWatchId == null) {
-      mapUserWatchId = navigator.geolocation.watchPosition(({coords}) => {
+    if (!navigator.geolocation) {
+      $("#map-user-status").textContent = "Twoja pozycja: niedostępna";
+      $("#working-user-status").textContent = "Twoja pozycja: niedostępna";
+      return;
+    }
+    if (userLocationWatchId == null) {
+      userLocationWatchId = navigator.geolocation.watchPosition(({coords}) => {
         latestUserLatLng = [coords.latitude, coords.longitude];
         latestUserAccuracy = coords.accuracy;
         $("#map-user-status").textContent = "Twoja pozycja: aktywna";
-        syncUserLocationLayers(recordsMap);
-        if (!mapHasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 18); mapHasAutoCenteredOnUser = true; }
-      }, () => { $("#map-user-status").textContent = "Twoja pozycja: niedostępna"; if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie."; }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
-    } else $("#map-user-status").textContent = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
+        $("#working-user-status").textContent = "Twoja pozycja: aktywna";
+        syncUserLocationLayers("records");
+        syncUserLocationLayers("working");
+        if (recordsMap && !mapUserState.records.hasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 18); mapUserState.records.hasAutoCenteredOnUser = true; }
+      }, () => {
+        $("#map-user-status").textContent = "Twoja pozycja: niedostępna";
+        $("#working-user-status").textContent = "Twoja pozycja: niedostępna";
+        if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie.";
+      }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
+    } else {
+      const statusText = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
+      $("#map-user-status").textContent = statusText;
+      $("#working-user-status").textContent = statusText;
+      syncUserLocationLayers("records");
+      syncUserLocationLayers("working");
+    }
   }
   function renderMapHeading(targetMap = recordsMap) {
     if (!targetMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
@@ -1541,9 +1558,11 @@
     $("#working-add-gps").addEventListener("click", addWorkingNestFromGps);
     $("#working-center-user").addEventListener("click", async () => {
       try {
-        await showMyLocationOnMap(workingMap, "#map-user-status");
-        syncUserLocationLayers(workingMap);
+        await showMyLocationOnMap(workingMap, "#working-user-status");
+        ensureUserLocationTracking([], null);
+        syncUserLocationLayers("working");
         workingMap?.setView(latestUserLatLng, 18);
+        mapUserState.working.hasAutoCenteredOnUser = true;
       } catch {
         alert("Nie udało się pobrać mojej pozycji. Sprawdź uprawnienia lokalizacji.");
       }
@@ -1923,7 +1942,7 @@
     $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button><button data-w-action="edit" data-working-id="${w.id}">Edytuj</button><button class="danger" data-w-action="delete" data-working-id="${w.id}">Usuń</button><select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select></div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
-    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); syncUserLocationLayers(workingMap);} 
+    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); ensureUserLocationTracking([], null); syncUserLocationLayers("working");} 
   }
 
   function setupFieldMode() {
