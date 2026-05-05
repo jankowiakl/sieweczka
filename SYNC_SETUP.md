@@ -10,13 +10,25 @@
 - `GET /health`
 - `GET /api/records?updated_after=...`
 - `POST /api/records/bulk`
-- `POST /api/sync` (`clientId`, `lastSyncAt`, `records`, `workingNests`)
+- `POST /api/sync` (`clientId`, `lastSyncAt`, `records`, `workingNests`, `photos`)
+- `GET /api/photos?updated_after=...`
+- `GET /api/photos/:id/content`
+- `PUT /api/photos/:id/content`
 
 ## Etap 2: synchronizacja zdjęć
-Synchronizacja obejmuje rekordy terenowe i gniazda robocze.
 
-W tej wersji zdjęcia zostają lokalnie w IndexedDB i nie są wysyłane na serwer. W etapie 2 dodaj upload plików (np. S3/NAS share), mapowanie referencji zdjęć w rekordzie oraz retry kolejkowania uploadu.
+API ma teraz tabelę `photos`, która przechowuje:
+- metadane zdjęcia (`id`, `record_uid`, `kind`, `position`, `filename`, `mime_type`, `size_bytes`, `checksum`, `payload`),
+- binarną zawartość zdjęcia w kolumnie `data BYTEA`,
+- czas ostatniej zmiany po stronie serwera (`server_updated_at`).
 
+Przepływ synchronizacji:
+1. Klient wysyła zwykły `POST /api/sync` z rekordami, gniazdami roboczymi oraz listą metadanych zdjęć.
+2. API zapisuje metadane i zwraca `missingPhotoIds` — identyfikatory zdjęć, których treści binarnej jeszcze nie ma na serwerze.
+3. Klient wysyła brakujące pliki przez `PUT /api/photos/:id/content` z nagłówkiem `Content-Type` odpowiadającym typowi pliku.
+4. Inne urządzenie pobiera listę metadanych przez `POST /api/sync` albo `GET /api/photos`, a brakujące lokalnie pliki pobiera z `GET /api/photos/:id/content` i zapisuje w IndexedDB.
+
+Domyślny limit jednego uploadu to `25mb`. Można go zmienić zmienną środowiskową `PHOTO_UPLOAD_LIMIT`, np. `PHOTO_UPLOAD_LIMIT=50mb`.
 
 ### Migracja istniejącej bazy
-Jeśli API działało wcześniej bez tabeli `working_nests`, wykonaj ręcznie SQL z `api/src/schema.sql` (sekcja `CREATE TABLE IF NOT EXISTS working_nests ...`) na docelowej bazie PostgreSQL.
+Jeśli API działało wcześniej bez tabeli `photos`, wykonaj ręcznie SQL z `api/src/schema.sql` (sekcja `CREATE TABLE IF NOT EXISTS photos ...`) na docelowej bazie PostgreSQL albo pozwól, aby świeży kontener PostgreSQL zainicjalizował schemat przy pierwszym starcie.
