@@ -125,10 +125,10 @@
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
-  let userLocationMarker = null;
-  let userAccuracyCircle = null;
-  let userHeadingMarker = null;
-  let mapUserWatchId = null;
+  const mapUserState = {
+    records: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, mapUserWatchId: null },
+    working: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, mapUserWatchId: null }
+  };
   let latestUserLatLng = null;
   let latestUserAccuracy = null;
   let mapHasAutoCenteredOnUser = false;
@@ -143,6 +143,7 @@
   let workingViewMode = "map";
   let workingFocusId = null;
   let editingWorkingId = null;
+  let workingNotesVisible = true;
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
@@ -1211,20 +1212,21 @@
 
 
   function createBaseLayers() {
-    const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
-    const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
+    const tileOptions = { maxNativeZoom: 19, maxZoom: 23 };
+    const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", tileOptions);
+    const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", tileOptions);
     const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
     return {
       defaultLayer: esriImgLbl,
       layers: {
         "Esri Imagery + Labels": esriImgLbl,
-        "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
+        "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}", tileOptions),
         "Esri World Imagery": esriImg,
-        "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"),
-        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png"),
-        "CARTO Positron": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"),
-        "CARTO Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"),
-        "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
+        "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", tileOptions),
+        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png", tileOptions),
+        "CARTO Positron": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", tileOptions),
+        "CARTO Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", tileOptions),
+        "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", tileOptions)
       }
     };
   }
@@ -1248,18 +1250,25 @@
     });
   }
 
+  function getMapUserState(targetMap) {
+    if (targetMap === workingMap) return mapUserState.working;
+    return mapUserState.records;
+  }
+
   function syncUserLocationLayers(targetMap) {
     if (!targetMap || !latestUserLatLng) return;
-    if (!userLocationMarker || !targetMap.hasLayer(userLocationMarker)) {
-      if (userLocationMarker && recordsMap?.hasLayer(userLocationMarker)) recordsMap.removeLayer(userLocationMarker);
-      userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(targetMap);
-    } else userLocationMarker.setLatLng(latestUserLatLng);
+    const state = getMapUserState(targetMap);
+    if (!state.userLocationMarker || !targetMap.hasLayer(state.userLocationMarker)) {
+      if (state.userLocationMarker) targetMap.removeLayer(state.userLocationMarker);
+      state.userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(targetMap);
+    } else state.userLocationMarker.setLatLng(latestUserLatLng);
     if (Number.isFinite(latestUserAccuracy)) {
-      if (!userAccuracyCircle || !targetMap.hasLayer(userAccuracyCircle)) {
-        if (userAccuracyCircle && recordsMap?.hasLayer(userAccuracyCircle)) recordsMap.removeLayer(userAccuracyCircle);
-        userAccuracyCircle = L.circle(latestUserLatLng,{radius:latestUserAccuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(targetMap);
-      } else userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(latestUserAccuracy);
+      if (!state.userAccuracyCircle || !targetMap.hasLayer(state.userAccuracyCircle)) {
+        if (state.userAccuracyCircle) targetMap.removeLayer(state.userAccuracyCircle);
+        state.userAccuracyCircle = L.circle(latestUserLatLng,{radius:latestUserAccuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(targetMap);
+      } else state.userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(latestUserAccuracy);
     }
+    renderMapHeading(targetMap);
   }
 
   
@@ -1320,7 +1329,7 @@
     if (!mapEl || typeof L === "undefined") { $("#map-info").textContent = "Mapa niedostępna offline (brak biblioteki Leaflet)."; return; }
     if (!recordsMap) {
       const base = createBaseLayers();
-      recordsMap = L.map(mapEl, { layers: [base.defaultLayer] });
+      recordsMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: 23 });
       recordsMap.attributionControl.setPrefix("");
       L.control.layers(base.layers).addTo(recordsMap);
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
@@ -1370,22 +1379,22 @@
         latestUserLatLng = [coords.latitude, coords.longitude];
         latestUserAccuracy = coords.accuracy;
         $("#map-user-status").textContent = "Twoja pozycja: aktywna";
-        if (!userLocationMarker) userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(recordsMap);
-        else userLocationMarker.setLatLng(latestUserLatLng);
-        if (Number.isFinite(coords.accuracy)) {
-          if (!userAccuracyCircle) userAccuracyCircle = L.circle(latestUserLatLng,{radius:coords.accuracy,color:"#2f8cff",weight:1,fillOpacity:.08}).addTo(recordsMap);
-          else userAccuracyCircle.setLatLng(latestUserLatLng).setRadius(coords.accuracy);
-        }
-        renderMapHeading();
+        syncUserLocationLayers(recordsMap);
         if (!mapHasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 18); mapHasAutoCenteredOnUser = true; }
       }, () => { $("#map-user-status").textContent = "Twoja pozycja: niedostępna"; if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie."; }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
     } else $("#map-user-status").textContent = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
   }
-  function renderMapHeading() {
-    if (!recordsMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
-    if (!userHeadingMarker) userHeadingMarker = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(recordsMap);
-    else userHeadingMarker.setLatLng(latestUserLatLng);
-    const arrow = userHeadingMarker.getElement()?.querySelector("div");
+  function renderMapHeading(targetMap = recordsMap) {
+    if (!targetMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
+    const state = getMapUserState(targetMap);
+    if (!mapHeadingEnabled) {
+      if (state.userHeadingMarker && targetMap.hasLayer(state.userHeadingMarker)) targetMap.removeLayer(state.userHeadingMarker);
+      state.userHeadingMarker = null;
+      return;
+    }
+    if (!state.userHeadingMarker) state.userHeadingMarker = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(targetMap);
+    else state.userHeadingMarker.setLatLng(latestUserLatLng);
+    const arrow = state.userHeadingMarker.getElement()?.querySelector("div");
     if (arrow) arrow.style.transform = `rotate(${latestMapHeadingDeg}deg)`;
   }
 
@@ -1485,7 +1494,7 @@
           const normalized = ((heading % 360) + 360) % 360;
           if (latestMapHeadingDeg != null && Math.abs(normalized - latestMapHeadingDeg) < 3) return;
           latestMapHeadingDeg = latestMapHeadingDeg == null ? normalized : (latestMapHeadingDeg * 0.7 + normalized * 0.3);
-          requestAnimationFrame(renderMapHeading);
+          requestAnimationFrame(() => { renderMapHeading(recordsMap); renderMapHeading(workingMap); });
           statusEl.textContent = "Twoja pozycja: aktywna (kierunek włączony)";
         }
       };
@@ -1551,6 +1560,10 @@
         if (!workingGridLayer) void addGridToMap(workingMap, "working");
         else workingGridLayer.addTo(workingMap);
       } else if (workingGridLayer) workingMap.removeLayer(workingGridLayer);
+    });
+    $("#working-notes-toggle")?.addEventListener("change", () => {
+      workingNotesVisible = !!$("#working-notes-toggle")?.checked;
+      renderWorkingMap();
     });
     $("#working-map-screen").addEventListener("click", onWorkingScreenClick);
     $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
@@ -1853,14 +1866,12 @@
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       const items = getWorkingNests();
       const pos=[+coords.latitude.toFixed(6), +coords.longitude.toFixed(6)];
-      const dup=items.map(i=>({i,pos2:toLatLon(i.lat,i.lon)})).filter(x=>x.pos2).map(x=>({item:x.i,dist:distanceM(pos,x.pos2)})).sort((a,b)=>a.dist-b.dist)[0];
-      const savePoint=()=>{ const label=nextWorkingLabel(items); const point=normalizeWorkingNest({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia' }); setWorkingNests([point,...getWorkingNests()]); workingFocusId=point.id; workingViewMode='map'; renderWorkingMap(); };
-      if (dup && dup.dist<=20) {
-        const choice=prompt(`W pobliżu jest już gniazdo robocze ${dup.item.label||'—'}, odległość ${Math.round(dup.dist)} m. Wpisz: pokaz / dodaj / anuluj`, 'pokaz');
-        if (choice==='pokaz') { workingFocusId=dup.item.id; workingViewMode='map'; renderWorkingMap(); return; }
-        if (choice!=='dodaj') return;
-      }
-      savePoint();
+      const label=nextWorkingLabel(items);
+      const point=normalizeWorkingNest({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia' });
+      setWorkingNests([point,...getWorkingNests()]);
+      workingFocusId=point.id;
+      workingViewMode='map';
+      renderWorkingMap();
     }, () => alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
   }
   function onWorkingScreenClick(event) {
@@ -1884,11 +1895,39 @@
     updateWorkingNest(editingWorkingId, { status: $("#working-edit-status").value, note: $("#working-edit-note").value, notes: $("#working-edit-note").value, lat, lon });
     closeWorkingEditPanel();
   }
+
+  function getWorkingNoteTooltipOptions(enrichedItems, map) {
+    const placements = [
+      { direction: "right", offset: [14, 0] },
+      { direction: "left", offset: [-14, 0] },
+      { direction: "top", offset: [0, -14] },
+      { direction: "bottom", offset: [0, 14] },
+      { direction: "right", offset: [14, -14] },
+      { direction: "left", offset: [-14, -14] },
+      { direction: "right", offset: [14, 14] },
+      { direction: "left", offset: [-14, 14] }
+    ];
+    const thresholdPx = 52;
+    const usedByBucket = new Map();
+    const out = new Map();
+    enrichedItems.forEach(({ w, pos }) => {
+      if (!w?.id || !pos || !map) return;
+      const pt = map.latLngToLayerPoint(pos);
+      const bx = Math.round(pt.x / thresholdPx);
+      const by = Math.round(pt.y / thresholdPx);
+      const key = `${bx}:${by}`;
+      const idx = usedByBucket.get(key) || 0;
+      usedByBucket.set(key, idx + 1);
+      out.set(String(w.id), placements[idx % placements.length]);
+    });
+    return out;
+  }
+
   function renderWorkingMap(showNearest = false) {
     const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
     if (!workingMap) {
       const base = createBaseLayers();
-      workingMap = L.map(mapEl, { layers: [base.defaultLayer] });
+      workingMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: 23 });
       workingMap.attributionControl.setPrefix("");
       L.control.layers(base.layers).addTo(workingMap);
       workingLayer = L.layerGroup().addTo(workingMap);
@@ -1902,8 +1941,14 @@
     workingLayer.clearLayers();
     const items = getWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
+    const noteTooltipOptions = getWorkingNoteTooltipOptions(enriched, workingMap);
     enriched.forEach(({w,pos}) => {
       const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }) }).addTo(workingLayer);
+      const noteText = String(w.note ?? w.notes ?? "").trim();
+      if (workingNotesVisible && noteText) {
+        const noteOpt = noteTooltipOptions.get(String(w.id)) || { direction: "right", offset: [14, 0] };
+        m.bindTooltip(escapeHtml(noteText), { permanent: true, direction: noteOpt.direction, offset: noteOpt.offset, className: "working-note-label" });
+      }
       m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> <button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button><br><select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
