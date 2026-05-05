@@ -1212,21 +1212,20 @@
 
 
   function createBaseLayers() {
-    const tileOptions = { maxNativeZoom: 19, maxZoom: 23 };
-    const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", tileOptions);
-    const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", tileOptions);
+    const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
+    const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
     const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
     return {
       defaultLayer: esriImgLbl,
       layers: {
         "Esri Imagery + Labels": esriImgLbl,
-        "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}", tileOptions),
+        "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
         "Esri World Imagery": esriImg,
-        "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", tileOptions),
-        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png", tileOptions),
-        "CARTO Positron": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", tileOptions),
-        "CARTO Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", tileOptions),
-        "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", tileOptions)
+        "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"),
+        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png"),
+        "CARTO Positron": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"),
+        "CARTO Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"),
+        "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
       }
     };
   }
@@ -1280,6 +1279,11 @@
   function workingStatusLabel(v){ return ({do_sprawdzenia:'Do sprawdzenia',prawdopodobne:'Prawdopodobne',potwierdzone:'Potwierdzone',odrzucone:'Odrzucone',przepisane:'Przepisane do rekordu'})[v]||'Do sprawdzenia'; }
   function workingStatusOptions(selected){ return ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].map(k=>`<option value="${k}" ${k===selected?'selected':''}>${workingStatusLabel(k)}</option>`).join(''); }
   function workingStatusMarkerText(status){ return ({do_sprawdzenia:'?',prawdopodobne:'P',potwierdzone:'✓',odrzucone:'×',przepisane:'Z'})[status]||'?'; }
+  function normalizeWorkingNest(w) {
+    const now = new Date().toISOString();
+    const normalizedStatus = ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].includes(w?.status) ? w.status : 'do_sprawdzenia';
+    return { ...w, id: w?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), lat: Number(w?.lat), lon: Number(w?.lon), status: normalizedStatus, note: String(w?.note ?? w?.notes ?? ""), notes: String(w?.notes ?? w?.note ?? ""), createdAt: w?.createdAt || now, updatedAt: w?.updatedAt || w?.createdAt || now };
+  }
 
   function navigateTo(lat, lon) {
     const pos = toLatLon(lat, lon);
@@ -1324,7 +1328,7 @@
     if (!mapEl || typeof L === "undefined") { $("#map-info").textContent = "Mapa niedostępna offline (brak biblioteki Leaflet)."; return; }
     if (!recordsMap) {
       const base = createBaseLayers();
-      recordsMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: 23 });
+      recordsMap = L.map(mapEl, { layers: [base.defaultLayer] });
       recordsMap.attributionControl.setPrefix("");
       L.control.layers(base.layers).addTo(recordsMap);
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
@@ -1890,39 +1894,11 @@
     updateWorkingNest(editingWorkingId, { status: $("#working-edit-status").value, note: $("#working-edit-note").value, notes: $("#working-edit-note").value, lat, lon });
     closeWorkingEditPanel();
   }
-
-  function getWorkingNoteTooltipOptions(enrichedItems, map) {
-    const placements = [
-      { direction: "right", offset: [14, 0] },
-      { direction: "left", offset: [-14, 0] },
-      { direction: "top", offset: [0, -14] },
-      { direction: "bottom", offset: [0, 14] },
-      { direction: "right", offset: [14, -14] },
-      { direction: "left", offset: [-14, -14] },
-      { direction: "right", offset: [14, 14] },
-      { direction: "left", offset: [-14, 14] }
-    ];
-    const thresholdPx = 52;
-    const usedByBucket = new Map();
-    const out = new Map();
-    enrichedItems.forEach(({ w, pos }) => {
-      if (!w?.id || !pos || !map) return;
-      const pt = map.latLngToLayerPoint(pos);
-      const bx = Math.round(pt.x / thresholdPx);
-      const by = Math.round(pt.y / thresholdPx);
-      const key = `${bx}:${by}`;
-      const idx = usedByBucket.get(key) || 0;
-      usedByBucket.set(key, idx + 1);
-      out.set(String(w.id), placements[idx % placements.length]);
-    });
-    return out;
-  }
-
   function renderWorkingMap(showNearest = false) {
     const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
     if (!workingMap) {
       const base = createBaseLayers();
-      workingMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: 23 });
+      workingMap = L.map(mapEl, { layers: [base.defaultLayer] });
       workingMap.attributionControl.setPrefix("");
       L.control.layers(base.layers).addTo(workingMap);
       workingLayer = L.layerGroup().addTo(workingMap);
@@ -1936,14 +1912,10 @@
     workingLayer.clearLayers();
     const items = getWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
-    const noteTooltipOptions = getWorkingNoteTooltipOptions(enriched, workingMap);
     enriched.forEach(({w,pos}) => {
       const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }) }).addTo(workingLayer);
       const noteText = String(w.note ?? w.notes ?? "").trim();
-      if (workingNotesVisible && noteText) {
-        const noteOpt = noteTooltipOptions.get(String(w.id)) || { direction: "right", offset: [14, 0] };
-        m.bindTooltip(escapeHtml(noteText), { permanent: true, direction: noteOpt.direction, offset: noteOpt.offset, className: "working-note-label" });
-      }
+      if (workingNotesVisible && noteText) m.bindTooltip(escapeHtml(noteText), { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
       m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> <button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button><br><select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
