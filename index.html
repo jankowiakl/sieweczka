@@ -92,40 +92,7 @@
         <label class="inline-check map-toggle"><input id="working-notes-toggle" type="checkbox" checked /> Pokaż notatki</label>
         <span id="working-user-status" class="muted">Twoja pozycja: oczekiwanie…</span><button id="working-show-map" type="button">Mapa</button><button id="working-show-list" type="button">Lista</button>
       </div>
-      <div class="map-legend working-legend muted">
-        <span class="legend-item"><span class="legend-dot do_sprawdzenia">?</span> do sprawdzenia</span>
-        <span class="legend-item"><span class="legend-dot prawdopodobne">P</span> prawdopodobne</span>
-        <span class="legend-item"><span class="legend-dot potwierdzone">&#10003;</span> potwierdzone</span>
-        <span class="legend-item"><span class="legend-dot odrzucone">&times;</span> odrzucone</span>
-        <span class="legend-item"><span class="legend-dot przepisane">Z</span> przepisane</span>
-      </div>
-      <section id="working-edit-panel" class="card" hidden>
-        <h3>Edycja gniazda roboczego: <span id="working-edit-label">—</span></h3>
-        <form id="working-edit-form">
-          <input id="working-edit-id" type="hidden" />
-          <label>Status
-            <select id="working-edit-status">
-              <option value="do_sprawdzenia">Do sprawdzenia</option>
-              <option value="prawdopodobne">Prawdopodobne</option>
-              <option value="potwierdzone">Potwierdzone</option>
-              <option value="odrzucone">Odrzucone</option>
-              <option value="przepisane">Przepisane do rekordu</option>
-            </select>
-          </label>
-          <label>Notatka
-            <textarea id="working-edit-note" rows="2"></textarea>
-          </label>
-          <div class="row-2">
-            <label>Lat <input id="working-edit-lat" type="number" step="0.000001" inputmode="decimal" /></label>
-            <label>Lon <input id="working-edit-lon" type="number" step="0.000001" inputmode="decimal" /></label>
-          </div>
-          <div class="row-actions">
-            <button type="submit" class="primary">Zapisz zmiany</button>
-            <button type="button" id="working-edit-cancel">Anuluj</button>
-            <button type="button" id="working-edit-delete" class="danger">Usuń</button>
-          </div>
-        </form>
-      </section>
+      <div class="map-legend muted"><span class="legend-dot r">?</span> — do sprawdzenia • <span class="legend-dot o">P</span> — prawdopodobne • <span class="legend-dot g">✓</span> — potwierdzone • <span class="legend-dot x">×</span> — odrzucone • <span class="legend-dot z">Z</span> — przepisane</div>
       <div id="working-map-panel"><div id="working-map" style="height: 50vh; border-radius: 12px;"></div></div>
       <div id="working-list-panel" hidden><div id="working-nearest-list" class="muted"></div><div id="working-list" class="entries-list"></div></div>
     </section>

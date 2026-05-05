@@ -1280,11 +1280,6 @@
   function workingStatusLabel(v){ return ({do_sprawdzenia:'Do sprawdzenia',prawdopodobne:'Prawdopodobne',potwierdzone:'Potwierdzone',odrzucone:'Odrzucone',przepisane:'Przepisane do rekordu'})[v]||'Do sprawdzenia'; }
   function workingStatusOptions(selected){ return ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].map(k=>`<option value="${k}" ${k===selected?'selected':''}>${workingStatusLabel(k)}</option>`).join(''); }
   function workingStatusMarkerText(status){ return ({do_sprawdzenia:'?',prawdopodobne:'P',potwierdzone:'✓',odrzucone:'×',przepisane:'Z'})[status]||'?'; }
-  function normalizeWorkingNest(w) {
-    const now = new Date().toISOString();
-    const normalizedStatus = ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].includes(w?.status) ? w.status : 'do_sprawdzenia';
-    return { ...w, id: w?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), lat: Number(w?.lat), lon: Number(w?.lon), status: normalizedStatus, note: String(w?.note ?? w?.notes ?? ""), notes: String(w?.notes ?? w?.note ?? ""), createdAt: w?.createdAt || now, updatedAt: w?.updatedAt || w?.createdAt || now };
-  }
 
   function navigateTo(lat, lon) {
     const pos = toLatLon(lat, lon);
