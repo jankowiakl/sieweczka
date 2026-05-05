@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v21-regression-fixes";
+const CACHE_NAME = "sieweczka-clean-v22-grid-layer";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const APP_SHELL = [
   "./app.js",
   "./field-help.js",
   "./manifest.webmanifest",
+  "./data/grid_vanvan.geojson",
   "./icons/icon.svg",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

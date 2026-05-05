@@ -136,12 +136,66 @@
   let latestMapHeadingDeg = null;
   let workingMap = null;
   let workingLayer = null;
+  let recordsGridLayer = null;
+  let workingGridLayer = null;
+  let gridGeoJsonData = null;
+  let gridGeoJsonPromise = null;
   let workingViewMode = "map";
   let workingFocusId = null;
   let editingWorkingId = null;
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
+
+  async function loadGridGeoJson() {
+    if (gridGeoJsonData) return gridGeoJsonData;
+    if (!gridGeoJsonPromise) {
+      gridGeoJsonPromise = fetch("data/grid_vanvan.geojson", { cache: "force-cache" })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Nie udało się załadować gridu: ${response.status}`);
+          return response.json();
+        })
+        .then((json) => {
+          gridGeoJsonData = json;
+          return json;
+        })
+        .catch((error) => {
+          console.error(error);
+          gridGeoJsonPromise = null;
+          return null;
+        });
+    }
+    return gridGeoJsonPromise;
+  }
+
+  async function addGridToMap(map, target) {
+    if (!map || typeof L === "undefined") return null;
+    const data = await loadGridGeoJson();
+    if (!data) return null;
+    const gridLayer = L.geoJSON(data, {
+      pane: "overlayPane",
+      interactive: false,
+      style: {
+        color: "rgba(15, 23, 42, 0.7)",
+        weight: 1,
+        fillColor: "rgba(255, 255, 255, 0.06)",
+        fillOpacity: 0.1
+      },
+      onEachFeature(feature, layer) {
+        const gridId = feature?.properties?.id;
+        if (gridId == null) return;
+        layer.bindTooltip(String(gridId), {
+          permanent: true,
+          direction: "center",
+          className: "grid-label"
+        });
+      }
+    });
+    gridLayer.addTo(map);
+    if (target === "records") recordsGridLayer = gridLayer;
+    if (target === "working") workingGridLayer = gridLayer;
+    return gridLayer;
+  }
 
   function openPhotoDb() {
     return new Promise((resolve, reject) => {
@@ -1203,6 +1257,12 @@
       L.control.layers(base.layers).addTo(recordsMap);
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
     }
+    if ($("#records-grid-toggle")?.checked) {
+      if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
+      else if (!recordsMap.hasLayer(recordsGridLayer)) recordsGridLayer.addTo(recordsMap);
+    } else if (recordsGridLayer && recordsMap.hasLayer(recordsGridLayer)) {
+      recordsMap.removeLayer(recordsGridLayer);
+    }
     mapMarkersLayer.clearLayers();
     const entries = getEntries();
     const points = [];
@@ -1375,6 +1435,13 @@
       if (action === "delete") deleteRecord(btn.dataset.uid);
       if (action === "nav") navigateTo(btn.dataset.lat, btn.dataset.lon);
     });
+    $("#records-grid-toggle")?.addEventListener("change", () => {
+      if (!recordsMap) return;
+      if ($("#records-grid-toggle").checked) {
+        if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
+        else recordsGridLayer.addTo(recordsMap);
+      } else if (recordsGridLayer) recordsMap.removeLayer(recordsGridLayer);
+    });
 
     $("#nest-photos").addEventListener("change", () => {
       setValue("#nest-one-m-photo-done", "yes");
@@ -1402,6 +1469,13 @@
     $("#working-show-map").addEventListener("click",()=>{workingViewMode="map";renderWorkingMap();});
     $("#working-show-list").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap();});
     $("#working-nearest").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap(true);});
+    $("#working-grid-toggle")?.addEventListener("change", () => {
+      if (!workingMap) return;
+      if ($("#working-grid-toggle").checked) {
+        if (!workingGridLayer) void addGridToMap(workingMap, "working");
+        else workingGridLayer.addTo(workingMap);
+      } else if (workingGridLayer) workingMap.removeLayer(workingGridLayer);
+    });
     $("#working-map-screen").addEventListener("click", onWorkingScreenClick);
     $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
     $("#working-edit-form").addEventListener("submit", onWorkingEditSubmit);
@@ -1738,6 +1812,12 @@
       workingMap.attributionControl.setPrefix("");
       L.control.layers(base.layers).addTo(workingMap);
       workingLayer = L.layerGroup().addTo(workingMap);
+    }
+    if ($("#working-grid-toggle")?.checked) {
+      if (!workingGridLayer) void addGridToMap(workingMap, "working");
+      else if (!workingMap.hasLayer(workingGridLayer)) workingGridLayer.addTo(workingMap);
+    } else if (workingGridLayer && workingMap.hasLayer(workingGridLayer)) {
+      workingMap.removeLayer(workingGridLayer);
     }
     workingLayer.clearLayers();
     const items = getWorkingNests();
