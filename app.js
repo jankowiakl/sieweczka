@@ -136,12 +136,122 @@
   let latestMapHeadingDeg = null;
   let workingMap = null;
   let workingLayer = null;
+  let recordsGridLayer = null;
+  let workingGridLayer = null;
+  let gridGeoJsonData = null;
+  let gridGeoJsonPromise = null;
   let workingViewMode = "map";
   let workingFocusId = null;
   let editingWorkingId = null;
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
+
+  async function loadGridGeoJson() {
+    if (gridGeoJsonData) return gridGeoJsonData;
+    if (!gridGeoJsonPromise) {
+      gridGeoJsonPromise = fetch("data/grid_vanvan.geojson", { cache: "force-cache" })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Nie udało się załadować gridu: ${response.status}`);
+          return response.json();
+        })
+        .then((json) => {
+          gridGeoJsonData = json;
+          return json;
+        })
+        .catch((error) => {
+          console.error(error);
+          gridGeoJsonPromise = null;
+          return null;
+        });
+    }
+    return gridGeoJsonPromise;
+  }
+
+  async function addGridToMap(map, target) {
+    if (!map || typeof L === "undefined") return null;
+    const data = await loadGridGeoJson();
+    if (!data) return null;
+    const gridLayer = L.geoJSON(data, {
+      pane: "overlayPane",
+      interactive: false,
+      style: {
+        color: "rgba(15, 23, 42, 0.7)",
+        weight: 1,
+        fillColor: "rgba(255, 255, 255, 0.06)",
+        fillOpacity: 0.1
+      },
+      onEachFeature(feature, layer) {
+        const gridId = feature?.properties?.id;
+        if (gridId == null) return;
+        layer.bindTooltip(String(gridId), {
+          permanent: true,
+          direction: "center",
+          className: "grid-label"
+        });
+      }
+    });
+    gridLayer.addTo(map);
+    if (target === "records") recordsGridLayer = gridLayer;
+    if (target === "working") workingGridLayer = gridLayer;
+    return gridLayer;
+  }
+
+  function pointInRing(lon, lat, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1];
+      const xj = ring[j][0], yj = ring[j][1];
+      const intersect = ((yi > lat) !== (yj > lat)) && (lon < ((xj - xi) * (lat - yi)) / ((yj - yi) || Number.EPSILON) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function pointInPolygon(lon, lat, polygonCoords) {
+    if (!polygonCoords?.length || !pointInRing(lon, lat, polygonCoords[0])) return false;
+    for (let i = 1; i < polygonCoords.length; i++) if (pointInRing(lon, lat, polygonCoords[i])) return false;
+    return true;
+  }
+
+  async function findGridIdForPoint(lat, lon) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+    const data = await loadGridGeoJson();
+    const features = data?.features || [];
+    for (const feature of features) {
+      const geometry = feature?.geometry;
+      if (!geometry) continue;
+      const coords = geometry.coordinates;
+      if (geometry.type === "Polygon" && pointInPolygon(lon, lat, coords)) return feature?.properties?.id ?? "";
+      if (geometry.type === "MultiPolygon" && (coords || []).some((polygon) => pointInPolygon(lon, lat, polygon))) return feature?.properties?.id ?? "";
+    }
+    return "";
+  }
+
+  async function autoFillSectorFromGrid() {
+    const sectorEl = $("#sector");
+    if (!sectorEl || sectorEl.dataset.manual === "1") return;
+    const lat = getNumber("#lat", null);
+    const lon = getNumber("#lon", null);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      if (sectorEl.dataset.auto === "1") {
+        sectorEl.value = "";
+        delete sectorEl.dataset.auto;
+      }
+      return;
+    }
+    const gridId = await findGridIdForPoint(lat, lon);
+    if (gridId !== "") {
+      const val = String(gridId);
+      if (!sectorEl.value || sectorEl.dataset.auto === "1") {
+        sectorEl.value = val;
+        sectorEl.dataset.auto = "1";
+      }
+    } else if (sectorEl.dataset.auto === "1") {
+      sectorEl.value = "";
+      delete sectorEl.dataset.auto;
+    }
+  }
 
   function openPhotoDb() {
     return new Promise((resolve, reject) => {
@@ -852,6 +962,11 @@
     $("#nest-photo-preview").innerHTML = "";
     $("#random-photo-preview").innerHTML = "";
     if ($("#validation-override-summary")) $("#validation-override-summary").checked = false;
+    const sectorEl = $("#sector");
+    if (sectorEl) {
+      delete sectorEl.dataset.manual;
+      delete sectorEl.dataset.auto;
+    }
     $("#edit-banner").hidden = true;
     $("#form-mode-title").textContent = "Nowe gniazdo";
     syncTilesFromInputs();
@@ -878,6 +993,12 @@
     setValue("#observer", record.observer);
     setValue("#species", record.species || "unknown");
     setValue("#sector", record.sector);
+    const sectorEl = $("#sector");
+    if (sectorEl) {
+      delete sectorEl.dataset.manual;
+      delete sectorEl.dataset.auto;
+      if (String(record.sector || "").trim()) sectorEl.dataset.manual = "1";
+    }
     setValue("#lat", record.lat);
     setValue("#lon", record.lon);
     setValue("#gps-accuracy", record.gpsAccuracyM);
@@ -947,6 +1068,7 @@
 
     syncTilesFromInputs();
     updatePercentSummaries();
+    void autoFillSectorFromGrid();
     showView("form");
     showStep(1);
   }
@@ -1203,6 +1325,12 @@
       L.control.layers(base.layers).addTo(recordsMap);
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
     }
+    if ($("#records-grid-toggle")?.checked) {
+      if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
+      else if (!recordsMap.hasLayer(recordsGridLayer)) recordsGridLayer.addTo(recordsMap);
+    } else if (recordsGridLayer && recordsMap.hasLayer(recordsGridLayer)) {
+      recordsMap.removeLayer(recordsGridLayer);
+    }
     mapMarkersLayer.clearLayers();
     const entries = getEntries();
     const points = [];
@@ -1274,6 +1402,7 @@
           setValue(latSelector, coords.latitude.toFixed(6));
           setValue(lonSelector, coords.longitude.toFixed(6));
           setValue(accSelector, Math.round(coords.accuracy));
+          if (latSelector === "#lat" && lonSelector === "#lon") void autoFillSectorFromGrid();
           if (status) status.textContent = `${label}: dokładność ±${Math.round(coords.accuracy)} m (${gpsQuality(coords.accuracy)})`;
         },
         () => {
@@ -1316,6 +1445,13 @@
     });
     $("#random-azimuth-btn").addEventListener("click", () => setValue("#random-azimuth", String(Math.floor(Math.random() * 360))));
     $("#record-search").addEventListener("input", renderEntries);
+    $("#sector").addEventListener("input", () => {
+      const sectorEl = $("#sector");
+      if (!sectorEl) return;
+      if (sectorEl.dataset.auto === "1") return;
+      sectorEl.dataset.manual = String(sectorEl.value || "").trim() ? "1" : "";
+      if (!sectorEl.dataset.manual) delete sectorEl.dataset.manual;
+    });
     $("#entries-list").addEventListener("click", (event) => {
       const btn = event.target.closest("button[data-action]");
       if (btn) {
@@ -1375,6 +1511,13 @@
       if (action === "delete") deleteRecord(btn.dataset.uid);
       if (action === "nav") navigateTo(btn.dataset.lat, btn.dataset.lon);
     });
+    $("#records-grid-toggle")?.addEventListener("change", () => {
+      if (!recordsMap) return;
+      if ($("#records-grid-toggle").checked) {
+        if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
+        else recordsGridLayer.addTo(recordsMap);
+      } else if (recordsGridLayer) recordsMap.removeLayer(recordsGridLayer);
+    });
 
     $("#nest-photos").addEventListener("change", () => {
       setValue("#nest-one-m-photo-done", "yes");
@@ -1402,6 +1545,13 @@
     $("#working-show-map").addEventListener("click",()=>{workingViewMode="map";renderWorkingMap();});
     $("#working-show-list").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap();});
     $("#working-nearest").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap(true);});
+    $("#working-grid-toggle")?.addEventListener("change", () => {
+      if (!workingMap) return;
+      if ($("#working-grid-toggle").checked) {
+        if (!workingGridLayer) void addGridToMap(workingMap, "working");
+        else workingGridLayer.addTo(workingMap);
+      } else if (workingGridLayer) workingMap.removeLayer(workingGridLayer);
+    });
     $("#working-map-screen").addEventListener("click", onWorkingScreenClick);
     $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
     $("#working-edit-form").addEventListener("submit", onWorkingEditSubmit);
@@ -1410,6 +1560,10 @@
     $("#back-to-readonly")?.addEventListener("click", () => {
       if (readonlyUid) showReadonlyRecord(readonlyUid);
     });
+    $("#lat")?.addEventListener("input", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
+    $("#lat")?.addEventListener("change", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
+    $("#lon")?.addEventListener("input", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
+    $("#lon")?.addEventListener("change", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
 
   }
 
@@ -1739,6 +1893,12 @@
       L.control.layers(base.layers).addTo(workingMap);
       workingLayer = L.layerGroup().addTo(workingMap);
     }
+    if ($("#working-grid-toggle")?.checked) {
+      if (!workingGridLayer) void addGridToMap(workingMap, "working");
+      else if (!workingMap.hasLayer(workingGridLayer)) workingGridLayer.addTo(workingMap);
+    } else if (workingGridLayer && workingMap.hasLayer(workingGridLayer)) {
+      workingMap.removeLayer(workingGridLayer);
+    }
     workingLayer.clearLayers();
     const items = getWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
@@ -1794,7 +1954,7 @@
     setupNavigation();
     setupGps();
     setupCompass();
-    ["#lat", "#lon", "#species"].forEach((sel) => $(sel)?.addEventListener("change", autoFillNearestDistances));
+    ["#species"].forEach((sel) => $(sel)?.addEventListener("change", autoFillNearestDistances));
     ["#dist-nearest-hiaticula", "#dist-nearest-dubius"].forEach((sel) => $(sel)?.addEventListener("input", (event) => { event.target.dataset.manual = "1"; }));
     setupExports();
     setupFieldMode();
