@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: sieweczka
+      POSTGRES_USER: sieweczka
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./api/src/schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+  sieweczka-api:
+    build: ./api
+    env_file: .env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+volumes:
+  pgdata:
