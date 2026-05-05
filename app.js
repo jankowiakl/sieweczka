@@ -12,6 +12,73 @@
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
 
+  const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
+  const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
+
+  function getClientId() {
+    const key = "sieweczka-client-id-v1";
+    let id = localStorage.getItem(key);
+    if (!id) { id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`; localStorage.setItem(key, id); }
+    return id;
+  }
+  function getSyncConfig() { try { return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY) || "{}"); } catch { return {}; } }
+  function setSyncConfig(cfg) { localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(cfg)); }
+  function getLastSyncAt() { try { return JSON.parse(localStorage.getItem(SYNC_STATE_KEY) || "{}").lastSyncAt || null; } catch { return null; } }
+  function setLastSyncAt(v) { localStorage.setItem(SYNC_STATE_KEY, JSON.stringify({ lastSyncAt: v })); }
+  async function testSyncConnection() {
+    const cfg = getSyncConfig();
+    const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/health`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+  async function syncNow() {
+    const cfg = getSyncConfig();
+    if (!cfg.apiUrl || !cfg.token) throw new Error("Brak konfiguracji synchronizacji");
+    const entries = getEntries();
+    const workingNests = getWorkingNests();
+    const payload = { clientId: getClientId(), lastSyncAt: getLastSyncAt(), records: entries, workingNests };
+    const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/sync`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` }, body: JSON.stringify(payload) });
+    if (!res.ok) throw new Error(`Sync HTTP ${res.status}`);
+    const data = await res.json();
+    const local = new Map(getEntries().map((r)=>[String(r.uid), r]));
+    for (const rec of (data.records || [])) {
+      const existing = local.get(String(rec.uid));
+      if (!existing || new Date(rec.updatedAt || 0) >= new Date(existing.updatedAt || 0)) local.set(String(rec.uid), normalizeEntry(rec));
+    }
+    setEntries(Array.from(local.values()));
+    const localWorking = new Map(getWorkingNests().map((w)=>[String(w.id), normalizeWorkingNest(w)]));
+    for (const wn of (data.workingNests || [])) {
+      const incoming = normalizeWorkingNest(wn);
+      const existing = localWorking.get(String(incoming.id));
+      if (!existing || new Date(incoming.updatedAt || 0) >= new Date(existing.updatedAt || 0)) localWorking.set(String(incoming.id), incoming);
+    }
+    setWorkingNests(Array.from(localWorking.values()));
+    if (workingMap) renderWorkingMap();
+    setLastSyncAt(data.serverTime || new Date().toISOString());
+    return data;
+  }
+  function markSyncStatus(uid, status) {
+    const entries = getEntries();
+    const i = entries.findIndex((e)=>String(e.uid)===String(uid));
+    if (i >= 0) { entries[i].syncStatus = status; setEntries(entries); }
+  }
+  function setupSyncUI() {
+    const cfg = getSyncConfig();
+    setValue("#sync-api-url", cfg.apiUrl || "");
+    setValue("#sync-token", cfg.token || "");
+    $("#sync-save-config")?.addEventListener("click", () => {
+      setSyncConfig({ apiUrl: trim("#sync-api-url"), token: trim("#sync-token") });
+      $("#sync-status").textContent = "Zapisano ustawienia synchronizacji.";
+    });
+    $("#sync-test-connection")?.addEventListener("click", async () => {
+      try { await testSyncConnection(); $("#sync-status").textContent = "Połączenie OK."; } catch (e) { $("#sync-status").textContent = `Błąd: ${e.message}`; }
+    });
+    $("#sync-now")?.addEventListener("click", async () => {
+      try { await syncNow(); $("#sync-status").textContent = "Synchronizacja zakończona."; renderEntries(); } catch (e) { $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`; }
+    });
+    window.addEventListener("online", () => { syncNow().catch(()=>{}); });
+  }
+
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const value = (selector, fallback = "") => $(selector)?.value ?? fallback;
@@ -915,6 +982,7 @@
     const idx = entries.findIndex((entry) => String(entry.uid) === String(record.uid));
     if (idx >= 0) entries[idx] = record;
     else entries.unshift(record);
+    record.syncStatus = navigator.onLine ? "pending" : "pending";
     if (!setEntries(entries)) return;
 
     editingUid = null;
@@ -925,6 +993,7 @@
     resetForm();
     showView("records");
     alert("Rekord zapisany.");
+    if (navigator.onLine) { syncNow().catch(() => { markSyncStatus(record.uid, "error"); }); }
   }
 
   function saveDraft() {
@@ -1194,6 +1263,7 @@
           <p>${escapeHtml(LABELS.species[entry.species] || entry.species || "gatunek?")} • ${escapeHtml(entry.sector || "sektor?")}</p>
           <p class="muted">${escapeHtml(entry.obsDate || "")} ${escapeHtml(entry.obsTime || "")} • jaja: ${entry.eggCount ?? "brak"} • obserwator: ${escapeHtml(entry.observer || "brak")}</p>
           <p class="muted">GPS: ${entry.lat ?? "brak"}, ${entry.lon ?? "brak"} • protokół: ${escapeHtml(entry.protocolVersion || "")}</p>
+          <p class="muted">Sync: ${escapeHtml(entry.syncStatus || "pending")}</p>
         </div>
         <div class="entry-actions">
           <button type="button" data-action="share" data-uid="${entry.uid}">Udostępnij</button>
@@ -2065,6 +2135,7 @@
     ["#dist-nearest-hiaticula", "#dist-nearest-dubius"].forEach((sel) => $(sel)?.addEventListener("input", (event) => { event.target.dataset.manual = "1"; }));
     setupExports();
     setupFieldMode();
+    setupSyncUI();
     syncTilesFromInputs();
     updatePercentSummaries();
     renderEntries();

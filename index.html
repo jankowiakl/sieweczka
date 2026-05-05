@@ -42,6 +42,19 @@
         <a class="button-like big" href="instrukcja_terenowa_sieweczka.pdf" download>Instrukcja terenowa PDF</a>
       </div>
 
+      
+      <section class="card" id="sync-settings">
+        <h3>Synchronizacja</h3>
+        <label>API URL <input id="sync-api-url" type="url" placeholder="https://twoj-serwer/api" /></label>
+        <label>Token synchronizacji <input id="sync-token" type="password" placeholder="Bearer token" /></label>
+        <div class="row-actions">
+          <button id="sync-save-config" type="button">Zapisz ustawienia</button>
+          <button id="sync-test-connection" type="button">Test połączenia</button>
+          <button id="sync-now" type="button" class="primary">Synchronizuj teraz</button>
+        </div>
+        <p id="sync-status" class="muted">Synchronizacja nieaktywna.</p>
+      </section>
+
       <p class="hint">Wersja czysta: formularz krokowy, bezpieczny zapis i edycja, pełny zestaw pól z arkusza terenowego.</p>
     </section>
 
