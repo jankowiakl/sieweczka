@@ -748,11 +748,6 @@ summary {
 .legend-dot{display:inline-flex;width:1.35rem;height:1.35rem;border-radius:999px;align-items:center;justify-content:center;color:#fff;font-weight:700;line-height:1}
 .legend-dot.g{background:#0f766e}.legend-dot.k{background:#7c3aed}
 .legend-dot.r{background:#dc2626}.legend-dot.o{background:#f59e0b}.legend-dot.x{background:#6b7280}.legend-dot.z{background:#2563eb}
-.legend-dot.do_sprawdzenia{background:#dc2626}
-.legend-dot.prawdopodobne{background:#f59e0b}
-.legend-dot.potwierdzone{background:#16a34a}
-.legend-dot.odrzucone{background:#6b7280}
-.legend-dot.przepisane{background:#2563eb}
 .map-marker .pin{width:28px;height:28px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);border-radius:60% 60% 60% 0;transform:rotate(45deg)}
 .map-marker .pin span{transform:rotate(-45deg);display:block}
 .map-marker.gniazdo .pin{background:#0f766e}
