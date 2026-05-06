@@ -114,6 +114,25 @@ function deleteReasonFrom(entity) {
   return entity?.deleteReason || entity?.delete_reason || null;
 }
 
+function recordRowToApi(row) {
+  const payload = row.payload || {};
+  return {
+    uid: row.uid || payload.uid,
+    nestId: row.nest_id || payload.nestId || payload.nest_id || '',
+    species: row.species || payload.species || '',
+    observer: row.observer || payload.observer || '',
+    season: row.season || payload.season || '',
+    obsDate: payload.obsDate || payload.obs_date || '',
+    sector: payload.sector || '',
+    deletedAt: row.deleted_at || payload.deletedAt || payload.deleted_at || null,
+    deletedBy: row.deleted_by || payload.deletedBy || payload.deleted_by || null,
+    deleteReason: row.delete_reason || payload.deleteReason || payload.delete_reason || '',
+    updatedAt: row.updated_at || payload.updatedAt || payload.updated_at || null,
+    serverUpdatedAt: row.server_updated_at || null,
+    payload
+  };
+}
+
 function withActorPayload(payload, user, existing = null) {
   if (!user || user.legacy) return payload;
   return {
@@ -360,6 +379,36 @@ app.get('/api/users', authenticateUser, requireRole('admin'), async (_req, res) 
   res.json({ users: q.rows });
 });
 
+app.get('/api/admin/deleted-records', authenticateUser, requireRole('admin'), async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit || '100', 10) || 100, 1), 500);
+    const qText = String(req.query.q || '').trim();
+    const params = [];
+    let where = `(deleted_at IS NOT NULL OR NULLIF(payload->>'deletedAt', '') IS NOT NULL OR NULLIF(payload->>'deleted_at', '') IS NOT NULL)`;
+    if (qText) {
+      params.push(`%${qText.toLowerCase()}%`);
+      where += ` AND (
+        lower(uid) LIKE $${params.length}
+        OR lower(COALESCE(nest_id, payload->>'nestId', payload->>'nest_id', '')) LIKE $${params.length}
+        OR lower(COALESCE(observer, payload->>'observer', '')) LIKE $${params.length}
+        OR lower(COALESCE(species, payload->>'species', '')) LIKE $${params.length}
+      )`;
+    }
+    params.push(limit);
+    const result = await db.query(
+      `SELECT uid,nest_id,species,observer,season,updated_at,deleted_at,deleted_by,delete_reason,server_updated_at,payload
+       FROM records
+       WHERE ${where}
+       ORDER BY COALESCE(deleted_at, NULLIF(payload->>'deletedAt', '')::timestamptz, NULLIF(payload->>'deleted_at', '')::timestamptz, server_updated_at) DESC
+       LIMIT $${params.length}`,
+      params
+    );
+    res.json({ records: result.rows.map(recordRowToApi), serverTime: new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/users', authenticateUser, requireRole('admin'), async (req, res, next) => {
   try {
     const user = await createUser(req.body || {}, req.user);
@@ -547,12 +596,25 @@ async function softDeletePayload(table, idColumn, id, user, reason) {
 }
 
 async function restorePayload(table, idColumn, id, user) {
-  const q = await db.query(`SELECT payload FROM ${table} WHERE ${idColumn} = $1`, [id]);
+  const q = await db.query(`SELECT payload, deleted_at, deleted_by, delete_reason FROM ${table} WHERE ${idColumn} = $1`, [id]);
   const row = q.rows[0];
   if (!row) return null;
+  const existingPayload = row.payload || {};
+  const alreadyRestored = !row.deleted_at && !existingPayload.deletedAt && !existingPayload.deleted_at;
   const now = new Date().toISOString();
-  const payload = { ...(row.payload || {}), deletedAt: null, deletedBy: null, deleteReason: null, updatedAt: now, updatedBy: user.id, updatedByName: user.name };
-  return { payload, now };
+  const payload = {
+    ...existingPayload,
+    deletedAt: null,
+    deleted_at: null,
+    deletedBy: null,
+    deleted_by: null,
+    deleteReason: null,
+    delete_reason: null,
+    updatedAt: now,
+    updatedBy: user.id,
+    updatedByName: user.name
+  };
+  return { payload, now, alreadyRestored };
 }
 
 app.post('/api/records/:uid/delete', authenticateUser, requireRole('admin', 'coordinator', 'observer'), async (req, res) => {
@@ -588,6 +650,7 @@ app.post('/api/photos/:id/delete', authenticateUser, requireRole('admin', 'coord
 app.post('/api/records/:uid/restore', authenticateUser, requireRole('admin'), async (req, res) => {
   const state = await restorePayload('records', 'uid', req.params.uid, req.user);
   if (!state) return res.status(404).json({ error: 'not found' });
+  if (state.alreadyRestored) return res.json({ ok: true, alreadyRestored: true, record: state.payload });
   await db.query('UPDATE records SET deleted_at=NULL, deleted_by=NULL, delete_reason=NULL, updated_at=$2, updated_by=$3, payload=$4, server_updated_at=now() WHERE uid=$1', [req.params.uid, state.now, req.user.id, state.payload]);
   await audit(req.user, 'record_restored', 'record', req.params.uid, {});
   res.json({ ok: true, record: state.payload });

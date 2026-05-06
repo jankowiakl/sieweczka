@@ -68,7 +68,8 @@
     "random-pct-fine-gravel": ["Drobny żwir", "Drobne kamienie i otoczaki większe od piasku; koduj tak samo jak przy gnieździe."],
     "nest-pct-coarse": ["Gruby żwir / kamienie", "Grubsze kamienie, otoczaki i większe frakcje mineralne widoczne pojedynczo lub w skupieniach."],
     "random-pct-coarse": ["Gruby żwir / kamienie", "Grubsze kamienie, otoczaki i większe frakcje mineralne w punkcie losowym."],
-    "pct-gravel": ["Żwir / kamienie w buforze", "Łączny udział powierzchni żwirowych, kamienistych i otoczakowych. W mezohabitatcie można łączyć frakcje w jedną klasę."],
+    "pct-fine-gravel": ["Żwir w buforze", "Drobny lub średni materiał żwirowy bez dominacji dużych kamieni. Koduj tu powierzchnie żwirowe, które nie są wyraźnie kamieniste."],
+    "pct-gravel": ["Kamienie w buforze", "Większe kamienie, otoczaki i grubszy materiał kamienisty. Dawna kategoria „Żwir / kamienie” jest traktowana jako kamienie, żeby stare dane pozostały czytelne."],
     "nest-pct-shells": ["Muszle", "Fragmenty muszli, skorup lub wyraźne nagromadzenia materiału muszlowego. Koduj osobno tylko, gdy są dobrze widoczne."],
     "random-pct-shells": ["Muszle", "Fragmenty muszli lub skorup w kwadracie 1 m² punktu losowego."],
     "nest-pct-live-veg": ["Roślinność żywa", "Zielone, żywe części roślin w obrębie kwadratu. Oceniaj procent powierzchni zakrytej rzutem roślin, nie liczbę pędów."],
@@ -81,13 +82,13 @@
     "nest-pct-anthro": ["Antropogeniczne", "Szkło, plastik, metal, beton, sznurki, odpady budowlane lub fragmenty infrastruktury. Każdy nienaturalny element zaliczaj do tej klasy."],
     "random-pct-anthro": ["Antropogeniczne", "Nienaturalne elementy w kwadracie punktu losowego: szkło, plastik, metal, beton, sznurki itd."],
     "pct-water": ["Woda / podmokłość", "Otwarta woda, mokry brzeg lub stale zabagnione fragmenty powierzchni w promieniu 15 m."],
-    "pct-other": ["Inne", "Powierzchnie, których nie da się sensownie przypisać do piasku, żwiru/kamieni, roślinności ani wody/podmokłości."],
+    "pct-other": ["Muszle w buforze", "Pokrycie muszlami lub fragmentami muszli. Dawna kategoria „Inne” w mezohabitacie jest pokazywana jako muszle, żeby stare dane pozostały czytelne."],
   };
 
   const GROUP_HELP = {
     nest: ["Pokrycie w kwadracie 1 m²", "Udział powierzchni zajmowany przez każdą klasę w kwadracie fotograficznym 1 × 1 m. Najlepiej zapisywać w procentach; drobne odchylenie sumy około ±5% jest akceptowalne."],
     random: ["Pokrycie w kwadracie 1 m²", "Opis punktu losowego wykonuj tymi samymi klasami i zasadami co opis gniazda, aby porównanie było powtarzalne."],
-    meso: ["Bufor 15 m", "Koło o promieniu 15 m wokół gniazda, używane do szybkiej oceny otwartości i struktury otoczenia. Jeśli oceniasz w terenie, stosuj te same klasy co później na ortofotomapie."],
+    meso: ["Bufor 15 m", "Koło o promieniu 15 m wokół gniazda. Suma procentów dla piasku, żwiru, kamieni, roślinności, wody/podmokłości i muszli powinna wynosić 100%."],
   };
 
   let deferredInstallPrompt = null;

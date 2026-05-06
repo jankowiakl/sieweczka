@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-menu-export-advanced-hidden";
+  const APP_VERSION = "2026.05.06-admin-deleted-records-restore";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -176,10 +176,6 @@
       } catch (e) {
         $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`;
       }
-    });
-    $("#home-export-toggle")?.addEventListener("click", () => {
-      const panel = $("#home-export-panel");
-      if (panel) panel.hidden = !panel.hidden;
     });
     window.addEventListener("online", () => { syncNow().catch(()=>{}); });
   }
@@ -367,6 +363,69 @@
     `).join("") || `<p class="muted">Brak użytkowników.</p>`;
   }
 
+  function renderAdminDeletedRecords(records) {
+    const list = $("#admin-deleted-records-list");
+    if (!list) return;
+    list.innerHTML = (records || []).map((record) => `
+      <article class="entry-card">
+        <div class="entry-main">
+          <h3>${escapeHtml(record.nestId || "(bez ID)")}</h3>
+          <p>${escapeHtml(LABELS.species?.[record.species] || record.species || "—")} • ${escapeHtml(record.obsDate || "—")} • obserwator: ${escapeHtml(record.observer || "—")}</p>
+          <p>Sektor: ${escapeHtml(record.sector || record.payload?.sector || "—")} • UID: ${escapeHtml(record.uid || "—")}</p>
+          <p class="muted">Ukryto: ${escapeHtml(record.deletedAt || "—")} • przez: ${escapeHtml(record.deletedBy || "—")}</p>
+          <p class="muted">Powód: ${escapeHtml(record.deleteReason || "—")}</p>
+        </div>
+        <div class="entry-actions">
+          <button type="button" data-admin-restore-record="${escapeHtml(record.uid || "")}">Przywróć</button>
+        </div>
+      </article>
+    `).join("") || `<p class="muted">Brak ukrytych wpisów.</p>`;
+  }
+
+  async function loadAdminDeletedRecords() {
+    if (!isAdmin()) {
+      $("#admin-deleted-records-status").textContent = "Brak uprawnień administratora.";
+      renderAdminDeletedRecords([]);
+      return;
+    }
+    $("#admin-deleted-records-status").textContent = "Pobieram ukryte wpisy...";
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    const res = await fetch(`${apiBase}/api/admin/deleted-records?_ts=${Date.now()}`, { headers: getSyncAuthHeaders(cfg), cache: "no-store" });
+    if (res.status === 403) throw new Error("Brak uprawnień administratora.");
+    if (!res.ok) throw new Error(await readApiError(res, `Deleted records HTTP ${res.status}`));
+    const data = await res.json();
+    renderAdminDeletedRecords(data.records || []);
+    $("#admin-deleted-records-status").textContent = (data.records || []).length ? "Lista ukrytych wpisów odświeżona." : "Brak ukrytych wpisów.";
+  }
+
+  async function restoreAdminDeletedRecord(uid) {
+    if (!uid) return;
+    if (!confirm("Czy na pewno chcesz przywrócić ten rekord? Po synchronizacji będzie ponownie widoczny dla użytkowników.")) return;
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    const res = await fetch(`${apiBase}/api/records/${encodeURIComponent(uid)}/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) },
+      body: "{}"
+    });
+    if (res.status === 403) throw new Error("Brak uprawnień administratora.");
+    if (!res.ok) throw new Error(await readApiError(res, `Restore HTTP ${res.status}`));
+    const data = await res.json();
+    if (data.record) {
+      const restored = normalizeEntry(data.record);
+      const entries = getEntries();
+      const idx = entries.findIndex((entry) => String(entry.uid) === String(restored.uid));
+      if (idx >= 0) entries[idx] = restored;
+      else entries.unshift(restored);
+      setEntries(entries);
+    }
+    renderEntries();
+    updateCounts();
+    await loadAdminDeletedRecords();
+    $("#admin-deleted-records-status").textContent = "Rekord przywrócony.";
+  }
+
   function setupAuthUI() {
     setValue("#login-api-url", getSyncConfig().apiUrl || DEFAULT_API_URL);
     $("#login-advanced-toggle")?.addEventListener("click", () => {
@@ -405,6 +464,12 @@
     });
     $("#admin-refresh-users")?.addEventListener("click", async () => {
       try { await loadAdminUsers({ force: true }); } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
+    });
+    $("#admin-load-deleted-records")?.addEventListener("click", async () => {
+      try { await loadAdminDeletedRecords(); } catch (e) { $("#admin-deleted-records-status").textContent = `Błąd: ${e.message}`; }
+    });
+    $("#admin-refresh-deleted-records")?.addEventListener("click", async () => {
+      try { await loadAdminDeletedRecords(); } catch (e) { $("#admin-deleted-records-status").textContent = `Błąd: ${e.message}`; }
     });
     $("#check-app-update")?.addEventListener("click", async () => {
       try { $("#app-update-status").textContent = await checkForAppUpdate(); } catch (e) { $("#app-update-status").textContent = `Nie udało się sprawdzić aktualizacji: ${e.message}`; }
@@ -474,6 +539,15 @@
         if (finalStatus) $("#admin-users-status").textContent = finalStatus;
       } catch (e) {
         $("#admin-users-status").textContent = `Błąd: ${e.message}`;
+      }
+    });
+    $("#admin-deleted-records-list")?.addEventListener("click", async (event) => {
+      const btn = event.target.closest("button[data-admin-restore-record]");
+      if (!btn) return;
+      try {
+        await restoreAdminDeletedRecord(btn.dataset.adminRestoreRecord);
+      } catch (e) {
+        $("#admin-deleted-records-status").textContent = `Błąd: ${e.message}`;
       }
     });
     $("#ui-font-size")?.addEventListener("change", () => {
@@ -607,10 +681,11 @@
       rowsEl: '[data-group="meso"] .percent-rows',
       items: [
         ["pct-sand", "Piasek"],
-        ["pct-gravel", "Żwir / kamienie"],
+        ["pct-fine-gravel", "Żwir"],
+        ["pct-gravel", "Kamienie"],
         ["pct-vegetation", "Roślinność"],
         ["pct-water", "Woda / podmokłość"],
-        ["pct-other", "Inne"],
+        ["pct-other", "Muszle"],
       ],
     },
   };
@@ -1178,6 +1253,7 @@
       meso: {
         ...meso,
         pctSand: Number(meso.pctSand || 0),
+        pctFineGravel: Number(meso.pctFineGravel || meso.pctMesoGravel || 0),
         pctGravel: Number(meso.pctGravel || 0),
         pctVegetation: Number(meso.pctVegetation || 0),
         pctWater: Number(meso.pctWater || 0),
@@ -1597,6 +1673,7 @@
 
       meso: {
         pctSand: getNumber("#pct-sand", 0) || 0,
+        pctFineGravel: getNumber("#pct-fine-gravel", 0) || 0,
         pctGravel: getNumber("#pct-gravel", 0) || 0,
         pctVegetation: getNumber("#pct-vegetation", 0) || 0,
         pctWater: getNumber("#pct-water", 0) || 0,
@@ -1661,9 +1738,9 @@
     const quality = [];
     const nestSum = coverageSum(record.nestMicro.coverage);
     const randomSum = coverageSum(record.randomMicro.coverage);
-    const mesoSum = record.meso.pctSand + record.meso.pctGravel + record.meso.pctVegetation + record.meso.pctWater + record.meso.pctOther;
+    const mesoSum = record.meso.pctSand + (record.meso.pctFineGravel || 0) + record.meso.pctGravel + record.meso.pctVegetation + record.meso.pctWater + record.meso.pctOther;
     if (nestSum !== 100) quality.push({ step: 3, field: "#nest-pct-sand", message: `Mikrohabitat gniazda: suma pokrycia wynosi ${nestSum}%, powinna wynosić 100%.` });
-    if (mesoSum !== 100) quality.push({ step: 6, field: "#pct-sand", message: `Mezohabitat: suma pokrycia wynosi ${mesoSum}%, powinna wynosić 100%.` });
+    if (mesoSum !== 100) quality.push({ step: 6, field: "#pct-sand", message: `Mezohabitat: suma pokrycia wynosi ${mesoSum}%, powinna wynosić 100% dla piasku, żwiru, kamieni, roślinności, wody/podmokłości i muszli.` });
     if (randomSum !== 100) quality.push({ step: 5, field: "#random-pct-sand", message: `Punkt losowy/kontrola: suma pokrycia wynosi ${randomSum}%, powinna wynosić 100%.` });
     if (!record.docPhotoDone || record.docPhotoDone === "unknown") quality.push({ step: 7, field: "#doc-photo-done", message: "Brak informacji o zdjęciu nad kontrolą." });
     if (!(record.nestMicro?.photos?.length)) addErr(2, "#nest-photos", "Brak zdjęcia gniazda.");
@@ -1681,7 +1758,7 @@
     if (emptyNum(record.meso?.distVegEdgeM)) addInfo(6, "#dist-veg-edge", "Puste: odległość do krawędzi zwartej roślinności.");
     if (emptyNum(record.meso?.distVerticalStructureM)) addInfo(6, "#dist-vertical-structure", "Puste: odległość do najbliższego wyższego obiektu.");
     if (emptyNum(record.meso?.distFineGravelPatchM)) addInfo(6, "#dist-fine-gravel-patch", "Puste: odległość do płatu drobnego żwiru.");
-    if (emptyNum(record.meso?.distCoarseGravelPatchM)) addInfo(6, "#dist-coarse-gravel-patch", "Puste: odległość do płatu grubszego żwiru/kamieni.");
+    if (emptyNum(record.meso?.distCoarseGravelPatchM)) addInfo(6, "#dist-coarse-gravel-patch", "Puste: odległość do płatu kamieni.");
     if (emptyNum(record.meso?.distNearestHiaticulaM)) addInfo(6, "#dist-nearest-hiaticula", "Puste: odległość do najbliższego gniazda sieweczki obrożnej.");
     if (emptyNum(record.meso?.distNearestDubiusM)) addInfo(6, "#dist-nearest-dubius", "Puste: odległość do najbliższego gniazda sieweczki rzecznej.");
     if (emptyNum(record.nestMicro?.heightPlantCm)) addInfo(3, "#nest-height-plant", "Puste: wysokość najbliższej rośliny przy gnieździe.");
@@ -2013,6 +2090,7 @@
     setValue("#random-microrelief", record.randomMicro?.microrelief || "flat");
 
     setValue("#pct-sand", record.meso?.pctSand ?? 0);
+    setValue("#pct-fine-gravel", record.meso?.pctFineGravel ?? 0);
     setValue("#pct-gravel", record.meso?.pctGravel ?? 0);
     setValue("#pct-vegetation", record.meso?.pctVegetation ?? 0);
     setValue("#pct-water", record.meso?.pctWater ?? 0);
@@ -2354,7 +2432,7 @@
       ["Identyfikacja", `${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
       ["GPS i zdjęcia gniazda", `${fld("Lat", record.lat)}${fld("Lon", record.lon)}${fld("Dokładność [m]", record.gpsAccuracyM)}${photoGrid(record.nestMicro?.photos, "Zdjęcie gniazda")}`],
       ["Mikrohabitat gniazda", `${fld("Podłoże", LABELS.substrate[record.nestMicro?.substrate] || record.nestMicro?.substrate)}${fld("Piasek [%]", record.nestMicro?.coverage?.pctSand)}${fld("Drobny żwir [%]", record.nestMicro?.coverage?.pctFineGravel)}${fld("Gruby żwir/kamienie [%]", record.nestMicro?.coverage?.pctCoarse)}${fld("Muszle [%]", record.nestMicro?.coverage?.pctShells)}${fld("Roślinność żywa [%]", record.nestMicro?.coverage?.pctLiveVeg)}${fld("Roślinność sucha [%]", record.nestMicro?.coverage?.pctDryVeg)}${fld("Drewno/szczątki [%]", record.nestMicro?.coverage?.pctOrganic)}${fld("Antropogeniczne [%]", record.nestMicro?.coverage?.pctAnthro)}${fld("Suma pokrycia [%]", coverageSum(record.nestMicro?.coverage||{}))}${fld("Odległość do rośliny [cm]", record.nestMicro?.distPlantCm)}${fld("Wysokość rośliny [cm]", record.nestMicro?.heightPlantCm)}${fld("Odległość do obiektu [cm]", record.nestMicro?.distObjectCm)}${fld("Wysokość obiektu [cm]", record.nestMicro?.heightObjectCm)}${fld("Nachylenie", LABELS.slope[record.nestMicro?.slope] || record.nestMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.nestMicro?.microrelief] || record.nestMicro?.microrelief)}`],
-      ["Mezohabitat", `${Object.entries(record.meso||{}).filter(([k])=>k.startsWith("pct")).map(([k,v])=>fld(`Pokrycie ${k}` ,v)).join("")}${fld("Suma pokrycia [%]", Object.entries(record.meso||{}).filter(([k])=>k.startsWith("pct")).reduce((a,[,v])=>a+(Number(v)||0),0))}${fld("Sposób oceny buforu", LABELS.assessmentMethod?.[record.meso?.assessmentMethod] || record.meso?.assessmentMethod)}${fld("Odległość do wody [m]", record.meso?.distWaterM)}${fld("Odległość do krawędzi roślinności [m]", record.meso?.distVegEdgeM)}${fld("Odległość do wysokiego obiektu [m]", record.meso?.distVerticalStructureM)}${fld("Duże obiekty w 15 m", LABELS.yesNoUnknown?.[record.meso?.bigObjects] || record.meso?.bigObjects)}${fld("Odległość do płatu drobnego żwiru [m]", record.meso?.distFineGravelPatchM)}${fld("Odległość do płatu grubszego żwiru [m]", record.meso?.distCoarseGravelPatchM)}${fld("Odległość do najbliższego gniazda obrożnej [m]", record.meso?.distNearestHiaticulaM)}${fld("Odległość do najbliższego gniazda rzecznej [m]", record.meso?.distNearestDubiusM)}${fld("Uwagi przestrzenne", record.meso?.spatialNotes)}`],
+      ["Mezohabitat", `${fld("Piasek [%]", record.meso?.pctSand)}${fld("Żwir [%]", record.meso?.pctFineGravel || 0)}${fld("Kamienie [%]", record.meso?.pctGravel)}${fld("Roślinność [%]", record.meso?.pctVegetation)}${fld("Woda / podmokłość [%]", record.meso?.pctWater)}${fld("Muszle [%]", record.meso?.pctOther)}${fld("Suma pokrycia [%]", (record.meso?.pctSand||0)+(record.meso?.pctFineGravel||0)+(record.meso?.pctGravel||0)+(record.meso?.pctVegetation||0)+(record.meso?.pctWater||0)+(record.meso?.pctOther||0))}${fld("Sposób oceny buforu", LABELS.assessmentMethod?.[record.meso?.assessmentMethod] || record.meso?.assessmentMethod)}${fld("Odległość do wody [m]", record.meso?.distWaterM)}${fld("Odległość do krawędzi roślinności [m]", record.meso?.distVegEdgeM)}${fld("Odległość do wysokiego obiektu [m]", record.meso?.distVerticalStructureM)}${fld("Duże obiekty w 15 m", LABELS.yesNoUnknown?.[record.meso?.bigObjects] || record.meso?.bigObjects)}${fld("Odległość do płatu drobnego żwiru [m]", record.meso?.distFineGravelPatchM)}${fld("Odległość do płatu kamieni [m]", record.meso?.distCoarseGravelPatchM)}${fld("Odległość do najbliższego gniazda obrożnej [m]", record.meso?.distNearestHiaticulaM)}${fld("Odległość do najbliższego gniazda rzecznej [m]", record.meso?.distNearestDubiusM)}${fld("Uwagi przestrzenne", record.meso?.spatialNotes)}`],
       ["Punkt losowy / kontrola", `${fld("Azymut [°]", record.randomMicro?.azimuthDeg)}${fld("Ponowne losowanie", LABELS.yesNoUnknown[record.randomMicro?.wasRerolled] || record.randomMicro?.wasRerolled)}${fld("Powód ponownego losowania", record.randomMicro?.rerollReason)}${fld("GPS kontroli lat", record.randomMicro?.lat)}${fld("GPS kontroli lon", record.randomMicro?.lon)}${fld("Dokładność GPS kontroli [m]", record.randomMicro?.gpsAccuracyM)}`],
       ["Mikrohabitat kontroli", `${fld("Podłoże", LABELS.substrate[record.randomMicro?.substrate] || record.randomMicro?.substrate)}${fld("Piasek [%]", record.randomMicro?.coverage?.pctSand)}${fld("Drobny żwir [%]", record.randomMicro?.coverage?.pctFineGravel)}${fld("Gruby żwir/kamienie [%]", record.randomMicro?.coverage?.pctCoarse)}${fld("Muszle [%]", record.randomMicro?.coverage?.pctShells)}${fld("Roślinność żywa [%]", record.randomMicro?.coverage?.pctLiveVeg)}${fld("Roślinność sucha [%]", record.randomMicro?.coverage?.pctDryVeg)}${fld("Drewno/szczątki [%]", record.randomMicro?.coverage?.pctOrganic)}${fld("Antropogeniczne [%]", record.randomMicro?.coverage?.pctAnthro)}${fld("Suma pokrycia [%]", coverageSum(record.randomMicro?.coverage||{}))}${fld("Odległość do rośliny [cm]", record.randomMicro?.distPlantCm)}${fld("Wysokość rośliny [cm]", record.randomMicro?.heightPlantCm)}${fld("Odległość do obiektu [cm]", record.randomMicro?.distObjectCm)}${fld("Wysokość obiektu [cm]", record.randomMicro?.heightObjectCm)}${fld("Nachylenie", LABELS.slope[record.randomMicro?.slope] || record.randomMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.randomMicro?.microrelief] || record.randomMicro?.microrelief)}${photoGrid(record.randomMicro?.photos, "Zdjęcie kontroli")}`],
       ["Kontrola jakości", `${fld("Zdjęcie dokumentacyjne", LABELS.yesNoUnknown[record.docPhotoDone] || record.docPhotoDone)}${fld("Zdjęcie 1m²", LABELS.yesNoUnknown[record.nestOneMPhotoDone] || record.nestOneMPhotoDone)}${fld("Punkt losowy", LABELS.yesNoUnknown[record.randomPointDone] || record.randomPointDone)}`],
@@ -2813,6 +2891,7 @@
       randomPhotoCount: entry.randomMicro?.photos?.length || 0,
 
       mesoPctSand: entry.meso?.pctSand,
+      mesoPctFineGravel: entry.meso?.pctFineGravel || 0,
       mesoPctGravel: entry.meso?.pctGravel,
       mesoPctVegetation: entry.meso?.pctVegetation,
       mesoPctWater: entry.meso?.pctWater,
@@ -2845,11 +2924,19 @@
   function buildCsv(entries) {
     const rows = entries.map(flattenEntry);
     const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+    const labels = {
+      mesoPctSand: "Mezohabitat — piasek",
+      mesoPctFineGravel: "Mezohabitat — żwir",
+      mesoPctGravel: "Mezohabitat — kamienie",
+      mesoPctVegetation: "Mezohabitat — roślinność",
+      mesoPctWater: "Mezohabitat — woda/podmokłość",
+      mesoPctOther: "Mezohabitat — muszle"
+    };
     const escape = (cell) => {
       const text = cell == null ? "" : String(cell);
       return /[",\n;]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     };
-    return [headers.join(";"), ...rows.map((row) => headers.map((header) => escape(row[header])).join(";"))].join("\n");
+    return [headers.map((header) => labels[header] || header).join(";"), ...rows.map((row) => headers.map((header) => escape(row[header])).join(";"))].join("\n");
   }
 
   function setExportStatus(message) {
