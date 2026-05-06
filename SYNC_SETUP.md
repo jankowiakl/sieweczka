@@ -53,7 +53,7 @@ DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443"
 
 Autoryzacja użytkowników działa przez email i hasło, a aplikacja używa JWT otrzymanego z `/api/login`. `SYNC_TOKEN` zostaje tylko jako awaryjny mechanizm serwerowy i nie jest zaszyty w frontendzie.
 
-Ustawienia API URL są ukryte pod „Ustawienia zaawansowane” i powinny być zmieniane tylko przez administratora lub podczas diagnostyki.
+Ustawienia API URL są ukryte w ustawieniach technicznych administratora w panelu „Użytkownik” i powinny być zmieniane tylko przez administratora lub podczas diagnostyki. Zwykły użytkownik nie widzi pola API URL ani tokenu.
 
 ## Zaproszenia użytkowników
 
@@ -96,7 +96,7 @@ Pierwsza strona pokazuje proste kafelki terenowe:
 - Gniazda robocze;
 - Lista rekordów.
 
-Drugi poziom zawiera synchronizację, eksport, panel użytkownika i pomoc. Ustawienia techniczne są schowane w „Ustawieniach zaawansowanych”.
+Drugi poziom zawiera synchronizację i eksport. Panel użytkownika, pomoc, odświeżenie wersji aplikacji oraz opcje administratora są w górnym menu aplikacji. Ustawienia techniczne są schowane w panelu „Użytkownik” i widoczne tylko dla administratora.
 
 ## Eksport zdjęć z serwera
 

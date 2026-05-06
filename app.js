@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-ux-menu-readonly-fieldmode";
+  const APP_VERSION = "2026.05.06-menu-export-advanced-hidden";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -246,6 +246,7 @@
     $("#open-admin")?.toggleAttribute("hidden", true);
     $("#open-user")?.toggleAttribute("hidden", true);
     $("#home-help-link")?.toggleAttribute("hidden", true);
+    $("#sync-settings")?.toggleAttribute("hidden", !isAdmin());
     $("#sync-token-label")?.toggleAttribute("hidden", !isAdmin());
     ["#export-csv", "#export-json", "#export-zip", "#export-zip-photos", "#export-kml"].forEach((selector) => {
       const el = $(selector);
@@ -289,7 +290,6 @@
         ${canExport ? `<button type="button" data-menu-action="export">Eksport</button>` : ""}
         ${isAdmin() ? `<button type="button" data-menu-action="admin">Administrator</button>` : ""}
         <button type="button" data-menu-action="settings">Ustawienia</button>
-        <button type="button" data-menu-action="advanced">Ustawienia zaawansowane</button>
         <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
         <button type="button" data-menu-action="refresh">Odśwież wersję aplikacji</button>
         <button type="button" class="danger" data-menu-action="logout">Wyloguj</button>
@@ -317,8 +317,7 @@
       if (action === "home") showView("home");
       if (action === "user" || action === "settings") { renderUserPanel(); showView("user"); }
       if (action === "admin") { showView("admin"); await loadAdminUsers({ force: true }).catch((error) => { $("#admin-users-status").textContent = `Błąd: ${error.message}`; }); }
-      if (action === "sync") { showView("home"); $("#sync-settings")?.removeAttribute("hidden"); $("#sync-settings")?.setAttribute("open", ""); $("#sync-now")?.focus(); }
-      if (action === "advanced") { showView("home"); $("#sync-settings")?.removeAttribute("hidden"); $("#sync-settings")?.setAttribute("open", ""); $("#sync-api-url")?.focus(); }
+      if (action === "sync") { showView("home"); $("#home-sync-now")?.click(); }
       if (action === "export") { showView("home"); $("#home-export-panel").hidden = false; $("#export-zip")?.focus(); }
       if (action === "refresh") $("#refresh-app-version")?.click();
       if (action === "logout") $("#logout")?.click();

@@ -92,18 +92,6 @@
         </div>
       </section>
 
-      <details id="sync-settings" class="advanced-panel" hidden>
-        <summary>Ustawienia zaawansowane</summary>
-        <p class="muted">Zmieniaj tylko, jeśli wiesz co robisz.</p>
-        <label>API URL <input id="sync-api-url" type="url" placeholder="https://twoj-serwer" /></label>
-        <label id="sync-token-label">Token awaryjny/admin <input id="sync-token" type="password" placeholder="Opcjonalny legacy SYNC_TOKEN" /></label>
-        <div class="row-actions">
-          <button id="sync-save-config" type="button">Zapisz ustawienia</button>
-          <button id="sync-test-connection" type="button">Test połączenia</button>
-          <button id="sync-now" type="button" class="primary">Synchronizuj teraz</button>
-        </div>
-        <p id="sync-status" class="muted">Synchronizacja nieaktywna.</p>
-      </details>
     </section>
 
     <section id="user-screen" class="screen card" hidden>
@@ -130,6 +118,18 @@
       </div>
       <p class="muted">Odświeżenie wersji aplikacji nie usuwa rekordów ani zdjęć zapisanych lokalnie.</p>
       <p id="app-update-status" class="muted"></p>
+      <details id="sync-settings" class="advanced-panel" hidden>
+        <summary>Ustawienia techniczne administratora</summary>
+        <p class="muted">Zmieniaj tylko, jeśli wiesz co robisz.</p>
+        <label>API URL <input id="sync-api-url" type="url" placeholder="https://twoj-serwer" /></label>
+        <label id="sync-token-label">Token awaryjny/admin <input id="sync-token" type="password" placeholder="Opcjonalny legacy SYNC_TOKEN" /></label>
+        <div class="row-actions">
+          <button id="sync-save-config" type="button">Zapisz ustawienia</button>
+          <button id="sync-test-connection" type="button">Test połączenia</button>
+          <button id="sync-now" type="button" class="primary">Synchronizuj teraz</button>
+        </div>
+        <p id="sync-status" class="muted">Synchronizacja nieaktywna.</p>
+      </details>
     </section>
 
     <section id="admin-screen" class="screen card" hidden>

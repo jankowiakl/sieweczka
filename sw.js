@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-ux-menu-readonly-fieldmode-1";
+const CACHE_NAME = "sieweczka-app-v2026-05-menu-export-advanced-hidden-1";
 const APP_SHELL = [
   "./",
   "./index.html",
