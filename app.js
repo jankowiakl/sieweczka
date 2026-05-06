@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-export-grid-drafts-font-id";
+  const APP_VERSION = "2026.05.06-grid-wgs84-observer-draft-exit";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -601,7 +601,7 @@
   async function loadGridGeoJson() {
     if (gridGeoJsonData) return gridGeoJsonData;
     if (!gridGeoJsonPromise) {
-      gridGeoJsonPromise = fetch("data/grid_vanvan.geojson", { cache: "no-cache" })
+      gridGeoJsonPromise = fetch("data/grid_vanvan_wgs84.geojson", { cache: "no-cache" })
         .then((response) => {
           if (!response.ok) throw new Error(`Nie udało się załadować gridu: ${response.status}`);
           return response.json();
@@ -647,16 +647,19 @@
   function validateGridGeoJson(json) {
     const features = json?.features || [];
     if (!features.length) {
-      console.warn("Grid: plik data/grid_vanvan.geojson nie zawiera pól.");
+      console.warn("Grid: plik data/grid_vanvan_wgs84.geojson nie zawiera pól.");
       return;
     }
     let invalid = false;
+    let looksLikeEpsg2180 = false;
     for (const feature of features) {
       walkGridCoords(feature?.geometry?.coordinates, ([lon, lat]) => {
         if (Math.abs(lon) > 180 || Math.abs(lat) > 90) invalid = true;
+        if (Math.abs(lon) > 1000 || Math.abs(lat) > 1000) looksLikeEpsg2180 = true;
       });
     }
-    if (invalid) console.warn("Grid nie wygląda na EPSG:4326. Wymagana konwersja do WGS84.");
+    if (looksLikeEpsg2180) throw new Error("Grid wygląda na EPSG:2180. Leaflet wymaga EPSG:4326.");
+    if (invalid) throw new Error("Grid ma współrzędne poza zakresem lon/lat. Wymagana konwersja do WGS84.");
   }
 
   async function addGridToMap(map, target) {
@@ -691,7 +694,7 @@
     if (target === "records") recordsGridLayer = gridLayer;
     if (target === "working") workingGridLayer = gridLayer;
     setGridStatus(target, `załadowano ${count} pól`);
-    console.info(`Grid: załadowano ${count} pól (${target})`);
+    console.info(`Grid loaded: ${count} features (${target})`);
     return gridLayer;
   }
 
@@ -852,6 +855,19 @@
   function formatPhotoSyncStatus(status = getPhotoSyncSummary()) {
     const base = `Zdjęcia: lokalne ${status.local || 0}, wysłane ${status.uploaded || 0}, oczekują ${status.pending || 0}, błędy ${status.error || 0}.`;
     return status.ok === false && status.errorMessage ? `${base} Błąd uploadu: ${status.errorMessage}` : base;
+  }
+
+  function currentUserDisplayName() {
+    const user = getCurrentUser();
+    return String(user?.name || user?.email || "").trim();
+  }
+
+  function fillDefaultObserverForNewRecord() {
+    if (editingUid) return;
+    const observerEl = $("#observer");
+    if (!observerEl || String(observerEl.value || "").trim()) return;
+    const displayName = currentUserDisplayName();
+    if (displayName) observerEl.value = displayName;
   }
 
   function photoStatusForRef(ref) {
@@ -1683,24 +1699,41 @@
     if (navigator.onLine) { syncNow().catch(() => { markSyncStatus(record.uid, "error"); }); }
   }
 
-  function writeDraft(showAlert = true) {
+  async function persistDraftPhotos() {
+    const selectedNest = $("#nest-photos")?.files?.length ? await saveSelectedFiles("#nest-photos") : [];
+    const selectedRandom = $("#random-photos")?.files?.length ? await saveSelectedFiles("#random-photos") : [];
+    if (selectedNest.length) {
+      currentNestPhotos = [...(currentNestPhotos || []), ...selectedNest];
+      $("#nest-photos").value = "";
+    }
+    if (selectedRandom.length) {
+      currentRandomPhotos = [...(currentRandomPhotos || []), ...selectedRandom];
+      $("#random-photos").value = "";
+    }
+    if (selectedNest.length || selectedRandom.length) renderPhotoPreviews();
+  }
+
+  async function writeDraft(showAlert = true) {
+    await persistDraftPhotos();
     const data = {};
     new FormData($("#entry-form")).forEach((v, k) => { data[k] = v; });
     // FormData does not include hidden fields without name attributes, so save by id as well.
     $$("input, select, textarea", $("#entry-form")).forEach((el) => {
       if (el.id && el.type !== "file") data[el.id] = el.value;
     });
+    data.__currentNestPhotos = currentNestPhotos || [];
+    data.__currentRandomPhotos = currentRandomPhotos || [];
     localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data }));
     updateDraftResumeButton();
     if (showAlert) alert("Szkic zapisany lokalnie.");
   }
 
   function saveDraft() {
-    writeDraft(true);
+    return writeDraft(true);
   }
 
   function saveDraftSilently() {
-    writeDraft(false);
+    return writeDraft(false);
   }
 
   function getDraft() {
@@ -1708,18 +1741,26 @@
   }
 
   function updateDraftResumeButton() {
+    const hasDraft = !!getDraft();
+    const notice = $("#draft-notice");
+    if (notice) notice.hidden = !hasDraft;
     const btn = $("#resume-draft");
-    if (btn) btn.hidden = !getDraft();
+    if (btn) btn.hidden = !hasDraft;
   }
 
   function loadDraftToForm() {
     const draft = getDraft();
     if (!draft?.data) return false;
     resetForm();
+    currentNestPhotos = Array.isArray(draft.data.__currentNestPhotos) ? draft.data.__currentNestPhotos : [];
+    currentRandomPhotos = Array.isArray(draft.data.__currentRandomPhotos) ? draft.data.__currentRandomPhotos : [];
     Object.entries(draft.data).forEach(([id, val]) => {
+      if (id.startsWith("__")) return;
       const el = document.getElementById(id);
       if (el && el.type !== "file") el.value = val;
     });
+    const nestIdEl = $("#nest-id");
+    if (nestIdEl && String(nestIdEl.value || "").trim()) nestIdEl.dataset.manual = "1";
     syncTilesFromInputs();
     updatePercentSummaries();
     renderPhotoPreviews();
@@ -1733,15 +1774,45 @@
     if (editingUid || currentStep > 1 || getDraft()) return true;
     if ((currentNestPhotos || []).length || (currentRandomPhotos || []).length) return true;
     if ($("#nest-photos")?.files?.length || $("#random-photos")?.files?.length) return true;
-    const meaningful = ["#nest-id", "#season", "#observer", "#sector", "#lat", "#lon", "#notes-identification", "#notes-nest-micro", "#notes-random-micro", "#notes-meso", "#notes"];
+    if (value("#species", "unknown") !== "unknown") return true;
+    const observerText = String($("#observer")?.value || "").trim();
+    if (observerText && observerText !== currentUserDisplayName()) return true;
+    const meaningful = ["#nest-id", "#season", "#sector", "#lat", "#lon", "#notes-identification", "#notes-nest-micro", "#notes-random-micro", "#notes-meso", "#notes"];
     return meaningful.some((selector) => String($(selector)?.value || "").trim());
   }
 
-  function goHomeFromMaybeForm() {
+  function confirmDraftExit(message) {
+    return new Promise((resolve) => {
+      const modal = document.createElement("div");
+      modal.className = "draft-exit-modal";
+      modal.innerHTML = `
+        <div class="draft-exit-dialog" role="dialog" aria-modal="true" aria-label="Wyjście z arkusza">
+          <p>${escapeHtml(message)}</p>
+          <div class="row-actions">
+            <button type="button" class="ghost" data-choice="stay">Zostań w arkuszu</button>
+            <button type="button" data-choice="leave">Zapisz szkic i wyjdź</button>
+          </div>
+        </div>
+      `;
+      const close = (value) => { modal.remove(); resolve(value); };
+      modal.addEventListener("click", (event) => {
+        const choice = event.target.closest("[data-choice]")?.dataset.choice;
+        if (choice === "stay") close(false);
+        if (choice === "leave") close(true);
+      });
+      document.body.appendChild(modal);
+      modal.querySelector("[data-choice='stay']")?.focus();
+    });
+  }
+
+  async function goHomeFromMaybeForm() {
     if (formHasStarted()) {
-      const ok = confirm("Wychodzisz z arkusza. Niedokończony wpis zostanie zapisany w szkicach. Czy kontynuować?");
+      const message = editingUid
+        ? "Wychodzisz z edycji. Niezapisane zmiany zostaną zapisane jako szkic. Będzie można do niego wrócić później."
+        : "Wychodzisz z arkusza. Niedokończony wpis zostanie zapisany w szkicach. Będzie można do niego wrócić później.";
+      const ok = await confirmDraftExit(message);
       if (!ok) return;
-      saveDraftSilently();
+      await saveDraftSilently();
     }
     revokePhotoUrls("server");
     updateDraftResumeButton();
@@ -1802,6 +1873,7 @@
 
   function startNewRecord() {
     resetForm();
+    fillDefaultObserverForNewRecord();
     showView("form");
     showStep(1);
   }
@@ -2337,8 +2409,12 @@
   }
 
   function setupNavigation() {
-    $("#home-shortcut").addEventListener("click", goHomeFromMaybeForm);
-    $$(".back-home").forEach((btn) => btn.addEventListener("click", goHomeFromMaybeForm));
+    const handleHomeExit = () => goHomeFromMaybeForm().catch((error) => {
+      console.error(error);
+      alert(`Nie udało się zapisać szkicu: ${error.message || error}`);
+    });
+    $("#home-shortcut").addEventListener("click", handleHomeExit);
+    $$(".back-home").forEach((btn) => btn.addEventListener("click", handleHomeExit));
     $("#resume-draft")?.addEventListener("click", () => {
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
     });
@@ -2356,7 +2432,10 @@
       console.error(error);
       alert(`Zapis nie powiódł się: ${error.message || error}`);
     }));
-    $("#save-draft").addEventListener("click", saveDraft);
+    $("#save-draft").addEventListener("click", () => saveDraft().catch((error) => {
+      console.error(error);
+      alert(`Nie udało się zapisać szkicu: ${error.message || error}`);
+    }));
     $("#cancel-edit").addEventListener("click", () => {
       resetForm();
       showView("records");

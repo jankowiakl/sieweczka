@@ -115,14 +115,34 @@ Jeśli pojedyncze zdjęcie nie pobierze się z serwera, eksport jest kontynuowan
 Grid mapy jest ładowany z pliku:
 
 ```text
-data/grid_vanvan.geojson
+data/grid_vanvan_wgs84.geojson
+```
+
+Źródłowy grid jest w `data/GRID_vanvan.gpkg` i ma CRS EPSG:2180 (ETRF2000-PL / CS92). Leaflet nie może rysować tych współrzędnych bezpośrednio jako GeoJSON, bo oczekuje EPSG:4326 / WGS84 z kolejnością `[lon, lat]`.
+
+Aplikacja używa gotowego pliku WGS84:
+
+```text
+data/grid_vanvan_wgs84.geojson
+```
+
+Można go wygenerować z GeoPackage komendą:
+
+```sh
+ogr2ogr -f GeoJSON -t_srs EPSG:4326 data/grid_vanvan_wgs84.geojson data/GRID_vanvan.gpkg
 ```
 
 Plik musi być dostępny po wdrożeniu PWA i jest dodany do cache aplikacji w `sw.js`. Service Worker nie cache'uje endpointów `/api/*`, ale może cache'ować statyczny plik gridu.
 
-GeoJSON gridu musi być wyeksportowany w EPSG:4326, z kolejnością współrzędnych `[lon, lat]`. Leaflet rysuje taki GeoJSON poprawnie na tle Esri World Imagery. Jeśli grid jest przesunięty, nie należy przesuwać go „na oko”; trzeba ponownie wyeksportować plik jako GeoJSON EPSG:4326 i sprawdzić kolejność współrzędnych.
+GeoJSON gridu musi być w EPSG:4326, z kolejnością współrzędnych `[lon, lat]`. Leaflet rysuje taki GeoJSON poprawnie na tle Esri World Imagery. Jeśli grid jest przesunięty, nie należy przesuwać go „na oko”; trzeba ponownie wyeksportować plik jako GeoJSON EPSG:4326 i sprawdzić kolejność współrzędnych.
 
 Aplikacja pokazuje diagnostykę gridu w statusie mapy. Jeśli plik jest pusty, niedostępny albo współrzędne nie wyglądają na WGS84, w konsoli i UI pojawi się komunikat zamiast cichej awarii.
+
+## Obserwator
+
+Przy tworzeniu nowego rekordu pole „Obserwator” jest domyślnie uzupełniane nazwą aktualnie zalogowanego użytkownika. Jeśli użytkownik nie ma nazwy, aplikacja użyje jego emaila. Pole pozostaje zwykłym polem tekstowym i można je ręcznie zmienić, np. gdy rekord wpisuje się w imieniu innej osoby.
+
+Edycja istniejącego rekordu nie zmienia obserwatora automatycznie.
 
 ## Szkice
 
@@ -132,7 +152,17 @@ Przy wyjściu z arkusza do menu aplikacja ostrzega:
 Wychodzisz z arkusza. Niedokończony wpis zostanie zapisany w szkicach.
 ```
 
-Po potwierdzeniu dane formularza są zapisane lokalnie jako szkic. Jeśli istnieje szkic, na ekranie głównym pojawia się przycisk „Wróć do ostatniego szkicu”.
+Po potwierdzeniu dane formularza są zapisane lokalnie jako szkic. Jeśli istnieje szkic, na ekranie głównym pojawia się informacja „Masz niedokończony wpis” oraz przycisk „Wróć do szkicu”.
+
+## Wyjście z arkusza
+
+Przycisk „Wróć do menu” w arkuszu rekordu służy tylko do opuszczenia formularza i nie wylogowuje użytkownika. Nie zmienia `sieweczka-auth-v1` ani tokenu logowania.
+
+Jeśli formularz jest pusty, aplikacja wraca do menu bez ostrzeżenia. Jeśli wpis jest rozpoczęty albo trwa edycja, aplikacja pokazuje komunikat i pozwala wybrać:
+- „Zostań w arkuszu”;
+- „Zapisz szkic i wyjdź”.
+
+Niedokończony wpis zostaje zapisany pod kluczem szkicu. Dane terenowe, lokalne rekordy i zdjęcia pozostają na urządzeniu. Zdjęcia wybrane do szkicu są zapisywane lokalnie jako referencje `idb:...`, tak jak zdjęcia zrobione tym telefonem.
 
 ## Rozmiar tekstu
 

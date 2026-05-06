@@ -105,6 +105,31 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.draft-exit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: end center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, .48);
+}
+
+.draft-exit-dialog {
+  width: min(100%, 520px);
+  background: #fff;
+  color: var(--text);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: 1rem;
+}
+
+.draft-exit-dialog p {
+  margin-top: 0;
+  font-weight: 650;
+}
+
 button.ghost {
   background: rgba(255,255,255,.14);
   border-color: rgba(255,255,255,.35);
