@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-admin-deleted-records-restore";
+  const APP_VERSION = "2026.05.06-form-step-order-strip";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -689,6 +689,17 @@
       ],
     },
   };
+
+  const FORM_STEP_TITLES = [
+    "Identyfikacja",
+    "GPS i zdjęcia gniazda",
+    "Mikrohabitat gniazda",
+    "Mezohabitat",
+    "Punkt losowy 10 m",
+    "Mikrohabitat punktu losowego",
+    "Kontrola jakości",
+    "Podsumowanie i zapis",
+  ];
 
   let currentStep = 1;
   let editingUid = null;
@@ -1444,23 +1455,28 @@
     $$(".step").forEach((el) => {
       el.hidden = Number(el.dataset.step) !== currentStep;
     });
-    const titles = [
-      "Identyfikacja",
-      "GPS i zdjęcia gniazda",
-      "Mikrohabitat gniazda",
-      "Punkt losowy 10 m",
-      "Mikrohabitat punktu losowego",
-      "Mezohabitat",
-      "Kontrola jakości",
-      "Podsumowanie i zapis",
-    ];
-    $("#step-title").textContent = `Krok ${currentStep} z 8 — ${titles[currentStep - 1]}`;
+    $("#step-title").textContent = `Krok ${currentStep} z 8 — ${FORM_STEP_TITLES[currentStep - 1]}`;
     $("#step-progress").style.width = `${(currentStep / 8) * 100}%`;
+    renderStepStrip();
     $("#step-back").disabled = currentStep === 1;
     $("#step-next").hidden = currentStep === 8;
     $("#save-final").hidden = currentStep !== 8;
     if (currentStep === 8) renderValidationAndPreview();
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function renderStepStrip() {
+    const strip = $("#step-strip");
+    if (!strip) return;
+    strip.innerHTML = FORM_STEP_TITLES.map((title, index) => {
+      const step = index + 1;
+      const classes = ["step-chip"];
+      if (step === currentStep) classes.push("active");
+      if (step < currentStep) classes.push("completed");
+      return `<button type="button" class="${classes.join(" ")}" data-step="${step}" aria-current="${step === currentStep ? "step" : "false"}">${step}. ${escapeHtml(title)}</button>`;
+    }).join("");
+    const active = strip.querySelector(".step-chip.active");
+    if (active) active.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
   }
 
   function setupTiles() {
@@ -1731,8 +1747,8 @@
     if (record.eggCount == null || Number.isNaN(record.eggCount)) addErr(1, "#egg-count", "Brak liczby jaj.");
 
     if (record.lat == null || record.lon == null) addErr(2, "#lat", "Brak GPS gniazda.");
-    if (record.randomMicro.lat == null || record.randomMicro.lon == null) addErr(4, "#random-lat", "Brak GPS punktu losowego / kontroli.");
-    if (record.randomMicro.azimuthDeg == null) addWarn(4, "#random-azimuth", "Brakuje azymutu punktu losowego.");
+    if (record.randomMicro.lat == null || record.randomMicro.lon == null) addErr(5, "#random-lat", "Brak GPS punktu losowego / kontroli.");
+    if (record.randomMicro.azimuthDeg == null) addWarn(5, "#random-azimuth", "Brakuje azymutu punktu losowego.");
 
     const infos = [];
     const quality = [];
@@ -1740,11 +1756,11 @@
     const randomSum = coverageSum(record.randomMicro.coverage);
     const mesoSum = record.meso.pctSand + (record.meso.pctFineGravel || 0) + record.meso.pctGravel + record.meso.pctVegetation + record.meso.pctWater + record.meso.pctOther;
     if (nestSum !== 100) quality.push({ step: 3, field: "#nest-pct-sand", message: `Mikrohabitat gniazda: suma pokrycia wynosi ${nestSum}%, powinna wynosić 100%.` });
-    if (mesoSum !== 100) quality.push({ step: 6, field: "#pct-sand", message: `Mezohabitat: suma pokrycia wynosi ${mesoSum}%, powinna wynosić 100% dla piasku, żwiru, kamieni, roślinności, wody/podmokłości i muszli.` });
-    if (randomSum !== 100) quality.push({ step: 5, field: "#random-pct-sand", message: `Punkt losowy/kontrola: suma pokrycia wynosi ${randomSum}%, powinna wynosić 100%.` });
+    if (mesoSum !== 100) quality.push({ step: 4, field: "#pct-sand", message: `Mezohabitat: suma pokrycia wynosi ${mesoSum}%, powinna wynosić 100% dla piasku, żwiru, kamieni, roślinności, wody/podmokłości i muszli.` });
+    if (randomSum !== 100) quality.push({ step: 6, field: "#random-pct-sand", message: `Punkt losowy/kontrola: suma pokrycia wynosi ${randomSum}%, powinna wynosić 100%.` });
     if (!record.docPhotoDone || record.docPhotoDone === "unknown") quality.push({ step: 7, field: "#doc-photo-done", message: "Brak informacji o zdjęciu nad kontrolą." });
     if (!(record.nestMicro?.photos?.length)) addErr(2, "#nest-photos", "Brak zdjęcia gniazda.");
-    if (!(record.randomMicro?.photos?.length)) addErr(4, "#random-photos", "Brak zdjęcia punktu losowego / kontroli.");
+    if (!(record.randomMicro?.photos?.length)) addErr(5, "#random-photos", "Brak zdjęcia punktu losowego / kontroli.");
     if (!record.nestOneMPhotoDone || record.nestOneMPhotoDone === "unknown") quality.push({ step: 7, field: "#nest-one-m-photo-done", message: "Brak informacji o zdjęciu 1 m²." });
     if (!record.randomPointDone || record.randomPointDone === "unknown") addWarn(7, "#random-point-done", "Brak informacji o punkcie losowym.");
     const infoFields = new Set();
@@ -1752,27 +1768,27 @@
     const emptyNum = (v) => v == null || Number.isNaN(v);
     if (emptyNum(record.nestMicro?.distPlantCm)) addInfo(3, "#nest-dist-plant", "Puste: odległość do najbliższej rośliny przy gnieździe.");
     if (emptyNum(record.nestMicro?.distObjectCm)) addInfo(3, "#nest-dist-object", "Puste: odległość do najbliższego obiektu przy gnieździe.");
-    if (emptyNum(record.randomMicro?.distPlantCm)) addInfo(5, "#random-dist-plant", "Puste: odległość do najbliższej rośliny przy kontroli/punkcie losowym.");
-    if (emptyNum(record.randomMicro?.distObjectCm)) addInfo(5, "#random-dist-object", "Puste: odległość do najbliższego obiektu przy kontroli/punkcie losowym.");
-    if (emptyNum(record.meso?.distWaterM)) addInfo(6, "#dist-water", "Puste: odległość do wody.");
-    if (emptyNum(record.meso?.distVegEdgeM)) addInfo(6, "#dist-veg-edge", "Puste: odległość do krawędzi zwartej roślinności.");
-    if (emptyNum(record.meso?.distVerticalStructureM)) addInfo(6, "#dist-vertical-structure", "Puste: odległość do najbliższego wyższego obiektu.");
-    if (emptyNum(record.meso?.distFineGravelPatchM)) addInfo(6, "#dist-fine-gravel-patch", "Puste: odległość do płatu drobnego żwiru.");
-    if (emptyNum(record.meso?.distCoarseGravelPatchM)) addInfo(6, "#dist-coarse-gravel-patch", "Puste: odległość do płatu kamieni.");
-    if (emptyNum(record.meso?.distNearestHiaticulaM)) addInfo(6, "#dist-nearest-hiaticula", "Puste: odległość do najbliższego gniazda sieweczki obrożnej.");
-    if (emptyNum(record.meso?.distNearestDubiusM)) addInfo(6, "#dist-nearest-dubius", "Puste: odległość do najbliższego gniazda sieweczki rzecznej.");
+    if (emptyNum(record.randomMicro?.distPlantCm)) addInfo(6, "#random-dist-plant", "Puste: odległość do najbliższej rośliny przy kontroli/punkcie losowym.");
+    if (emptyNum(record.randomMicro?.distObjectCm)) addInfo(6, "#random-dist-object", "Puste: odległość do najbliższego obiektu przy kontroli/punkcie losowym.");
+    if (emptyNum(record.meso?.distWaterM)) addInfo(4, "#dist-water", "Puste: odległość do wody.");
+    if (emptyNum(record.meso?.distVegEdgeM)) addInfo(4, "#dist-veg-edge", "Puste: odległość do krawędzi zwartej roślinności.");
+    if (emptyNum(record.meso?.distVerticalStructureM)) addInfo(4, "#dist-vertical-structure", "Puste: odległość do najbliższego wyższego obiektu.");
+    if (emptyNum(record.meso?.distFineGravelPatchM)) addInfo(4, "#dist-fine-gravel-patch", "Puste: odległość do płatu drobnego żwiru.");
+    if (emptyNum(record.meso?.distCoarseGravelPatchM)) addInfo(4, "#dist-coarse-gravel-patch", "Puste: odległość do płatu kamieni.");
+    if (emptyNum(record.meso?.distNearestHiaticulaM)) addInfo(4, "#dist-nearest-hiaticula", "Puste: odległość do najbliższego gniazda sieweczki obrożnej.");
+    if (emptyNum(record.meso?.distNearestDubiusM)) addInfo(4, "#dist-nearest-dubius", "Puste: odległość do najbliższego gniazda sieweczki rzecznej.");
     if (emptyNum(record.nestMicro?.heightPlantCm)) addInfo(3, "#nest-height-plant", "Puste: wysokość najbliższej rośliny przy gnieździe.");
     if (emptyNum(record.nestMicro?.heightObjectCm)) addInfo(3, "#nest-height-object", "Puste: wysokość najbliższego obiektu przy gnieździe.");
-    if (emptyNum(record.randomMicro?.heightPlantCm)) addInfo(5, "#random-height-plant", "Puste: wysokość najbliższej rośliny przy kontroli/punkcie losowym.");
-    if (emptyNum(record.randomMicro?.heightObjectCm)) addInfo(5, "#random-height-object", "Puste: wysokość najbliższego obiektu przy kontroli/punkcie losowym.");
+    if (emptyNum(record.randomMicro?.heightPlantCm)) addInfo(6, "#random-height-plant", "Puste: wysokość najbliższej rośliny przy kontroli/punkcie losowym.");
+    if (emptyNum(record.randomMicro?.heightObjectCm)) addInfo(6, "#random-height-object", "Puste: wysokość najbliższego obiektu przy kontroli/punkcie losowym.");
     if (!record.nestMicro?.slope) addInfo(3, "#nest-slope", "Puste: nachylenie przy gnieździe.");
-    if (!record.randomMicro?.slope) addInfo(5, "#random-slope", "Puste: nachylenie przy kontroli/punkcie losowym.");
+    if (!record.randomMicro?.slope) addInfo(6, "#random-slope", "Puste: nachylenie przy kontroli/punkcie losowym.");
     if (!record.nestMicro?.microrelief) addInfo(3, "#nest-microrelief", "Puste: mikrorzeźba przy gnieździe.");
-    if (!record.randomMicro?.microrelief) addInfo(5, "#random-microrelief", "Puste: mikrorzeźba przy kontroli/punkcie losowym.");
-    if (!record.meso?.bigObjects || record.meso?.bigObjects === "unknown") addInfo(6, "#meso-big-objects", "Puste: duże obiekty w 15 m.");
-    if (!record.meso?.assessmentMethod || record.meso?.assessmentMethod === "unknown") addInfo(6, "#meso-assessment-method", "Puste: sposób oceny buforu 15 m.");
-    if (!String(record.meso?.spatialNotes || "").trim()) addInfo(6, "#meso-spatial-notes", "Puste: uwagi przestrzenne.");
-    if (!String(record.moduleNotes?.meso || "").trim()) addInfo(6, "#notes-meso", "Puste: notatki mezohabitatowe.");
+    if (!record.randomMicro?.microrelief) addInfo(6, "#random-microrelief", "Puste: mikrorzeźba przy kontroli/punkcie losowym.");
+    if (!record.meso?.bigObjects || record.meso?.bigObjects === "unknown") addInfo(4, "#meso-big-objects", "Puste: duże obiekty w 15 m.");
+    if (!record.meso?.assessmentMethod || record.meso?.assessmentMethod === "unknown") addInfo(4, "#meso-assessment-method", "Puste: sposób oceny buforu 15 m.");
+    if (!String(record.meso?.spatialNotes || "").trim()) addInfo(4, "#meso-spatial-notes", "Puste: uwagi przestrzenne.");
+    if (!String(record.moduleNotes?.meso || "").trim()) addInfo(4, "#notes-meso", "Puste: notatki mezohabitatowe.");
 
     const technical = new Set(["species","egg-count","nest-status","possible-renest","doc-photo-done","nest-one-m-photo-done","random-point-done","nest-substrate","random-rerolled","random-reroll-reason","random-substrate","qc-bird-reaction","qc-time-at-nest","qc-aborted","qc-tracks","gps-accuracy","random-gps-accuracy","validation-override-summary"]);
     $$("input,select,textarea", $("#entry-form")).forEach((el) => {
@@ -2585,6 +2601,11 @@
     $("#records-show-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
     $("#step-back").addEventListener("click", () => showStep(currentStep - 1));
     $("#step-next").addEventListener("click", () => showStep(currentStep + 1));
+    $("#step-strip")?.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-step]");
+      if (!btn) return;
+      showStep(Number(btn.dataset.step));
+    });
     $("#save-final").addEventListener("click", () => saveFinalRecord().catch((error) => {
       console.error(error);
       alert(`Zapis nie powiódł się: ${error.message || error}`);

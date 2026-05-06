@@ -136,6 +136,21 @@ Eksport tabelaryczny używa czytelnych kolumn:
 - `Mezohabitat — woda/podmokłość`;
 - `Mezohabitat — muszle`.
 
+## Kolejność kroków arkusza
+
+Arkusz terenowy prowadzi użytkownika w kolejności pracy w terenie:
+
+1. Identyfikacja gniazda / dane podstawowe.
+2. GPS i zdjęcia gniazda.
+3. Mikrohabitat gniazda.
+4. Mezohabitat.
+5. Punkt losowy 10 m.
+6. Mikrohabitat punktu losowego.
+7. Kontrola jakości i uwagi.
+8. Podsumowanie i zapis.
+
+Mezohabitat jest bezpośrednio po mikrohabitacie gniazda, a przed punktem losowym 10 m. Pasek kroków w arkuszu można przewijać palcem w poziomie; aktywny krok przewija się automatycznie do widoku. Kliknięcie kroku na pasku przenosi do wybranej części formularza zgodnie z bieżącą logiką formularza.
+
 ## Grid mapy
 
 Grid mapy jest ładowany z pliku:

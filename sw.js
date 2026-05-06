@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-admin-deleted-records-restore-1";
+const CACHE_NAME = "sieweczka-app-v2026-05-form-step-order-strip-1";
 const APP_SHELL = [
   "./",
   "./index.html",
