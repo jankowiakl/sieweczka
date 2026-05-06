@@ -6,6 +6,7 @@
   <title>Sieweczka Field App</title>
   <meta name="theme-color" content="#0f766e" />
   <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -104,6 +105,21 @@
           <option value="xlarge">Bardzo duży</option>
         </select>
       </label>
+      <label>Skala interfejsu
+        <select id="ui-scale">
+          <option value="compact">Kompaktowa</option>
+          <option value="normal">Normalna</option>
+          <option value="large">Duża</option>
+        </select>
+      </label>
+      <label>Rozmiar ikon
+        <select id="ui-icon-size">
+          <option value="small">Małe</option>
+          <option value="normal">Normalne</option>
+          <option value="large">Duże</option>
+        </select>
+      </label>
+      <p class="muted">Jeśli przyciski lub ikony są zbyt duże na Twoim telefonie, ustaw skalę interfejsu na Kompaktowa i rozmiar ikon na Małe.</p>
       <p class="record-preview">Przykładowy tekst</p>
       <label class="inline-check user-setting-toggle">
         <input id="field-mode-toggle" type="checkbox" />
@@ -111,10 +127,24 @@
       </label>
       <p class="muted">Tryb terenowy upraszcza widok i ułatwia pracę w terenie.</p>
       <div class="row-actions">
+        <button id="install-app" type="button">Zainstaluj aplikację</button>
         <button id="check-app-update" type="button">Sprawdź aktualizacje</button>
         <button id="refresh-app-version" type="button" class="primary">Odśwież wersję aplikacji</button>
         <button id="logout" type="button" class="danger">Wyloguj</button>
       </div>
+      <details class="advanced-panel">
+        <summary>Jak zainstalować aplikację?</summary>
+        <p id="install-status" class="muted">Jeśli przeglądarka pokaże przycisk instalacji, użyj go. W przeciwnym razie skorzystaj z instrukcji dla telefonu.</p>
+        <ul>
+          <li>Chrome/Android: Menu ⋮ → Zainstaluj aplikację albo Dodaj do ekranu głównego.</li>
+          <li>Brave/Android: Menu ⋮ → Dodaj do ekranu głównego albo Zainstaluj aplikację.</li>
+          <li>iPhone/Safari: Udostępnij → Do ekranu początkowego.</li>
+        </ul>
+      </details>
+      <details class="advanced-panel">
+        <summary>Diagnostyka interfejsu</summary>
+        <p id="ui-diagnostics" class="muted"></p>
+      </details>
       <p class="muted">Odświeżenie wersji aplikacji nie usuwa rekordów ani zdjęć zapisanych lokalnie.</p>
       <p id="app-update-status" class="muted"></p>
       <details id="sync-settings" class="advanced-panel" hidden>
@@ -187,10 +217,6 @@
         <button id="readonly-nav-nest" type="button">Nawiguj do gniazda</button>
         <button id="readonly-nav-random" type="button" hidden>Nawiguj do kontroli</button>
       </div>
-      <details id="readonly-more" class="advanced-panel" hidden>
-        <summary>Więcej</summary>
-        <button id="readonly-delete" type="button" class="danger">Ukryj rekord / oznacz jako usunięty</button>
-      </details>
     </section>
 
     <section id="map-screen" class="screen card" hidden>
@@ -271,6 +297,7 @@
       <div class="progress-wrap">
         <p id="step-title">Krok 1 z 8 — Identyfikacja</p>
         <div class="progress"><div id="step-progress"></div></div>
+        <nav id="step-strip" class="step-strip" aria-label="Kroki formularza"></nav>
       </div>
 
       <form id="entry-form" novalidate>
@@ -462,7 +489,7 @@
           </fieldset>
         </section>
 
-        <section class="step" data-step="4" hidden>
+        <section class="step" data-step="5" hidden>
           <fieldset>
             <legend>Punkt losowy 10 m</legend>
 
@@ -526,7 +553,7 @@
           </fieldset>
         </section>
 
-        <section class="step" data-step="5" hidden>
+        <section class="step" data-step="6" hidden>
           <fieldset>
             <legend>Mikrohabitat punktu losowego</legend>
 
@@ -595,7 +622,7 @@
           </fieldset>
         </section>
 
-        <section class="step" data-step="6" hidden>
+        <section class="step" data-step="4" hidden>
           <fieldset>
             <legend>Mezohabitat i kontekst przestrzenny</legend>
 

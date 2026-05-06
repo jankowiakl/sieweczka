@@ -229,10 +229,30 @@ function smtpConfigured() {
   return !!process.env.SMTP_HOST;
 }
 
+function roleInviteDescription(role) {
+  if (role === 'admin') {
+    return {
+      label: 'Administrator',
+      permissions: 'może zarządzać użytkownikami, widzieć i edytować dane, przywracać ukryte wpisy oraz wykonywać czynności administracyjne.'
+    };
+  }
+  if (role === 'coordinator') {
+    return {
+      label: 'Koordynator',
+      permissions: 'może widzieć i edytować dane zespołu oraz wykonywać eksporty, ale nie zarządza użytkownikami.'
+    };
+  }
+  return {
+    label: 'Obserwator',
+    permissions: 'może dodawać własne rekordy, zdjęcia i gniazda robocze oraz synchronizować dane.'
+  };
+}
+
 function inviteMessage(user, temporaryPassword) {
   const appUrl = process.env.PUBLIC_APP_URL || 'https://jankowiakl.github.io/sieweczka/';
   const apiUrl = process.env.PUBLIC_API_URL || 'https://bielik.myqnapcloud.com:18443';
   const subject = 'Zaproszenie do aplikacji Sieweczka';
+  const role = roleInviteDescription(user.role);
   const text = [
     `Witaj ${user.name},`,
     '',
@@ -241,6 +261,8 @@ function inviteMessage(user, temporaryPassword) {
     `Aplikacja: ${appUrl}`,
     `Serwer API: ${apiUrl}`,
     `Email: ${user.email}`,
+    `Twoja rola: ${role.label}.`,
+    `Uprawnienia: ${role.permissions}`,
     `Hasło tymczasowe: ${temporaryPassword}`,
     '',
     'Po pierwszym logowaniu trzeba zmienić hasło.',
