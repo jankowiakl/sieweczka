@@ -14,6 +14,7 @@
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
+  const PHOTO_SYNC_KEY = "sieweczka-photo-sync-v1";
 
   function getClientId() {
     const key = "sieweczka-client-id-v1";
@@ -23,21 +24,24 @@
   }
   function getSyncConfig() { try { return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY) || "{}"); } catch { return {}; } }
   function setSyncConfig(cfg) { localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(cfg)); }
+  function getSyncApiBase(cfg = getSyncConfig()) { return String(cfg.apiUrl || "").trim().replace(/\/+$/, "").replace(/\/api$/i, ""); }
+  function getSyncAuthHeaders(cfg = getSyncConfig()) { return cfg.token ? { Authorization: `Bearer ${cfg.token}` } : {}; }
   function getLastSyncAt() { try { return JSON.parse(localStorage.getItem(SYNC_STATE_KEY) || "{}").lastSyncAt || null; } catch { return null; } }
   function setLastSyncAt(v) { localStorage.setItem(SYNC_STATE_KEY, JSON.stringify({ lastSyncAt: v })); }
   async function testSyncConnection() {
     const cfg = getSyncConfig();
-    const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/health`, { headers: { Authorization: `Bearer ${cfg.token}` } });
+    const res = await fetch(`${getSyncApiBase(cfg)}/health`, { headers: getSyncAuthHeaders(cfg) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }
   async function syncNow() {
     const cfg = getSyncConfig();
     if (!cfg.apiUrl || !cfg.token) throw new Error("Brak konfiguracji synchronizacji");
+    const apiBase = getSyncApiBase(cfg);
     const entries = getEntries();
     const workingNests = getWorkingNests();
     const payload = { clientId: getClientId(), lastSyncAt: getLastSyncAt(), records: entries, workingNests };
-    const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/sync`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` }, body: JSON.stringify(payload) });
+    const res = await fetch(`${apiBase}/api/sync`, { method: "POST", headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) }, body: JSON.stringify(payload) });
     if (!res.ok) throw new Error(`Sync HTTP ${res.status}`);
     const data = await res.json();
     const local = new Map(getEntries().map((r)=>[String(r.uid), r]));
@@ -55,6 +59,12 @@
     setWorkingNests(Array.from(localWorking.values()));
     if (workingMap) renderWorkingMap();
     setLastSyncAt(data.serverTime || new Date().toISOString());
+    try {
+      await syncPhotoMetadataFromServer(getEntries(), getWorkingNests());
+      data.photoSync = await uploadPendingPhotos();
+    } catch (error) {
+      data.photoSync = { ok: false, ...getPhotoSyncSummary(), errorMessage: error.message };
+    }
     return data;
   }
   function markSyncStatus(uid, status) {
@@ -74,7 +84,11 @@
       try { await testSyncConnection(); $("#sync-status").textContent = "Połączenie OK."; } catch (e) { $("#sync-status").textContent = `Błąd: ${e.message}`; }
     });
     $("#sync-now")?.addEventListener("click", async () => {
-      try { await syncNow(); $("#sync-status").textContent = "Synchronizacja zakończona."; renderEntries(); } catch (e) { $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`; }
+      try {
+        const result = await syncNow();
+        $("#sync-status").textContent = `Synchronizacja zakończona. ${formatPhotoSyncStatus(result.photoSync)}`;
+        renderEntries();
+      } catch (e) { $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`; }
     });
     window.addEventListener("online", () => { syncNow().catch(()=>{}); });
   }
@@ -366,14 +380,170 @@
     });
   }
 
+  function getPhotoSyncMap() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(PHOTO_SYNC_KEY) || "{}");
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function setPhotoSyncMap(map) {
+    localStorage.setItem(PHOTO_SYNC_KEY, JSON.stringify(map && typeof map === "object" ? map : {}));
+  }
+
+  function collectPhotoRefsFromEntries(entries) {
+    const refs = new Map();
+    for (const entry of entries || []) {
+      for (const ref of entry?.nestMicro?.photos || []) {
+        const localRef = String(ref?.dataUrl || ref || "");
+        if (localRef.startsWith("idb:") && !refs.has(localRef)) refs.set(localRef, { localRef, recordUid: entry.uid, photoRole: "nest" });
+      }
+      for (const ref of entry?.randomMicro?.photos || []) {
+        const localRef = String(ref?.dataUrl || ref || "");
+        if (localRef.startsWith("idb:") && !refs.has(localRef)) refs.set(localRef, { localRef, recordUid: entry.uid, photoRole: "random" });
+      }
+    }
+    return Array.from(refs.values());
+  }
+
+  function collectPhotoRefsFromWorkingNests(workingNests) {
+    const refs = new Map();
+    for (const nest of workingNests || []) {
+      for (const ref of nest?.photos || []) {
+        const localRef = String(ref?.dataUrl || ref || "");
+        if (localRef.startsWith("idb:") && !refs.has(localRef)) refs.set(localRef, { localRef, workingNestId: nest.id, photoRole: "working" });
+      }
+    }
+    return Array.from(refs.values());
+  }
+
+  function getPhotoSyncSummaryForRefs(refs) {
+    const map = getPhotoSyncMap();
+    let uploaded = 0;
+    let pending = 0;
+    let error = 0;
+    for (const item of refs) {
+      const state = map[item.localRef];
+      if (state?.status === "uploaded") uploaded += 1;
+      else if (state?.status === "error") error += 1;
+      else pending += 1;
+    }
+    return { local: refs.length, uploaded, pending, error };
+  }
+
+  function getPhotoSyncSummary() {
+    return getPhotoSyncSummaryForRefs([
+      ...collectPhotoRefsFromEntries(getEntries()),
+      ...collectPhotoRefsFromWorkingNests(getWorkingNests())
+    ]);
+  }
+
+  function formatPhotoSyncStatus(status = getPhotoSyncSummary()) {
+    const base = `Zdjęcia: lokalne ${status.local || 0}, wysłane ${status.uploaded || 0}, oczekują ${status.pending || 0}, błędy ${status.error || 0}.`;
+    return status.ok === false && status.errorMessage ? `${base} Błąd uploadu: ${status.errorMessage}` : base;
+  }
+
+  function photoStatusForRef(ref) {
+    const state = getPhotoSyncMap()[String(ref || "")];
+    if (state?.status === "uploaded") return "wysłane";
+    if (state?.status === "error") return "błąd uploadu";
+    return "oczekuje na upload";
+  }
+
+  async function syncPhotoMetadataFromServer(entries, workingNests) {
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    if (!apiBase || !cfg.token) return getPhotoSyncSummary();
+    const map = getPhotoSyncMap();
+    const seenRecords = new Set((entries || []).map((entry) => entry?.uid).filter(Boolean).map(String));
+    const seenWorking = new Set((workingNests || []).map((nest) => nest?.id).filter(Boolean).map(String));
+    for (const uid of seenRecords) {
+      const res = await fetch(`${apiBase}/api/records/${encodeURIComponent(uid)}/photos`, { headers: getSyncAuthHeaders(cfg) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      for (const photo of data.photos || []) {
+        if (!photo.localRef) continue;
+        map[photo.localRef] = { serverId: photo.id, url: photo.url, uploadedAt: photo.uploadedAt || new Date().toISOString(), status: "uploaded" };
+      }
+    }
+    for (const id of seenWorking) {
+      const res = await fetch(`${apiBase}/api/working-nests/${encodeURIComponent(id)}/photos`, { headers: getSyncAuthHeaders(cfg) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      for (const photo of data.photos || []) {
+        if (!photo.localRef) continue;
+        map[photo.localRef] = { serverId: photo.id, url: photo.url, uploadedAt: photo.uploadedAt || new Date().toISOString(), status: "uploaded" };
+      }
+    }
+    setPhotoSyncMap(map);
+    return getPhotoSyncSummary();
+  }
+
+  async function uploadPhotoRef(localRef, context = {}) {
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    if (!apiBase || !cfg.token) throw new Error("Brak konfiguracji synchronizacji zdjęć");
+    const map = getPhotoSyncMap();
+    if (map[localRef]?.status === "uploaded") return map[localRef];
+    const blob = await getPhotoBlob(localRef);
+    if (!blob) throw new Error(`Brak lokalnego pliku ${localRef}`);
+    const form = new FormData();
+    const filename = blob.name || `${localRef.slice(4)}.${String(blob.type || "image/jpeg").split("/").pop() || "jpg"}`;
+    form.append("file", blob, filename);
+    if (context.recordUid) form.append("recordUid", context.recordUid);
+    if (context.workingNestId) form.append("workingNestId", context.workingNestId);
+    form.append("localRef", localRef);
+    form.append("photoRole", context.photoRole || "photo");
+    form.append("clientId", getClientId());
+    const res = await fetch(`${apiBase}/api/photos`, { method: "POST", headers: getSyncAuthHeaders(cfg), body: form });
+    if (!res.ok) throw new Error(`Photo HTTP ${res.status}`);
+    const data = await res.json();
+    const state = { serverId: data.photo.id, url: data.photo.url, uploadedAt: new Date().toISOString(), status: "uploaded" };
+    map[localRef] = state;
+    setPhotoSyncMap(map);
+    return state;
+  }
+
+  async function uploadPendingPhotos() {
+    const refs = [
+      ...collectPhotoRefsFromEntries(getEntries()),
+      ...collectPhotoRefsFromWorkingNests(getWorkingNests())
+    ];
+    const map = getPhotoSyncMap();
+    for (const item of refs) {
+      if (map[item.localRef]?.status === "uploaded") continue;
+      try {
+        await uploadPhotoRef(item.localRef, item);
+      } catch (error) {
+        const latest = getPhotoSyncMap();
+        latest[item.localRef] = { ...(latest[item.localRef] || {}), status: "error", error: error.message, lastTriedAt: new Date().toISOString() };
+        setPhotoSyncMap(latest);
+      }
+    }
+    return { ok: true, ...getPhotoSyncSummary() };
+  }
+
   async function resolvePhotoSrc(ref) {
     if (!ref) return "";
     if (String(ref).startsWith("data:")) return ref;
     if (!String(ref).startsWith("idb:")) return "";
     if (photoUrlCache.has(ref)) return photoUrlCache.get(ref);
     const blob = await getPhotoBlob(ref);
-    if (!blob) return "";
-    const url = URL.createObjectURL(blob);
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      photoUrlCache.set(ref, url);
+      return url;
+    }
+    const server = getPhotoSyncMap()[String(ref)];
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    if (!server?.url || !apiBase || !cfg.token) return "";
+    const res = await fetch(`${apiBase}${server.url}`, { headers: getSyncAuthHeaders(cfg) });
+    if (!res.ok) return "";
+    const serverBlob = await res.blob();
+    const url = URL.createObjectURL(serverBlob);
     photoUrlCache.set(ref, url);
     return url;
   }
@@ -1183,7 +1353,7 @@
       for (const ref of existingRefs) {
         const tile = document.createElement("div");
         tile.className = "photo-tile";
-        tile.innerHTML = `<img alt="${label}"><small>${label} zapisane</small>`;
+        tile.innerHTML = `<img alt="${label}"><small>${label}: ${photoStatusForRef(ref)}</small>`;
         wrap.appendChild(tile);
         resolvePhotoSrc(ref).then((src) => {
           if (src) tile.querySelector("img").src = src;
@@ -1264,6 +1434,7 @@
           <p class="muted">${escapeHtml(entry.obsDate || "")} ${escapeHtml(entry.obsTime || "")} • jaja: ${entry.eggCount ?? "brak"} • obserwator: ${escapeHtml(entry.observer || "brak")}</p>
           <p class="muted">GPS: ${entry.lat ?? "brak"}, ${entry.lon ?? "brak"} • protokół: ${escapeHtml(entry.protocolVersion || "")}</p>
           <p class="muted">Sync: ${escapeHtml(entry.syncStatus || "pending")}</p>
+          <p class="muted">${escapeHtml(formatPhotoSyncStatus(getPhotoSyncSummaryForRefs(collectPhotoRefsFromEntries([entry]))))}</p>
         </div>
         <div class="entry-actions">
           <button type="button" data-action="share" data-uid="${entry.uid}">Udostępnij</button>
