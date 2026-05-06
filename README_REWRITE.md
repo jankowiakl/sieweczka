@@ -13,7 +13,7 @@ Ten katalog zawiera kompletną, przepisaną od zera wersję aplikacji PWA:
 
 - Stabilny zapis rekordu bez hotfixów.
 - Stabilna edycja istniejących rekordów bez duplikowania.
-- Formularz krokowy: 8 kroków.
+- Formularz krokowy: 8 kroków z przyciskami „Początek” i „Koniec” przy pasku kroków.
 - Wszystkie główne zmienne z arkusza terenowego:
   - identyfikacja,
   - mikrohabitat gniazda,

@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-pwa-ui-install-final-1";
+const CACHE_NAME = "sieweczka-app-v2026-05-ux-stable-final-1";
 const APP_SHELL = [
   "./",
   "./index.html",

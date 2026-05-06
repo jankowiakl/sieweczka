@@ -22,11 +22,6 @@
     <section id="login-screen" class="screen card" hidden>
       <h2>Logowanie</h2>
       <p class="lead">Zaloguj się raz, aby móc pracować także offline na tym urządzeniu.</p>
-      <button id="login-advanced-toggle" type="button" class="ghost-light small">Ustawienia zaawansowane</button>
-      <div id="login-advanced-settings" hidden>
-        <p class="muted">Zmieniaj tylko, jeśli wiesz co robisz.</p>
-        <label>API URL <input id="login-api-url" type="url" placeholder="https://twoj-serwer" /></label>
-      </div>
       <label>Email <input id="login-email" type="email" autocomplete="username" /></label>
       <label>Hasło <input id="login-password" type="password" autocomplete="current-password" /></label>
       <div class="row-actions">
@@ -68,7 +63,7 @@
 
       <div class="home-primary-actions">
         <button id="start-new" type="button" class="home-tile primary"><strong>Nowy rekord</strong><span>Dodaj obserwację lub gniazdo</span></button>
-        <button id="open-map" type="button" class="home-tile"><strong>Mapa</strong><span>Zobacz rekordy i punkty robocze</span></button>
+        <button id="open-map" type="button" class="home-tile"><strong>Mapa</strong><span>Zobacz rekordy</span></button>
         <button id="open-working-map" type="button" class="home-tile"><strong>Gniazda robocze</strong><span>Punkty do sprawdzenia w terenie</span></button>
         <button id="open-records" type="button" class="home-tile"><strong>Lista rekordów</strong><span>Przegląd i edycja danych</span></button>
       </div>
@@ -149,7 +144,7 @@
       <p id="app-update-status" class="muted"></p>
       <details id="sync-settings" class="advanced-panel" hidden>
         <summary>Ustawienia techniczne administratora</summary>
-        <p class="muted">Zmieniaj tylko, jeśli wiesz co robisz.</p>
+        <p class="muted">Opcja techniczna. Zmieniaj tylko, jeśli administrator podał inny adres serwera.</p>
         <label>API URL <input id="sync-api-url" type="url" placeholder="https://twoj-serwer" /></label>
         <label id="sync-token-label">Token awaryjny/admin <input id="sync-token" type="password" placeholder="Opcjonalny legacy SYNC_TOKEN" /></label>
         <div class="row-actions">
@@ -224,7 +219,7 @@
       <div id="map-info" class="muted"></div>
       <div class="map-toolbar">
         <button id="map-center-user" type="button">Pokaż moją pozycję</button>
-        <button id="map-enable-heading" type="button">Włącz kierunek</button>
+        <button id="map-enable-heading" type="button" aria-pressed="false">Kierunek: wyłączony</button>
         <label class="inline-check map-toggle"><input id="records-grid-toggle" type="checkbox" checked /> Pokaż grid</label>
         <label class="inline-check map-toggle"><input id="records-species-labels-toggle" type="checkbox" checked /> Pokaż gatunki</label>
         <span id="map-user-status" class="muted">Twoja pozycja: oczekiwanie…</span>
@@ -238,7 +233,7 @@
       <div class="map-toolbar">
         <button id="working-add-gps" type="button">Dodaj moje GPS</button>
         <button id="working-center-user" type="button">Pokaż moją pozycję</button>
-        <button id="working-enable-heading" type="button">Włącz kierunek</button>
+        <button id="working-enable-heading" type="button" aria-pressed="false">Kierunek: wyłączony</button>
         <button id="working-fit" type="button">Dopasuj widok</button><button id="working-nearest" type="button">Najbliższe robocze</button>
         <label class="inline-check map-toggle"><input id="working-grid-toggle" type="checkbox" checked /> Pokaż grid</label>
         <label class="inline-check map-toggle"><input id="working-notes-toggle" type="checkbox" checked /> Pokaż notatki</label>
@@ -295,7 +290,13 @@
       </div>
 
       <div class="progress-wrap">
-        <p id="step-title">Krok 1 z 8 — Identyfikacja</p>
+        <div class="step-header-row">
+          <p id="step-title">Krok 1 z 8 — Identyfikacja</p>
+          <div class="step-jump-actions" aria-label="Szybka nawigacja formularza">
+            <button id="step-first" type="button" class="small" title="Przejdź do początku formularza" aria-label="Przejdź do początku formularza">Początek</button>
+            <button id="step-last" type="button" class="small" title="Przejdź do końca formularza" aria-label="Przejdź do końca formularza">Koniec</button>
+          </div>
+        </div>
         <div class="progress"><div id="step-progress"></div></div>
         <nav id="step-strip" class="step-strip" aria-label="Kroki formularza"></nav>
       </div>
