@@ -155,6 +155,16 @@
       <p class="muted">Dane użytkowników są pobierane bezpośrednio z serwera.</p>
       <button id="admin-refresh-users" type="button">Odśwież użytkowników</button>
       <div id="admin-users-list" class="entries-list"></div>
+      <section id="admin-deleted-records-section" class="card">
+        <h3>Ukryte wpisy</h3>
+        <p class="muted">Rekordy oznaczone jako ukryte/usunięte miękko pozostają w bazie i mogą zostać przywrócone przez administratora.</p>
+        <div class="row-actions">
+          <button id="admin-load-deleted-records" type="button">Pokaż ukryte wpisy</button>
+          <button id="admin-refresh-deleted-records" type="button">Odśwież ukryte wpisy</button>
+        </div>
+        <p id="admin-deleted-records-status" class="muted"></p>
+        <div id="admin-deleted-records-list" class="entries-list"></div>
+      </section>
     </section>
 
     <section id="records-screen" class="screen card" hidden>

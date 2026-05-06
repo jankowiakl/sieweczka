@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-meso-shells-export-menu";
+  const APP_VERSION = "2026.05.06-admin-deleted-records-restore";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -363,6 +363,69 @@
     `).join("") || `<p class="muted">Brak użytkowników.</p>`;
   }
 
+  function renderAdminDeletedRecords(records) {
+    const list = $("#admin-deleted-records-list");
+    if (!list) return;
+    list.innerHTML = (records || []).map((record) => `
+      <article class="entry-card">
+        <div class="entry-main">
+          <h3>${escapeHtml(record.nestId || "(bez ID)")}</h3>
+          <p>${escapeHtml(LABELS.species?.[record.species] || record.species || "—")} • ${escapeHtml(record.obsDate || "—")} • obserwator: ${escapeHtml(record.observer || "—")}</p>
+          <p>Sektor: ${escapeHtml(record.sector || record.payload?.sector || "—")} • UID: ${escapeHtml(record.uid || "—")}</p>
+          <p class="muted">Ukryto: ${escapeHtml(record.deletedAt || "—")} • przez: ${escapeHtml(record.deletedBy || "—")}</p>
+          <p class="muted">Powód: ${escapeHtml(record.deleteReason || "—")}</p>
+        </div>
+        <div class="entry-actions">
+          <button type="button" data-admin-restore-record="${escapeHtml(record.uid || "")}">Przywróć</button>
+        </div>
+      </article>
+    `).join("") || `<p class="muted">Brak ukrytych wpisów.</p>`;
+  }
+
+  async function loadAdminDeletedRecords() {
+    if (!isAdmin()) {
+      $("#admin-deleted-records-status").textContent = "Brak uprawnień administratora.";
+      renderAdminDeletedRecords([]);
+      return;
+    }
+    $("#admin-deleted-records-status").textContent = "Pobieram ukryte wpisy...";
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    const res = await fetch(`${apiBase}/api/admin/deleted-records?_ts=${Date.now()}`, { headers: getSyncAuthHeaders(cfg), cache: "no-store" });
+    if (res.status === 403) throw new Error("Brak uprawnień administratora.");
+    if (!res.ok) throw new Error(await readApiError(res, `Deleted records HTTP ${res.status}`));
+    const data = await res.json();
+    renderAdminDeletedRecords(data.records || []);
+    $("#admin-deleted-records-status").textContent = (data.records || []).length ? "Lista ukrytych wpisów odświeżona." : "Brak ukrytych wpisów.";
+  }
+
+  async function restoreAdminDeletedRecord(uid) {
+    if (!uid) return;
+    if (!confirm("Czy na pewno chcesz przywrócić ten rekord? Po synchronizacji będzie ponownie widoczny dla użytkowników.")) return;
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    const res = await fetch(`${apiBase}/api/records/${encodeURIComponent(uid)}/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) },
+      body: "{}"
+    });
+    if (res.status === 403) throw new Error("Brak uprawnień administratora.");
+    if (!res.ok) throw new Error(await readApiError(res, `Restore HTTP ${res.status}`));
+    const data = await res.json();
+    if (data.record) {
+      const restored = normalizeEntry(data.record);
+      const entries = getEntries();
+      const idx = entries.findIndex((entry) => String(entry.uid) === String(restored.uid));
+      if (idx >= 0) entries[idx] = restored;
+      else entries.unshift(restored);
+      setEntries(entries);
+    }
+    renderEntries();
+    updateCounts();
+    await loadAdminDeletedRecords();
+    $("#admin-deleted-records-status").textContent = "Rekord przywrócony.";
+  }
+
   function setupAuthUI() {
     setValue("#login-api-url", getSyncConfig().apiUrl || DEFAULT_API_URL);
     $("#login-advanced-toggle")?.addEventListener("click", () => {
@@ -401,6 +464,12 @@
     });
     $("#admin-refresh-users")?.addEventListener("click", async () => {
       try { await loadAdminUsers({ force: true }); } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
+    });
+    $("#admin-load-deleted-records")?.addEventListener("click", async () => {
+      try { await loadAdminDeletedRecords(); } catch (e) { $("#admin-deleted-records-status").textContent = `Błąd: ${e.message}`; }
+    });
+    $("#admin-refresh-deleted-records")?.addEventListener("click", async () => {
+      try { await loadAdminDeletedRecords(); } catch (e) { $("#admin-deleted-records-status").textContent = `Błąd: ${e.message}`; }
     });
     $("#check-app-update")?.addEventListener("click", async () => {
       try { $("#app-update-status").textContent = await checkForAppUpdate(); } catch (e) { $("#app-update-status").textContent = `Nie udało się sprawdzić aktualizacji: ${e.message}`; }
@@ -470,6 +539,15 @@
         if (finalStatus) $("#admin-users-status").textContent = finalStatus;
       } catch (e) {
         $("#admin-users-status").textContent = `Błąd: ${e.message}`;
+      }
+    });
+    $("#admin-deleted-records-list")?.addEventListener("click", async (event) => {
+      const btn = event.target.closest("button[data-admin-restore-record]");
+      if (!btn) return;
+      try {
+        await restoreAdminDeletedRecord(btn.dataset.adminRestoreRecord);
+      } catch (e) {
+        $("#admin-deleted-records-status").textContent = `Błąd: ${e.message}`;
       }
     });
     $("#ui-font-size")?.addEventListener("change", () => {

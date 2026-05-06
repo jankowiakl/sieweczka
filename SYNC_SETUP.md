@@ -261,6 +261,20 @@ Rekordy i gniazda robocze oznaczone jako usunięte są domyślnie niewidoczne na
 
 Trwałe czyszczenie danych powinno być osobnym narzędziem administracyjnym w przyszłości. Nie udostępniaj zwykłym użytkownikom endpointu, który fizycznie kasuje rekordy lub pliki zdjęć.
 
+## Przywracanie ukrytych wpisów
+
+Usunięcie w aplikacji to soft delete: rekord zostaje w PostgreSQL i w payload, ale ma ustawione pola `deleted_at` / `deletedAt`, `deleted_by` / `deletedBy` oraz opcjonalny powód.
+
+Administrator może wejść w:
+
+```text
+Panel administratora → Ukryte wpisy
+```
+
+Tam można pobrać listę ukrytych rekordów i przywrócić wybrany rekord. Przywrócenie czyści pola soft delete, aktualizuje `updatedAt`, `updated_by` i `server_updated_at`, a API zapisuje wpis `record_restored` w `audit_log`.
+
+Po kolejnej synchronizacji rekord wróci na innych urządzeniach do normalnej listy i mapy. Ta funkcja nie wykonuje trwałego usuwania danych ani nie usuwa plików zdjęć z `photo-data/`.
+
 ## Katalog zdjęć
 
 `compose.yaml` montuje:
@@ -279,6 +293,7 @@ Nie usuwaj katalogu `photo-data/`, jeśli chcesz zachować zdjęcia. Usunięcie 
 - `GET /api/me`
 - `POST /api/me/change-password`
 - `GET /api/users`
+- `GET /api/admin/deleted-records` (admin)
 - `POST /api/users`
 - `PATCH /api/users/:id`
 - `POST /api/users/:id/reset-password`
