@@ -130,6 +130,52 @@ button:disabled {
   font-weight: 650;
 }
 
+.draft-exit-dialog button.ghost {
+  background: #fff;
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.draft-exit-dialog button[data-choice="leave"] {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.app-menu-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: grid;
+  place-items: start end;
+  padding: calc(env(safe-area-inset-top, 0px) + .75rem) .75rem .75rem;
+  background: rgba(15, 23, 42, .35);
+}
+
+.app-menu-panel {
+  width: min(92vw, 360px);
+  display: grid;
+  gap: .45rem;
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: .85rem;
+}
+
+.app-menu-panel .screen-head {
+  margin-bottom: .25rem;
+}
+
+.app-menu-panel h2 {
+  margin: 0;
+}
+
+.user-setting-toggle {
+  margin-top: .75rem;
+}
+
 button.ghost {
   background: rgba(255,255,255,.14);
   border-color: rgba(255,255,255,.35);

@@ -14,7 +14,6 @@
     <div class="header-inner">
       <button id="home-shortcut" type="button" class="ghost small">Menu</button>
       <h1>Sieweczka Field App</h1>
-      <button id="field-mode-toggle" type="button" class="ghost small">Tryb terenowy</button>
     </div>
   </header>
 
@@ -78,8 +77,8 @@
         <button id="home-export-toggle" type="button">Eksport</button>
         <span id="draft-notice" class="muted" hidden>Masz niedokończony wpis.</span>
         <button id="resume-draft" type="button" hidden>Wróć do szkicu</button>
-        <button id="open-user" type="button">Użytkownik</button>
-        <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
+        <button id="open-user" type="button" hidden>Użytkownik</button>
+        <a id="home-help-link" class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download hidden>Pomoc</a>
         <button id="open-admin" type="button" hidden>Administrator</button>
       </div>
 
@@ -93,7 +92,7 @@
         </div>
       </section>
 
-      <details id="sync-settings" class="advanced-panel">
+      <details id="sync-settings" class="advanced-panel" hidden>
         <summary>Ustawienia zaawansowane</summary>
         <p class="muted">Zmieniaj tylko, jeśli wiesz co robisz.</p>
         <label>API URL <input id="sync-api-url" type="url" placeholder="https://twoj-serwer" /></label>
@@ -119,6 +118,11 @@
         </select>
       </label>
       <p class="record-preview">Przykładowy tekst</p>
+      <label class="inline-check user-setting-toggle">
+        <input id="field-mode-toggle" type="checkbox" />
+        Tryb terenowy
+      </label>
+      <p class="muted">Tryb terenowy upraszcza widok i ułatwia pracę w terenie.</p>
       <div class="row-actions">
         <button id="check-app-update" type="button">Sprawdź aktualizacje</button>
         <button id="refresh-app-version" type="button" class="primary">Odśwież wersję aplikacji</button>
@@ -173,9 +177,11 @@
         <button id="readonly-show-map" type="button">Pokaż na mapie</button>
         <button id="readonly-nav-nest" type="button">Nawiguj do gniazda</button>
         <button id="readonly-nav-random" type="button" hidden>Nawiguj do kontroli</button>
-        <button id="readonly-delete" type="button" class="danger">Usuń rekord</button>
-        <button id="readonly-back-btn" type="button">Wróć</button>
       </div>
+      <details id="readonly-more" class="advanced-panel" hidden>
+        <summary>Więcej</summary>
+        <button id="readonly-delete" type="button" class="danger">Ukryj rekord / oznacz jako usunięty</button>
+      </details>
     </section>
 
     <section id="map-screen" class="screen card" hidden>

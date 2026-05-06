@@ -164,6 +164,16 @@ Jeśli formularz jest pusty, aplikacja wraca do menu bez ostrzeżenia. Jeśli wp
 
 Niedokończony wpis zostaje zapisany pod kluczem szkicu. Dane terenowe, lokalne rekordy i zdjęcia pozostają na urządzeniu. Zdjęcia wybrane do szkicu są zapisywane lokalnie jako referencje `idb:...`, tak jak zdjęcia zrobione tym telefonem.
 
+## Menu aplikacji
+
+Górny przycisk „Menu” otwiera menu aplikacji z mniej codziennymi opcjami: użytkownik, synchronizacja, pomoc, ustawienia, ustawienia zaawansowane, odświeżenie wersji aplikacji i wylogowanie. Opcja „Administrator” jest widoczna tylko dla roli `admin`, a eksport dla admina i koordynatora.
+
+To menu nie jest wylogowaniem. Wylogowanie pozostaje osobnym przyciskiem w menu i panelu użytkownika.
+
+## Tryb terenowy
+
+Tryb terenowy jest dostępny w panelu „Użytkownik” jako przełącznik. Nie jest już stale pokazywany w górnym pasku. Stan trybu terenowego jest zapisywany lokalnie w ustawieniach UI i działa od razu po zmianie.
+
 ## Rozmiar tekstu
 
 W panelu „Użytkownik” można zmienić „Rozmiar tekstu”: Mały, Normalny, Duży albo Bardzo duży. Wybór jest zapisywany lokalnie w `sieweczka-ui-settings-v1` i działa od razu bez restartu aplikacji. Ustawienie nie jest synchronizowane z serwerem.

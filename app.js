@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-grid-wgs84-observer-draft-exit";
+  const APP_VERSION = "2026.05.06-ux-menu-readonly-fieldmode";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -46,11 +46,15 @@
   function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
   function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
   function applyUiSettings() {
-    const size = getUiSettings().fontSize || "normal";
+    const settings = getUiSettings();
+    const size = settings.fontSize || "normal";
     document.documentElement.classList.remove("font-small", "font-normal", "font-large", "font-xlarge");
     document.documentElement.classList.add(`font-${size}`);
+    document.body?.classList.toggle("field-mode", !!settings.fieldMode);
     const select = document.querySelector("#ui-font-size");
     if (select) select.value = size;
+    const fieldMode = document.querySelector("#field-mode-toggle");
+    if (fieldMode) fieldMode.checked = !!settings.fieldMode;
   }
   function getSyncAuthHeaders(cfg = getSyncConfig()) {
     const token = getUserToken() || cfg.token;
@@ -239,7 +243,9 @@
         <p>Status: ${navigator.onLine ? "online" : "offline"}</p>
       ` : `<p>Brak zalogowanego użytkownika.</p>`;
     }
-    $("#open-admin")?.toggleAttribute("hidden", !isAdmin());
+    $("#open-admin")?.toggleAttribute("hidden", true);
+    $("#open-user")?.toggleAttribute("hidden", true);
+    $("#home-help-link")?.toggleAttribute("hidden", true);
     $("#sync-token-label")?.toggleAttribute("hidden", !isAdmin());
     ["#export-csv", "#export-json", "#export-zip", "#export-zip-photos", "#export-kml"].forEach((selector) => {
       const el = $(selector);
@@ -259,6 +265,66 @@
     setText("#home-last-sync", lastSync ? new Date(lastSync).toLocaleString("pl-PL") : "—");
     setText("#home-photo-pending", String(photoSummary.pending || 0));
     updateDraftResumeButton();
+  }
+
+  function closeAppMenu() {
+    $("#app-menu-modal")?.remove();
+  }
+
+  function openAppMenu() {
+    closeAppMenu();
+    const canExport = isAdmin() || getCurrentUser()?.role === "coordinator";
+    const modal = document.createElement("div");
+    modal.id = "app-menu-modal";
+    modal.className = "app-menu-modal";
+    modal.innerHTML = `
+      <div class="app-menu-panel" role="dialog" aria-modal="true" aria-label="Menu aplikacji">
+        <div class="screen-head">
+          <h2>Menu</h2>
+          <button type="button" class="ghost-light small" data-menu-action="close">Zamknij</button>
+        </div>
+        <button type="button" data-menu-action="home">Menu główne</button>
+        <button type="button" data-menu-action="user">Użytkownik</button>
+        <button type="button" data-menu-action="sync">Synchronizacja</button>
+        ${canExport ? `<button type="button" data-menu-action="export">Eksport</button>` : ""}
+        ${isAdmin() ? `<button type="button" data-menu-action="admin">Administrator</button>` : ""}
+        <button type="button" data-menu-action="settings">Ustawienia</button>
+        <button type="button" data-menu-action="advanced">Ustawienia zaawansowane</button>
+        <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
+        <button type="button" data-menu-action="refresh">Odśwież wersję aplikacji</button>
+        <button type="button" class="danger" data-menu-action="logout">Wyloguj</button>
+      </div>
+    `;
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        document.removeEventListener("keydown", onKey);
+        closeAppMenu();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    modal.addEventListener("click", async (event) => {
+      if (event.target === modal) { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
+      if (event.target.closest("a")) { document.removeEventListener("keydown", onKey); setTimeout(closeAppMenu, 0); return; }
+      const action = event.target.closest("[data-menu-action]")?.dataset.menuAction;
+      if (!action) return;
+      if (action === "close") { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
+      document.removeEventListener("keydown", onKey);
+      closeAppMenu();
+      if (!$("#form-screen")?.hidden) {
+        const leftForm = await goHomeFromMaybeForm();
+        if (!leftForm) return;
+      }
+      if (action === "home") showView("home");
+      if (action === "user" || action === "settings") { renderUserPanel(); showView("user"); }
+      if (action === "admin") { showView("admin"); await loadAdminUsers({ force: true }).catch((error) => { $("#admin-users-status").textContent = `Błąd: ${error.message}`; }); }
+      if (action === "sync") { showView("home"); $("#sync-settings")?.removeAttribute("hidden"); $("#sync-settings")?.setAttribute("open", ""); $("#sync-now")?.focus(); }
+      if (action === "advanced") { showView("home"); $("#sync-settings")?.removeAttribute("hidden"); $("#sync-settings")?.setAttribute("open", ""); $("#sync-api-url")?.focus(); }
+      if (action === "export") { showView("home"); $("#home-export-panel").hidden = false; $("#export-zip")?.focus(); }
+      if (action === "refresh") $("#refresh-app-version")?.click();
+      if (action === "logout") $("#logout")?.click();
+    });
+    document.body.appendChild(modal);
+    modal.querySelector("[data-menu-action='close']")?.focus();
   }
 
   async function loadAdminUsers(options = {}) {
@@ -413,6 +479,10 @@
     });
     $("#ui-font-size")?.addEventListener("change", () => {
       setUiSettings({ ...getUiSettings(), fontSize: value("#ui-font-size", "normal") });
+      applyUiSettings();
+    });
+    $("#field-mode-toggle")?.addEventListener("change", () => {
+      setUiSettings({ ...getUiSettings(), fieldMode: !!$("#field-mode-toggle")?.checked });
       applyUiSettings();
     });
   }
@@ -1795,10 +1865,17 @@
         </div>
       `;
       const close = (value) => { modal.remove(); resolve(value); };
+      const onKey = (event) => {
+        if (event.key === "Escape") {
+          document.removeEventListener("keydown", onKey);
+          close(false);
+        }
+      };
+      document.addEventListener("keydown", onKey);
       modal.addEventListener("click", (event) => {
         const choice = event.target.closest("[data-choice]")?.dataset.choice;
-        if (choice === "stay") close(false);
-        if (choice === "leave") close(true);
+        if (choice === "stay") { document.removeEventListener("keydown", onKey); close(false); }
+        if (choice === "leave") { document.removeEventListener("keydown", onKey); close(true); }
       });
       document.body.appendChild(modal);
       modal.querySelector("[data-choice='stay']")?.focus();
@@ -1817,6 +1894,7 @@
     revokePhotoUrls("server");
     updateDraftResumeButton();
     showView("home");
+    return true;
   }
 
   function resetForm() {
@@ -1990,7 +2068,7 @@
     const target = entries.find((entry) => String(entry.uid) === String(uid));
     if (!target) return false;
     if (!canSoftDeleteItem(target)) { alert("Brak uprawnień do oznaczenia tego rekordu jako usuniętego."); return false; }
-    if (!confirm(`Dane zostaną ukryte w aplikacji, ale pozostaną w bazie i mogą zostać odzyskane przez administratora.\n\nUkryć rekord ${target.nestId || ""}?`)) return false;
+    if (!confirm(`Rekord zostanie ukryty w aplikacji, ale pozostanie w bazie i może zostać odzyskany przez administratora.\n\nUkryć rekord ${target.nestId || ""}?`)) return false;
     const reason = prompt("Powód usunięcia/ukrycia (opcjonalnie):") || "";
     let updated = { ...target, deletedAt: new Date().toISOString(), deletedBy: getCurrentUser()?.id || "", deleteReason: reason, updatedAt: new Date().toISOString(), updatedBy: getCurrentUser()?.id || "", updatedByName: getCurrentUser()?.name || "" };
     if (navigator.onLine && getUserToken()) {
@@ -2261,7 +2339,9 @@
     $("#readonly-nav-random").disabled = !randomPos;
     $("#readonly-nav-nest").disabled = !nestPos;
     $("#readonly-edit").hidden = !canEditItem(record);
-    $("#readonly-delete").hidden = !canSoftDeleteItem(record);
+    const canDelete = canSoftDeleteItem(record);
+    $("#readonly-delete").hidden = !canDelete;
+    $("#readonly-more").hidden = !canDelete;
     $("#record-readonly-content").innerHTML = buildReadonlySections(record);
     initReadonlyCarousel();
     showView("readonly");
@@ -2413,7 +2493,7 @@
       console.error(error);
       alert(`Nie udało się zapisać szkicu: ${error.message || error}`);
     });
-    $("#home-shortcut").addEventListener("click", handleHomeExit);
+    $("#home-shortcut").addEventListener("click", openAppMenu);
     $$(".back-home").forEach((btn) => btn.addEventListener("click", handleHomeExit));
     $("#resume-draft")?.addEventListener("click", () => {
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
@@ -2461,7 +2541,7 @@
       const card = event.target.closest(".entry-card");
       if (card?.dataset.uid) showReadonlyRecord(card.dataset.uid);
     });
-    $("#readonly-back, #readonly-back-btn").addEventListener("click", () => { revokePhotoUrls("server"); showView("records"); });
+    $("#readonly-back").addEventListener("click", () => { revokePhotoUrls("server"); showView("records"); });
     $("#readonly-edit").addEventListener("click", () => { editReturnToReadonly = true; readonlyUid && editRecord(readonlyUid); });
     $("#readonly-delete").addEventListener("click", async () => { if (readonlyUid && await deleteRecord(readonlyUid)) showView("records"); });
     $("#readonly-nav-nest").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.lat,r.lon); });
@@ -3060,16 +3140,11 @@
 
   function setupFieldMode() {
     const key = "sieweczka-field-mode";
-    const apply = () => {
-      const on = localStorage.getItem(key) === "1";
-      document.body.classList.toggle("field-mode", on);
-      $("#field-mode-toggle").textContent = on ? "Tryb terenowy: ON" : "Tryb terenowy";
-    };
-    $("#field-mode-toggle").addEventListener("click", () => {
-      localStorage.setItem(key, localStorage.getItem(key) === "1" ? "0" : "1");
-      apply();
-    });
-    apply();
+    const legacy = localStorage.getItem(key);
+    if (legacy != null && getUiSettings().fieldMode == null) {
+      setUiSettings({ ...getUiSettings(), fieldMode: legacy === "1" });
+    }
+    applyUiSettings();
   }
 
   function registerServiceWorker() {
