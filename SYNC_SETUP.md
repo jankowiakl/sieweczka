@@ -43,6 +43,159 @@ Po wcześniejszym zalogowaniu aplikacja działa offline: można dodawać rekordy
 
 Pole starego tokenu w sekcji synchronizacji zostaje jako tryb awaryjny/admin dla dotychczasowego `SYNC_TOKEN`. Normalna synchronizacja powinna używać tokenu zalogowanego użytkownika.
 
+## Domyślny serwer API
+
+Zwykli użytkownicy nie wpisują tokenu synchronizacji ani adresu API. Aplikacja ma domyślny publiczny adres API zapisany w `DEFAULT_API_URL` w `app.js`:
+
+```js
+DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443"
+```
+
+Autoryzacja użytkowników działa przez email i hasło, a aplikacja używa JWT otrzymanego z `/api/login`. `SYNC_TOKEN` zostaje tylko jako awaryjny mechanizm serwerowy i nie jest zaszyty w frontendzie.
+
+Ustawienia API URL są ukryte w ustawieniach technicznych administratora w panelu „Użytkownik” i powinny być zmieniane tylko przez administratora lub podczas diagnostyki. Zwykły użytkownik nie widzi pola API URL ani tokenu.
+
+## Zaproszenia użytkowników
+
+Admin może wysłać zaproszenie z panelu administratora. Backend generuje tymczasowe hasło, zapisuje tylko jego bcrypt hash w PostgreSQL, ustawia `must_change_password=true` oraz `invite_sent_at=now()`.
+
+Konfiguracja SMTP w `.env`:
+
+```env
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+MAIL_FROM="Sieweczka <noreply@example.com>"
+PUBLIC_APP_URL="https://jankowiakl.github.io/sieweczka/"
+PUBLIC_API_URL="https://bielik.myqnapcloud.com:18443"
+```
+
+Jeśli SMTP jest skonfigurowane, email wychodzi z backendu. Jeśli SMTP nie jest skonfigurowane, API zwraca gotowy `mailtoUrl`, a aplikacja otwiera wiadomość do wysłania ręcznie.
+
+Użytkownik zaproszony hasłem tymczasowym po zalogowaniu zobaczy ekran zmiany hasła przed menu głównym.
+
+## Panel administratora
+
+Panel administratora zawsze pobiera użytkowników bezpośrednio z serwera przez:
+
+```text
+GET /api/users?_ts=<Date.now()>
+```
+
+Przycisk „Odśwież użytkowników” robi takie samo świeże pobranie. Panel pozwala tworzyć użytkowników, zmieniać role, aktywować/dezaktywować konta, resetować hasła i wysyłać zaproszenia.
+
+Admin nie może odebrać sam sobie roli admin ani zdezaktywować własnego konta. Nie można też zdegradować ani zdezaktywować ostatniego aktywnego administratora.
+
+## Pierwsza strona aplikacji
+
+Pierwsza strona pokazuje proste kafelki terenowe:
+- Nowy rekord;
+- Mapa;
+- Gniazda robocze;
+- Lista rekordów.
+
+Drugi poziom zawiera synchronizację i eksport. Panel użytkownika, pomoc, odświeżenie wersji aplikacji oraz opcje administratora są w górnym menu aplikacji. Ustawienia techniczne są schowane w panelu „Użytkownik” i widoczne tylko dla administratora.
+
+## Eksport zdjęć z serwera
+
+Eksport ma dwa tryby:
+- „Eksport bez zdjęć” - szybki ZIP z `sieweczka-records.csv` i `records.json`, bez pobierania plików zdjęć;
+- „Eksport ze zdjęciami” - ZIP z danymi, folderem `photos/` oraz `photos_manifest.csv`.
+
+Przed eksportem ze zdjęciami aplikacja ostrzega, że może zostać pobrana duża ilość danych. Zdjęcia lokalne są używane z IndexedDB. Zdjęcia wykonane na innym telefonie są pobierane z API przez `fetch` z nagłówkiem `Authorization` tylko na czas tworzenia pliku ZIP.
+
+Zdjęcia pobrane do eksportu nie są zapisywane trwale w IndexedDB ani w `localStorage`. Po odświeżeniu aplikacji zdjęcie serwerowe może zostać pobrane ponownie, jeśli użytkownik znów otworzy podgląd albo wykona eksport ze zdjęciami.
+
+Jeśli pojedyncze zdjęcie nie pobierze się z serwera, eksport jest kontynuowany, a błąd trafia do `photos_manifest.csv`. Offline można wyeksportować dane bez zdjęć albo tylko zdjęcia dostępne lokalnie.
+
+## Grid mapy
+
+Grid mapy jest ładowany z pliku:
+
+```text
+data/grid_vanvan_wgs84.geojson
+```
+
+Źródłowy grid jest w `data/GRID_vanvan.gpkg` i ma CRS EPSG:2180 (ETRF2000-PL / CS92). Leaflet nie może rysować tych współrzędnych bezpośrednio jako GeoJSON, bo oczekuje EPSG:4326 / WGS84 z kolejnością `[lon, lat]`.
+
+Aplikacja używa gotowego pliku WGS84:
+
+```text
+data/grid_vanvan_wgs84.geojson
+```
+
+Można go wygenerować z GeoPackage komendą:
+
+```sh
+ogr2ogr -f GeoJSON -t_srs EPSG:4326 data/grid_vanvan_wgs84.geojson data/GRID_vanvan.gpkg
+```
+
+Plik musi być dostępny po wdrożeniu PWA i jest dodany do cache aplikacji w `sw.js`. Service Worker nie cache'uje endpointów `/api/*`, ale może cache'ować statyczny plik gridu.
+
+GeoJSON gridu musi być w EPSG:4326, z kolejnością współrzędnych `[lon, lat]`. Leaflet rysuje taki GeoJSON poprawnie na tle Esri World Imagery. Jeśli grid jest przesunięty, nie należy przesuwać go „na oko”; trzeba ponownie wyeksportować plik jako GeoJSON EPSG:4326 i sprawdzić kolejność współrzędnych.
+
+Aplikacja pokazuje diagnostykę gridu w statusie mapy. Jeśli plik jest pusty, niedostępny albo współrzędne nie wyglądają na WGS84, w konsoli i UI pojawi się komunikat zamiast cichej awarii.
+
+## Obserwator
+
+Przy tworzeniu nowego rekordu pole „Obserwator” jest domyślnie uzupełniane nazwą aktualnie zalogowanego użytkownika. Jeśli użytkownik nie ma nazwy, aplikacja użyje jego emaila. Pole pozostaje zwykłym polem tekstowym i można je ręcznie zmienić, np. gdy rekord wpisuje się w imieniu innej osoby.
+
+Edycja istniejącego rekordu nie zmienia obserwatora automatycznie.
+
+## Szkice
+
+Przy wyjściu z arkusza do menu aplikacja ostrzega:
+
+```text
+Wychodzisz z arkusza. Niedokończony wpis zostanie zapisany w szkicach.
+```
+
+Po potwierdzeniu dane formularza są zapisane lokalnie jako szkic. Jeśli istnieje szkic, na ekranie głównym pojawia się informacja „Masz niedokończony wpis” oraz przycisk „Wróć do szkicu”.
+
+## Wyjście z arkusza
+
+Przycisk „Wróć do menu” w arkuszu rekordu służy tylko do opuszczenia formularza i nie wylogowuje użytkownika. Nie zmienia `sieweczka-auth-v1` ani tokenu logowania.
+
+Jeśli formularz jest pusty, aplikacja wraca do menu bez ostrzeżenia. Jeśli wpis jest rozpoczęty albo trwa edycja, aplikacja pokazuje komunikat i pozwala wybrać:
+- „Zostań w arkuszu”;
+- „Zapisz szkic i wyjdź”.
+
+Niedokończony wpis zostaje zapisany pod kluczem szkicu. Dane terenowe, lokalne rekordy i zdjęcia pozostają na urządzeniu. Zdjęcia wybrane do szkicu są zapisywane lokalnie jako referencje `idb:...`, tak jak zdjęcia zrobione tym telefonem.
+
+## Menu aplikacji
+
+Górny przycisk „Menu” otwiera menu aplikacji z mniej codziennymi opcjami: użytkownik, synchronizacja, pomoc, ustawienia, ustawienia zaawansowane, odświeżenie wersji aplikacji i wylogowanie. Opcja „Administrator” jest widoczna tylko dla roli `admin`, a eksport dla admina i koordynatora.
+
+To menu nie jest wylogowaniem. Wylogowanie pozostaje osobnym przyciskiem w menu i panelu użytkownika.
+
+## Tryb terenowy
+
+Tryb terenowy jest dostępny w panelu „Użytkownik” jako przełącznik. Nie jest już stale pokazywany w górnym pasku. Stan trybu terenowego jest zapisywany lokalnie w ustawieniach UI i działa od razu po zmianie.
+
+## Rozmiar tekstu
+
+W panelu „Użytkownik” można zmienić „Rozmiar tekstu”: Mały, Normalny, Duży albo Bardzo duży. Wybór jest zapisywany lokalnie w `sieweczka-ui-settings-v1` i działa od razu bez restartu aplikacji. Ustawienie nie jest synchronizowane z serwerem.
+
+## Automatyczne ID gniazda
+
+Automatyczne ID gniazda jest generowane na podstawie gatunku, daty obserwacji i kolejnego numeru dla danego gatunku w danym dniu:
+
+```text
+<speciesCode>-<YYYYMMDD>-<NNN>
+```
+
+Przykład:
+
+```text
+SOb-20260506-001
+```
+
+Pierwszy rekord danego gatunku danego dnia dostaje końcówkę `001`, drugi `002` itd. Inny gatunek tego samego dnia zaczyna od `001`, a ten sam gatunek następnego dnia też zaczyna od `001`.
+
+Pole ID nadal można zmienić ręcznie. Po ręcznej zmianie aplikacja nie nadpisuje ID automatycznie. Przycisk „Wygeneruj ID” wymusza ponowne przeliczenie na podstawie aktualnej daty i gatunku.
+
 ## Aktualizacja PWA bez kasowania danych
 
 Po większej zmianie kodu telefon może przez chwilę trzymać starą wersję plików w Service Worker/cache. Nie używaj opcji:
@@ -98,10 +251,12 @@ Nie usuwaj katalogu `photo-data/`, jeśli chcesz zachować zdjęcia. Usunięcie 
 - `POST /api/bootstrap-admin`
 - `POST /api/login`
 - `GET /api/me`
+- `POST /api/me/change-password`
 - `GET /api/users`
 - `POST /api/users`
 - `PATCH /api/users/:id`
 - `POST /api/users/:id/reset-password`
+- `POST /api/users/:id/send-invite`
 - `POST /api/users/:id/deactivate`
 - `POST /api/users/:id/activate`
 - `GET /api/records?updated_after=...`
@@ -128,6 +283,7 @@ Jeśli aktualizujesz starą instalację, upewnij się, że powstały tabele:
 - `photos`.
 
 Upewnij się też, że istnieją kolumny:
+- `users.invite_sent_at`, `users.must_change_password`;
 - `records.created_by`, `records.updated_by`, `records.deleted_at`, `records.deleted_by`, `records.delete_reason`;
 - `working_nests.created_by`, `working_nests.updated_by`, `working_nests.deleted_at`, `working_nests.deleted_by`, `working_nests.delete_reason`;
 - `photos.uploaded_by`, `photos.deleted_at`, `photos.deleted_by`, `photos.delete_reason`.

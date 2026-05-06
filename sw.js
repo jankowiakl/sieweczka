@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-users-1";
+const CACHE_NAME = "sieweczka-app-v2026-05-menu-export-advanced-hidden-1";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,7 +6,7 @@ const APP_SHELL = [
   "./app.js",
   "./field-help.js",
   "./manifest.webmanifest",
-  "./data/grid_vanvan.geojson",
+  "./data/grid_vanvan_wgs84.geojson",
   "./icons/icon.svg",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -922,11 +922,7 @@ async function appJsResponse(request) {
     response = await caches.match(request) || await caches.match("./app.js");
   }
   if (!response) return new Response("Offline", { status: 503, statusText: "Offline" });
-  const source = await response.clone().text();
-  let patched = source;
-  if (!patched.includes("__sieweczkaPatchV9")) patched += "\n\n" + SIEWECZKA_PATCH_V9 + "\n";
-  if (!patched.includes("__sieweczkaPatchV11SafeFixes")) patched += "\n\n" + SIEWECZKA_PATCH_V11_SAFE_FIXES + "\n";
-  return new Response(patched, {
+  return new Response(await response.clone().text(), {
     status: 200,
     statusText: "OK",
     headers: {
@@ -955,6 +951,22 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+  if (url.pathname.startsWith("/api/") || url.pathname.includes("/api/")) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+  if (url.pathname.endsWith("/data/grid_vanvan_wgs84.geojson") || url.pathname.endsWith("data/grid_vanvan_wgs84.geojson")) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((cached) => cached || new Response("Grid offline", { status: 503, statusText: "Offline" })))
+    );
+    return;
+  }
   if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("app.js")) {
     event.respondWith(appJsResponse(event.request));
     return;

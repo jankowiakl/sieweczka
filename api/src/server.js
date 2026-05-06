@@ -7,6 +7,7 @@ const path = require('path');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const db = require('./db');
 
 const app = express();
@@ -33,7 +34,7 @@ const uploadPhoto = multer({
   limits: { fileSize: Math.max(1, maxPhotoMb) * 1024 * 1024 }
 });
 
-const userPublicFields = 'id,email,name,role,is_active,created_at,updated_at,last_login_at';
+const userPublicFields = 'id,email,name,role,is_active,created_at,updated_at,last_login_at,invite_sent_at,must_change_password';
 
 function randomId(prefix) {
   return `${prefix}_${crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`}`;
@@ -50,7 +51,7 @@ function jwtSecret() {
 
 function publicUser(row) {
   if (!row) return null;
-  return { id: row.id, email: row.email, name: row.name, role: row.role };
+  return { id: row.id, email: row.email, name: row.name, role: row.role, must_change_password: !!row.must_change_password };
 }
 
 function actorPayload(user) {
@@ -83,7 +84,7 @@ async function authenticateUser(req, res, next) {
     const q = await db.query(`SELECT ${userPublicFields} FROM users WHERE id = $1`, [decoded.sub]);
     const user = q.rows[0];
     if (!user || !user.is_active) return res.status(401).json({ error: 'inactive or missing user' });
-    req.user = { id: user.id, email: user.email, name: user.name, role: user.role, isActive: user.is_active };
+    req.user = { id: user.id, email: user.email, name: user.name, role: user.role, isActive: user.is_active, must_change_password: !!user.must_change_password };
     next();
   } catch {
     res.status(401).json({ error: 'unauthorized' });
@@ -201,6 +202,60 @@ async function countActiveAdmins() {
   return q.rows[0].count;
 }
 
+function generateTemporaryPassword() {
+  return crypto.randomBytes(12).toString('base64url').slice(0, 16);
+}
+
+function smtpConfigured() {
+  return !!process.env.SMTP_HOST;
+}
+
+function inviteMessage(user, temporaryPassword) {
+  const appUrl = process.env.PUBLIC_APP_URL || 'https://jankowiakl.github.io/sieweczka/';
+  const apiUrl = process.env.PUBLIC_API_URL || 'https://bielik.myqnapcloud.com:18443';
+  const subject = 'Zaproszenie do aplikacji Sieweczka';
+  const text = [
+    `Witaj ${user.name},`,
+    '',
+    'Masz konto w aplikacji Sieweczka.',
+    '',
+    `Aplikacja: ${appUrl}`,
+    `Serwer API: ${apiUrl}`,
+    `Email: ${user.email}`,
+    `Hasło tymczasowe: ${temporaryPassword}`,
+    '',
+    'Po pierwszym logowaniu trzeba zmienić hasło.',
+    '',
+    'Instrukcja:',
+    '1. Otwórz aplikację.',
+    '2. Zaloguj się emailem i hasłem tymczasowym.',
+    '3. Zmień hasło.',
+    '4. Kliknij „Synchronizuj teraz”.',
+    '',
+    'Sieweczka'
+  ].join('\n');
+  const mailtoUrl = `mailto:${encodeURIComponent(user.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+  return { subject, text, mailtoUrl };
+}
+
+async function sendInviteEmail(user, temporaryPassword) {
+  const message = inviteMessage(user, temporaryPassword);
+  if (!smtpConfigured()) return { sent: false, ...message };
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: String(process.env.SMTP_SECURE || 'false') === 'true',
+    auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || '' } : undefined
+  });
+  await transporter.sendMail({
+    from: process.env.MAIL_FROM || 'Sieweczka <noreply@example.com>',
+    to: user.email,
+    subject: message.subject,
+    text: message.text
+  });
+  return { sent: true };
+}
+
 async function createUser({ email, name, role, password }, actor) {
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) {
@@ -280,6 +335,26 @@ app.get('/api/me', authenticateUser, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
+app.post('/api/me/change-password', authenticateUser, async (req, res, next) => {
+  try {
+    if (req.user.legacy) return res.status(400).json({ error: 'legacy token cannot change password' });
+    const currentPassword = String(req.body?.currentPassword || '');
+    const newPassword = String(req.body?.newPassword || '');
+    if (newPassword.length < 8) return res.status(400).json({ error: 'password must have at least 8 characters' });
+    const q = await db.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
+    const user = q.rows[0];
+    if (!user) return res.status(404).json({ error: 'not found' });
+    const ok = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!ok) return res.status(401).json({ error: 'current password is invalid' });
+    const hash = await bcrypt.hash(newPassword, 12);
+    await db.query('UPDATE users SET password_hash=$2, must_change_password=false, updated_at=now() WHERE id=$1', [req.user.id, hash]);
+    await audit(req.user, 'user_password_changed', 'user', req.user.id, {});
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/users', authenticateUser, requireRole('admin'), async (_req, res) => {
   const q = await db.query(`SELECT ${userPublicFields} FROM users ORDER BY created_at DESC`);
   res.json({ users: q.rows });
@@ -324,6 +399,23 @@ app.post('/api/users/:id/reset-password', authenticateUser, requireRole('admin')
     await db.query('UPDATE users SET password_hash=$2, updated_at=now() WHERE id=$1', [req.params.id, hash]);
     await audit(req.user, 'user_password_reset', 'user', req.params.id, {});
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/users/:id/send-invite', authenticateUser, requireRole('admin'), async (req, res, next) => {
+  try {
+    const q = await db.query(`SELECT ${userPublicFields} FROM users WHERE id=$1`, [req.params.id]);
+    const user = q.rows[0];
+    if (!user) return res.status(404).json({ error: 'not found' });
+    const temporaryPassword = generateTemporaryPassword();
+    const hash = await bcrypt.hash(temporaryPassword, 12);
+    await db.query('UPDATE users SET password_hash=$2, must_change_password=true, invite_sent_at=now(), updated_at=now() WHERE id=$1', [user.id, hash]);
+    await audit(req.user, 'user_temp_password_generated', 'user', user.id, {});
+    const result = await sendInviteEmail(user, temporaryPassword);
+    await audit(req.user, 'user_invite_sent', 'user', user.id, { sent: result.sent });
+    res.json({ ok: true, sent: result.sent, mailtoUrl: result.mailtoUrl || null, message: result.text || null });
   } catch (error) {
     next(error);
   }
