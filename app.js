@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-pwa-ui-install-final";
+  const APP_VERSION = "2026.05.06-ux-stable-final";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -223,11 +223,8 @@
   }
 
   async function loginUser() {
-    const existing = getSyncConfig();
-    const loginApiUrl = trim("#login-api-url");
-    if (loginApiUrl) setSyncConfig({ ...existing, apiUrl: loginApiUrl });
-    setValue("#sync-api-url", getSyncConfig().apiUrl || "");
     const cfg = getSyncConfig();
+    setValue("#sync-api-url", cfg.apiUrl || DEFAULT_API_URL);
     const apiBase = getSyncApiBase(cfg);
     const res = await fetch(`${apiBase}/api/login`, {
       method: "POST",
@@ -476,11 +473,6 @@
   }
 
   function setupAuthUI() {
-    setValue("#login-api-url", getSyncConfig().apiUrl || DEFAULT_API_URL);
-    $("#login-advanced-toggle")?.addEventListener("click", () => {
-      const box = $("#login-advanced-settings");
-      if (box) box.hidden = !box.hidden;
-    });
     $("#login-submit")?.addEventListener("click", async () => {
       try {
         const user = await loginUser();
@@ -778,6 +770,7 @@
   let userLocationWatchId = null;
   let mapHeadingEnabled = false;
   let latestMapHeadingDeg = null;
+  let mapHeadingOrientationHandler = null;
   let recordSpeciesLabelsVisible = true;
   let workingMap = null;
   let workingLayer = null;
@@ -840,18 +833,13 @@
 
   function setGridStatus(target, message) {
     gridStatus[target === "working" ? "working" : "records"] = message || "";
-    const selector = target === "working" ? "#working-map-info" : "#map-info";
-    const el = $(selector);
-    if (!el) return;
-    const current = String(el.textContent || "").replace(/\s*Grid:.*$/, "");
-    el.textContent = `${current}${current ? " • " : ""}Grid: ${message}`;
   }
 
   function setMapInfo(target, message) {
     const key = target === "working" ? "working" : "records";
     const el = $(key === "working" ? "#working-map-info" : "#map-info");
     if (!el) return;
-    el.textContent = `${message || ""}${gridStatus[key] ? ` • Grid: ${gridStatus[key]}` : ""}`;
+    el.textContent = message || "";
   }
 
   function walkGridCoords(coords, cb) {
@@ -2575,8 +2563,7 @@
       userLocationWatchId = navigator.geolocation.watchPosition(({coords}) => {
         latestUserLatLng = [coords.latitude, coords.longitude];
         latestUserAccuracy = coords.accuracy;
-        $("#map-user-status").textContent = "Twoja pozycja: aktywna";
-        $("#working-user-status").textContent = "Twoja pozycja: aktywna";
+        updateMapHeadingButtons();
         syncUserLocationLayers("records");
         syncUserLocationLayers("working");
         if (recordsMap && !mapUserState.records.hasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 18); mapUserState.records.hasAutoCenteredOnUser = true; }
@@ -2586,21 +2573,95 @@
         if (!points.length) setMapInfo("records", "Brak zapisanych punktów z GPS do pokazania na mapie.");
       }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
     } else {
-      const statusText = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
-      $("#map-user-status").textContent = statusText;
-      $("#working-user-status").textContent = statusText;
+      updateMapHeadingButtons();
       syncUserLocationLayers("records");
       syncUserLocationLayers("working");
     }
   }
+
+  function updateMapHeadingButtons() {
+    const statusText = latestUserLatLng
+      ? `Twoja pozycja: aktywna${mapHeadingEnabled ? " (kierunek włączony)" : ""}`
+      : "Twoja pozycja: oczekiwanie…";
+    ["#map-user-status", "#working-user-status"].forEach((selector) => {
+      const el = $(selector);
+      if (el) el.textContent = statusText;
+    });
+    ["#map-enable-heading", "#working-enable-heading"].forEach((selector) => {
+      const btn = $(selector);
+      if (!btn) return;
+      btn.classList.toggle("active", mapHeadingEnabled);
+      btn.setAttribute("aria-pressed", mapHeadingEnabled ? "true" : "false");
+      btn.textContent = mapHeadingEnabled ? "Kierunek: włączony" : "Kierunek: wyłączony";
+      btn.title = mapHeadingEnabled ? "Wyłącz kierunek mapy" : "Włącz kierunek mapy";
+    });
+  }
+
+  function handleMapOrientation(event) {
+    let heading = null;
+    if (typeof event.webkitCompassHeading === "number") heading = event.webkitCompassHeading;
+    else if (event.absolute === true && typeof event.alpha === "number") heading = event.alpha;
+    else if (typeof event.alpha === "number") heading = 360 - event.alpha;
+    if (!Number.isFinite(heading)) return;
+    const normalized = ((heading % 360) + 360) % 360;
+    if (latestMapHeadingDeg != null && Math.abs(normalized - latestMapHeadingDeg) < 3) return;
+    latestMapHeadingDeg = latestMapHeadingDeg == null ? normalized : (latestMapHeadingDeg * 0.7 + normalized * 0.3);
+    requestAnimationFrame(() => { renderMapHeading(recordsMap); renderMapHeading(workingMap); });
+    updateMapHeadingButtons();
+  }
+
+  function disableMapHeading() {
+    mapHeadingEnabled = false;
+    latestMapHeadingDeg = null;
+    if (mapHeadingOrientationHandler) {
+      window.removeEventListener("deviceorientationabsolute", mapHeadingOrientationHandler, true);
+      window.removeEventListener("deviceorientation", mapHeadingOrientationHandler, true);
+      mapHeadingOrientationHandler = null;
+    }
+    renderMapHeading(recordsMap);
+    renderMapHeading(workingMap);
+    updateMapHeadingButtons();
+  }
+
+  async function toggleMapHeading() {
+    if (mapHeadingEnabled) {
+      disableMapHeading();
+      return;
+    }
+    if (!("DeviceOrientationEvent" in window)) {
+      alert("Kierunek nie jest dostępny w tej przeglądarce.");
+      return;
+    }
+    const req = window.DeviceOrientationEvent?.requestPermission;
+    if (typeof req === "function") {
+      try {
+        const permission = await req.call(window.DeviceOrientationEvent);
+        if (permission !== "granted") {
+          alert("Kierunek nie jest dostępny w tej przeglądarce.");
+          return;
+        }
+      } catch {
+        alert("Kierunek nie jest dostępny w tej przeglądarce.");
+        return;
+      }
+    }
+    mapHeadingOrientationHandler = handleMapOrientation;
+    window.addEventListener("deviceorientationabsolute", mapHeadingOrientationHandler, true);
+    window.addEventListener("deviceorientation", mapHeadingOrientationHandler, true);
+    mapHeadingEnabled = true;
+    updateMapHeadingButtons();
+    alert("Porusz telefonem ósemką, aby skalibrować kompas.");
+  }
+
   function renderMapHeading(targetMap = recordsMap) {
-    if (!targetMap || !latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
+    if (!targetMap) return;
     const state = getMapUserState(targetMap);
     if (!mapHeadingEnabled) {
       if (state.userHeadingMarker && targetMap.hasLayer(state.userHeadingMarker)) targetMap.removeLayer(state.userHeadingMarker);
       state.userHeadingMarker = null;
       return;
     }
+    if (!latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
     if (!state.userHeadingMarker) state.userHeadingMarker = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(targetMap);
     else state.userHeadingMarker.setLatLng(latestUserLatLng);
     const arrow = state.userHeadingMarker.getElement()?.querySelector("div");
@@ -2659,6 +2720,8 @@
     $("#records-show-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
     $("#step-back").addEventListener("click", () => showStep(currentStep - 1));
     $("#step-next").addEventListener("click", () => showStep(currentStep + 1));
+    $("#step-first")?.addEventListener("click", () => showStep(1));
+    $("#step-last")?.addEventListener("click", () => showStep(8));
     $("#step-strip")?.addEventListener("click", (event) => {
       const btn = event.target.closest("button[data-step]");
       if (!btn) return;
@@ -2707,34 +2770,7 @@
       if (!latestUserLatLng) return alert("Twoja pozycja jest jeszcze niedostępna.");
       recordsMap?.setView(latestUserLatLng, 18);
     });
-    $("#map-enable-heading").addEventListener("click", async () => {
-      const statusEl = $("#map-user-status");
-      const onOrientation = (event) => {
-        let heading = null;
-        if (typeof event.webkitCompassHeading === "number") heading = event.webkitCompassHeading;
-        else if (event.absolute === true && typeof event.alpha === "number") heading = event.alpha;
-        else if (typeof event.alpha === "number") heading = 360 - event.alpha;
-        if (Number.isFinite(heading)) {
-          const normalized = ((heading % 360) + 360) % 360;
-          if (latestMapHeadingDeg != null && Math.abs(normalized - latestMapHeadingDeg) < 3) return;
-          latestMapHeadingDeg = latestMapHeadingDeg == null ? normalized : (latestMapHeadingDeg * 0.7 + normalized * 0.3);
-          requestAnimationFrame(() => { renderMapHeading(recordsMap); renderMapHeading(workingMap); });
-          statusEl.textContent = "Twoja pozycja: aktywna (kierunek włączony)";
-        }
-      };
-      if (!("DeviceOrientationEvent" in window)) return alert("Kierunek niedostępny na tym urządzeniu lub w tej przeglądarce.");
-      if (!mapHeadingEnabled) {
-        const req = window.DeviceOrientationEvent?.requestPermission;
-        if (typeof req === "function") {
-          const permission = await req.call(window.DeviceOrientationEvent);
-          if (permission !== "granted") return alert("Kierunek niedostępny na tym urządzeniu lub w tej przeglądarce.");
-        }
-        window.addEventListener("deviceorientationabsolute", onOrientation, true);
-        window.addEventListener("deviceorientation", onOrientation, true);
-        mapHeadingEnabled = true;
-        alert("Porusz telefonem ósemką, aby skalibrować kompas.");
-      }
-    });
+    $("#map-enable-heading").addEventListener("click", () => { void toggleMapHeading(); });
     $("#map-screen").addEventListener("click", (event) => {
       const btn = event.target.closest("button[data-map-action]");
       if (!btn) return;
@@ -2782,7 +2818,7 @@
       }
     });
     $("#working-fit").addEventListener("click", () => fitWorkingMapBounds());
-    $("#working-enable-heading").addEventListener("click", () => $("#map-enable-heading")?.click());
+    $("#working-enable-heading").addEventListener("click", () => { void toggleMapHeading(); });
     $("#working-show-map").addEventListener("click",()=>{workingViewMode="map";renderWorkingMap();});
     $("#working-show-list").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap();});
     $("#working-nearest").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap(true);});
