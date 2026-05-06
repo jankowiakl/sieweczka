@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-users-1";
+const CACHE_NAME = "sieweczka-app-v2026-05-invites-home-1";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -955,6 +955,10 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+  if (url.pathname.startsWith("/api/") || url.pathname.includes("/api/")) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
   if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("app.js")) {
     event.respondWith(appJsResponse(event.request));
     return;

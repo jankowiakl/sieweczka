@@ -22,7 +22,11 @@
     <section id="login-screen" class="screen card" hidden>
       <h2>Logowanie</h2>
       <p class="lead">Zaloguj się raz, aby móc pracować także offline na tym urządzeniu.</p>
-      <label>API URL <input id="login-api-url" type="url" placeholder="https://twoj-serwer" /></label>
+      <button id="login-advanced-toggle" type="button" class="ghost-light small">Ustawienia zaawansowane</button>
+      <div id="login-advanced-settings" hidden>
+        <p class="muted">Zmieniaj tylko, jeśli wiesz co robisz.</p>
+        <label>API URL <input id="login-api-url" type="url" placeholder="https://twoj-serwer" /></label>
+      </div>
       <label>Email <input id="login-email" type="email" autocomplete="username" /></label>
       <label>Hasło <input id="login-password" type="password" autocomplete="current-password" /></label>
       <div class="row-actions">
@@ -31,45 +35,73 @@
       <p id="login-status" class="muted">Wymagane pierwsze logowanie online.</p>
     </section>
 
-    <section id="home-screen" class="screen card">
-      <h2>Menu główne</h2>
-      <p class="lead">Zbieranie danych terenowych przy gniazdach sieweczek.</p>
+    <section id="change-password-screen" class="screen card" hidden>
+      <h2>Zmień hasło</h2>
+      <p class="lead">To hasło jest tymczasowe. Ustaw nowe hasło przed dalszą pracą.</p>
+      <label>Aktualne hasło <input id="change-current-password" type="password" autocomplete="current-password" /></label>
+      <label>Nowe hasło <input id="change-new-password" type="password" autocomplete="new-password" /></label>
+      <label>Powtórz nowe hasło <input id="change-repeat-password" type="password" autocomplete="new-password" /></label>
+      <button id="change-password-submit" type="button" class="primary">Zmień hasło</button>
+      <p id="change-password-status" class="muted"></p>
+    </section>
 
-      <div class="stats-grid">
-        <div class="stat"><span>Dzisiaj</span><strong id="today-count">0</strong></div>
-        <div class="stat"><span>Łącznie</span><strong id="entry-count">0</strong></div>
-        <div class="stat wide"><span>Status</span><strong id="offline-status">online</strong></div>
+    <section id="home-screen" class="screen card">
+      <div class="home-hero">
+        <div>
+          <h2>Sieweczka</h2>
+          <p class="lead">Terenowa baza gniazd i obserwacji</p>
+        </div>
+        <div class="home-user-summary">
+          <strong id="home-user-name">—</strong>
+          <span id="home-user-role">—</span>
+          <span id="home-online-status">Online</span>
+        </div>
+      </div>
+
+      <div class="home-status-grid">
+        <div><span>Ostatnia synchronizacja</span><strong id="home-last-sync">—</strong></div>
+        <div><span>Zdjęcia oczekujące</span><strong id="home-photo-pending">0</strong></div>
+        <div><span>Rekordy lokalne</span><strong id="entry-count">0</strong></div>
+        <div><span>Dzisiaj</span><strong id="today-count">0</strong></div>
       </div>
       <div id="species-summary" class="muted"></div>
 
-      <div class="home-actions">
-        <button id="start-new" type="button" class="primary big">+ Nowe gniazdo</button>
-        <button id="open-records" type="button" class="big">Zapisane rekordy</button>
-        <button id="open-map" type="button" class="big">Mapa rekordów</button>
-        <button id="open-working-map" type="button" class="big">Mapa gniazd roboczych</button>
-        <button id="open-user" type="button" class="big">Użytkownik</button>
-        <button id="open-admin" type="button" class="big" hidden>Panel admina</button>
-        <button id="export-csv" type="button" class="big">Eksport CSV</button>
-        <button id="export-json" type="button" class="big">Eksport JSON</button>
-        <button id="export-zip" type="button" class="big">Eksport ZIP + zdjęcia</button>
-        <button id="export-kml" type="button" class="big">Eksport KML</button>
-        <a class="button-like big" href="instrukcja_terenowa_sieweczka.pdf" download>Instrukcja terenowa PDF</a>
+      <div class="home-primary-actions">
+        <button id="start-new" type="button" class="home-tile primary"><strong>Nowy rekord</strong><span>Dodaj obserwację lub gniazdo</span></button>
+        <button id="open-map" type="button" class="home-tile"><strong>Mapa</strong><span>Zobacz rekordy i punkty robocze</span></button>
+        <button id="open-working-map" type="button" class="home-tile"><strong>Gniazda robocze</strong><span>Punkty do sprawdzenia w terenie</span></button>
+        <button id="open-records" type="button" class="home-tile"><strong>Lista rekordów</strong><span>Przegląd i edycja danych</span></button>
       </div>
 
-      
-      <section class="card" id="sync-settings">
-        <h3>Synchronizacja</h3>
+      <div class="home-secondary-actions">
+        <button id="home-sync-now" type="button">Synchronizuj teraz</button>
+        <button id="home-export-toggle" type="button">Eksport</button>
+        <button id="open-user" type="button">Użytkownik</button>
+        <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
+        <button id="open-admin" type="button" hidden>Administrator</button>
+      </div>
+
+      <section id="home-export-panel" class="advanced-panel" hidden>
+        <div class="row-actions">
+          <button id="export-csv" type="button">Eksport CSV</button>
+          <button id="export-json" type="button">Eksport JSON</button>
+          <button id="export-zip" type="button">Eksport ZIP + zdjęcia</button>
+          <button id="export-kml" type="button">Eksport KML</button>
+        </div>
+      </section>
+
+      <details id="sync-settings" class="advanced-panel">
+        <summary>Ustawienia zaawansowane</summary>
+        <p class="muted">Zmieniaj tylko, jeśli wiesz co robisz.</p>
         <label>API URL <input id="sync-api-url" type="url" placeholder="https://twoj-serwer" /></label>
-        <label>Token awaryjny/admin <input id="sync-token" type="password" placeholder="Opcjonalny legacy SYNC_TOKEN" /></label>
+        <label id="sync-token-label">Token awaryjny/admin <input id="sync-token" type="password" placeholder="Opcjonalny legacy SYNC_TOKEN" /></label>
         <div class="row-actions">
           <button id="sync-save-config" type="button">Zapisz ustawienia</button>
           <button id="sync-test-connection" type="button">Test połączenia</button>
           <button id="sync-now" type="button" class="primary">Synchronizuj teraz</button>
         </div>
         <p id="sync-status" class="muted">Synchronizacja nieaktywna.</p>
-      </section>
-
-      <p class="hint">Wersja czysta: formularz krokowy, bezpieczny zapis i edycja, pełny zestaw pól z arkusza terenowego.</p>
+      </details>
     </section>
 
     <section id="user-screen" class="screen card" hidden>
@@ -105,6 +137,7 @@
         <button id="admin-create-user" type="button" class="primary">Utwórz użytkownika</button>
       </section>
       <div id="admin-users-status" class="muted"></div>
+      <p class="muted">Dane użytkowników są pobierane bezpośrednio z serwera.</p>
       <button id="admin-refresh-users" type="button">Odśwież użytkowników</button>
       <div id="admin-users-list" class="entries-list"></div>
     </section>

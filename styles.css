@@ -92,6 +92,12 @@ button.ghost {
   border-color: rgba(255,255,255,.35);
 }
 
+button.ghost-light {
+  background: #fff;
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
 button.primary {
   background: var(--primary);
 }
@@ -274,6 +280,127 @@ label span,
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: .65rem;
   margin: 1rem 0;
+}
+
+.home-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.home-hero h2 {
+  font-size: 2rem;
+  margin-bottom: .2rem;
+}
+
+.home-user-summary {
+  display: grid;
+  gap: .2rem;
+  text-align: right;
+  color: var(--muted);
+}
+
+.home-user-summary strong {
+  color: var(--text);
+}
+
+.home-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .65rem;
+  margin: 1rem 0;
+}
+
+.home-status-grid > div {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: .75rem;
+  background: #f8fafc;
+}
+
+.home-status-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: .85rem;
+}
+
+.home-status-grid strong {
+  display: block;
+  margin-top: .2rem;
+}
+
+.home-primary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .75rem;
+  margin: 1rem 0;
+}
+
+.home-tile {
+  min-height: 108px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-direction: column;
+  text-align: left;
+  padding: 1rem;
+  background: #fff;
+  color: var(--text);
+  border-color: #b7d4cc;
+}
+
+.home-tile:hover {
+  background: #f0fdfa;
+}
+
+.home-tile.primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.home-tile strong {
+  font-size: 1.08rem;
+}
+
+.home-tile span {
+  font-size: .9rem;
+  font-weight: 600;
+  opacity: .86;
+}
+
+.home-secondary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .6rem;
+  margin: 1rem 0;
+}
+
+.advanced-panel {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: .75rem;
+  background: #f8fafc;
+}
+
+.advanced-panel summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+@media (max-width: 560px) {
+  .home-hero {
+    display: grid;
+  }
+  .home-user-summary {
+    text-align: left;
+  }
+  .home-primary-actions,
+  .home-secondary-actions,
+  .home-status-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .stat {

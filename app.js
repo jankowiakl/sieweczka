@@ -11,7 +11,8 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-users-cache-refresh";
+  const APP_VERSION = "2026.05.06-invites-home-api-refresh";
+  const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
@@ -26,11 +27,12 @@
   }
   function getSyncConfig() { try { return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY) || "{}"); } catch { return {}; } }
   function setSyncConfig(cfg) { localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(cfg)); }
-  function getSyncApiBase(cfg = getSyncConfig()) { return String(cfg.apiUrl || "").trim().replace(/\/+$/, "").replace(/\/api$/i, ""); }
+  function getSyncApiBase(cfg = getSyncConfig()) { return String(cfg.apiUrl || DEFAULT_API_URL).trim().replace(/\/+$/, "").replace(/\/api$/i, ""); }
   function getAuthState() { try { return JSON.parse(localStorage.getItem(AUTH_STATE_KEY) || "{}"); } catch { return {}; } }
   function setAuthState(state) { localStorage.setItem(AUTH_STATE_KEY, JSON.stringify(state || {})); }
   function clearAuthState() { localStorage.removeItem(AUTH_STATE_KEY); }
   function getCurrentUser() { return getAuthState().user || null; }
+  function mustChangePassword() { return !!getCurrentUser()?.must_change_password; }
   function getUserToken() { return getAuthState().token || ""; }
   function isAdmin() { return getCurrentUser()?.role === "admin"; }
   function canManageData() { return ["admin", "coordinator"].includes(getCurrentUser()?.role); }
@@ -97,7 +99,7 @@
   }
   async function syncNow() {
     const cfg = getSyncConfig();
-    if (!cfg.apiUrl || !(getUserToken() || cfg.token)) throw new Error("Brak konfiguracji synchronizacji");
+    if (!(getUserToken() || cfg.token)) throw new Error("Brak konfiguracji synchronizacji");
     const apiBase = getSyncApiBase(cfg);
     const entries = getEntries();
     const workingNests = getWorkingNests();
@@ -135,7 +137,7 @@
   }
   function setupSyncUI() {
     const cfg = getSyncConfig();
-    setValue("#sync-api-url", cfg.apiUrl || "");
+    setValue("#sync-api-url", cfg.apiUrl || DEFAULT_API_URL);
     setValue("#sync-token", cfg.token || "");
     $("#sync-save-config")?.addEventListener("click", () => {
       setSyncConfig({ apiUrl: trim("#sync-api-url"), token: trim("#sync-token") });
@@ -151,6 +153,20 @@
         renderEntries();
       } catch (e) { $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`; }
     });
+    $("#home-sync-now")?.addEventListener("click", async () => {
+      try {
+        const result = await syncNow();
+        $("#sync-status").textContent = `Synchronizacja zakończona. ${formatPhotoSyncStatus(result.photoSync)}`;
+        renderEntries();
+        updateCounts();
+      } catch (e) {
+        $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`;
+      }
+    });
+    $("#home-export-toggle")?.addEventListener("click", () => {
+      const panel = $("#home-export-panel");
+      if (panel) panel.hidden = !panel.hidden;
+    });
     window.addEventListener("online", () => { syncNow().catch(()=>{}); });
   }
 
@@ -161,7 +177,6 @@
     setValue("#sync-api-url", getSyncConfig().apiUrl || "");
     const cfg = getSyncConfig();
     const apiBase = getSyncApiBase(cfg);
-    if (!apiBase) throw new Error("Najpierw wpisz API URL w ustawieniach synchronizacji.");
     const res = await fetch(`${apiBase}/api/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -171,6 +186,23 @@
     const data = await res.json();
     setAuthState({ token: data.token, user: data.user, loggedAt: new Date().toISOString() });
     return data.user;
+  }
+
+  async function changeOwnPassword() {
+    const currentPassword = value("#change-current-password");
+    const newPassword = value("#change-new-password");
+    const repeat = value("#change-repeat-password");
+    if (newPassword.length < 8) throw new Error("Nowe hasło musi mieć co najmniej 8 znaków.");
+    if (newPassword !== repeat) throw new Error("Nowe hasła nie są takie same.");
+    const cfg = getSyncConfig();
+    const res = await fetch(`${getSyncApiBase(cfg)}/api/me/change-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+    if (!res.ok) throw new Error(await readApiError(res, `Change password HTTP ${res.status}`));
+    const state = getAuthState();
+    setAuthState({ ...state, user: { ...state.user, must_change_password: false } });
   }
 
   async function fetchMe() {
@@ -198,24 +230,40 @@
       ` : `<p>Brak zalogowanego użytkownika.</p>`;
     }
     $("#open-admin")?.toggleAttribute("hidden", !isAdmin());
+    $("#sync-token-label")?.toggleAttribute("hidden", !isAdmin());
     ["#export-csv", "#export-json", "#export-zip", "#export-kml"].forEach((selector) => {
       const el = $(selector);
       if (el) el.hidden = !(isAdmin() || getCurrentUser()?.role === "coordinator");
     });
   }
 
-  async function loadAdminUsers() {
+  function renderHomeSummary() {
+    const user = getCurrentUser();
+    const photoSummary = getPhotoSyncSummary();
+    const lastSync = getLastSyncAt();
+    const onlineText = navigator.onLine ? "Online" : "Offline — dane zostaną zapisane lokalnie";
+    const setText = (selector, text) => { const el = $(selector); if (el) el.textContent = text; };
+    setText("#home-user-name", user?.name || "—");
+    setText("#home-user-role", user?.role || "—");
+    setText("#home-online-status", onlineText);
+    setText("#home-last-sync", lastSync ? new Date(lastSync).toLocaleString("pl-PL") : "—");
+    setText("#home-photo-pending", String(photoSummary.pending || 0));
+  }
+
+  async function loadAdminUsers(options = {}) {
     if (!isAdmin()) {
       $("#admin-users-status").textContent = "Brak uprawnień administratora.";
       renderAdminUsers([]);
       return;
     }
+    $("#admin-users-status").textContent = "Pobieram listę użytkowników...";
     const cfg = getSyncConfig();
     const apiBase = getSyncApiBase(cfg);
-    const res = await fetch(`${apiBase}/api/users`, { headers: getSyncAuthHeaders(cfg) });
+    const res = await fetch(`${apiBase}/api/users?_ts=${Date.now()}`, { headers: getSyncAuthHeaders(cfg), cache: "no-store" });
     if (!res.ok) throw new Error(await readApiError(res, `Users HTTP ${res.status}`));
     const data = await res.json();
     renderAdminUsers(data.users || []);
+    $("#admin-users-status").textContent = "Lista użytkowników odświeżona.";
   }
 
   function renderAdminUsers(users) {
@@ -229,12 +277,14 @@
           <p>ID: ${escapeHtml(user.id)}</p>
           <p>${escapeHtml(user.email)} • ${escapeHtml(user.role)} • ${user.is_active ? "aktywny" : "nieaktywny"}${user.id === currentUserId ? " • To jest Twoje konto" : ""}</p>
           <p class="muted">Utworzono: ${escapeHtml(user.created_at || "—")} • Aktualizacja: ${escapeHtml(user.updated_at || "—")} • Ostatnie logowanie: ${escapeHtml(user.last_login_at || "—")}</p>
+          <p class="muted">Zaproszenie: ${escapeHtml(user.invite_sent_at || "nie wysłano")} • Zmiana hasła: ${user.must_change_password ? "wymagana" : "nie"}</p>
         </div>
         <div class="entry-actions">
           ${user.id === currentUserId ? "" : `<select data-admin-action="role" data-user-id="${escapeHtml(user.id)}">
             ${["observer","coordinator","admin"].map((role) => `<option value="${role}"${role === user.role ? " selected" : ""}>${role}</option>`).join("")}
           </select>`}
           <button type="button" data-admin-action="reset" data-user-id="${escapeHtml(user.id)}">Reset hasła</button>
+          <button type="button" data-admin-action="invite" data-user-id="${escapeHtml(user.id)}">Wyślij zaproszenie</button>
           ${user.id === currentUserId ? "" : `<button type="button" data-admin-action="${user.is_active ? "deactivate" : "activate"}" data-user-id="${escapeHtml(user.id)}">${user.is_active ? "Dezaktywuj" : "Aktywuj"}</button>`}
         </div>
       </article>
@@ -242,15 +292,29 @@
   }
 
   function setupAuthUI() {
-    setValue("#login-api-url", getSyncConfig().apiUrl || "");
+    setValue("#login-api-url", getSyncConfig().apiUrl || DEFAULT_API_URL);
+    $("#login-advanced-toggle")?.addEventListener("click", () => {
+      const box = $("#login-advanced-settings");
+      if (box) box.hidden = !box.hidden;
+    });
     $("#login-submit")?.addEventListener("click", async () => {
       try {
         const user = await loginUser();
         $("#login-status").textContent = `Zalogowano: ${user.name}`;
         renderUserPanel();
+        showView(user.must_change_password ? "change-password" : "home");
+      } catch (error) {
+        $("#login-status").textContent = "Nie można połączyć się z serwerem. Sprawdź internet albo skontaktuj się z administratorem.";
+      }
+    });
+    $("#change-password-submit")?.addEventListener("click", async () => {
+      try {
+        await changeOwnPassword();
+        $("#change-password-status").textContent = "Hasło zmienione.";
+        renderUserPanel();
         showView("home");
       } catch (error) {
-        $("#login-status").textContent = `Błąd logowania: ${error.message}`;
+        $("#change-password-status").textContent = `Nie udało się zmienić hasła: ${error.message}`;
       }
     });
     $("#logout")?.addEventListener("click", () => {
@@ -261,10 +325,10 @@
     $("#open-user")?.addEventListener("click", () => { renderUserPanel(); showView("user"); });
     $("#open-admin")?.addEventListener("click", async () => {
       showView("admin");
-      try { await loadAdminUsers(); $("#admin-users-status").textContent = ""; } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
+      try { await loadAdminUsers({ force: true }); } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
     });
     $("#admin-refresh-users")?.addEventListener("click", async () => {
-      try { await loadAdminUsers(); $("#admin-users-status").textContent = "Lista użytkowników odświeżona."; } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
+      try { await loadAdminUsers({ force: true }); } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
     });
     $("#check-app-update")?.addEventListener("click", async () => {
       try { $("#app-update-status").textContent = await checkForAppUpdate(); } catch (e) { $("#app-update-status").textContent = `Nie udało się sprawdzić aktualizacji: ${e.message}`; }
@@ -288,7 +352,9 @@
         });
         if (!res.ok) throw new Error(await readApiError(res, `Create HTTP ${res.status}`));
         $("#admin-users-status").textContent = "Utworzono użytkownika.";
-        await loadAdminUsers();
+        ["#admin-user-name", "#admin-user-email", "#admin-user-password"].forEach((selector) => setValue(selector, ""));
+        setValue("#admin-user-role", "observer");
+        await loadAdminUsers({ force: true });
       } catch (e) {
         $("#admin-users-status").textContent = `Błąd: ${e.message}`;
       }
@@ -296,13 +362,13 @@
     $("#admin-users-list")?.addEventListener("change", async (event) => {
       const select = event.target.closest("select[data-admin-action='role']");
       if (!select) return;
-      if (!confirm("Czy na pewno chcesz zmienić rolę tego użytkownika?")) { await loadAdminUsers(); return; }
+      if (!confirm("Czy na pewno chcesz zmienić rolę tego użytkownika?")) { await loadAdminUsers({ force: true }); return; }
       try {
         await adminPatchUser(select.dataset.userId, { role: select.value });
-        await loadAdminUsers();
+        await loadAdminUsers({ force: true });
       } catch (e) {
         $("#admin-users-status").textContent = `Błąd: ${e.message}`;
-        await loadAdminUsers();
+        await loadAdminUsers({ force: true });
       }
     });
     $("#admin-users-list")?.addEventListener("click", async (event) => {
@@ -310,14 +376,26 @@
       if (!btn || btn.tagName === "SELECT") return;
       const action = btn.dataset.adminAction;
       try {
+        let finalStatus = "";
         if (action === "reset") {
           const password = prompt("Nowe hasło dla użytkownika (min. 8 znaków):");
           if (!password) return;
           await adminPost(`users/${btn.dataset.userId}/reset-password`, { password });
+          finalStatus = "Hasło zresetowane.";
+        } else if (action === "invite") {
+          const result = await adminPost(`users/${btn.dataset.userId}/send-invite`, {});
+          if (result?.sent) {
+            finalStatus = "Zaproszenie wysłane.";
+          } else if (result?.mailtoUrl) {
+            finalStatus = "Nie skonfigurowano SMTP — otwieram wiadomość email do wysłania ręcznie.";
+            window.location.href = result.mailtoUrl;
+          }
         } else {
           await adminPost(`users/${btn.dataset.userId}/${action}`, {});
+          finalStatus = "Operacja wykonana.";
         }
-        await loadAdminUsers();
+        await loadAdminUsers({ force: true });
+        if (finalStatus) $("#admin-users-status").textContent = finalStatus;
       } catch (e) {
         $("#admin-users-status").textContent = `Błąd: ${e.message}`;
       }
@@ -336,6 +414,7 @@
     const apiBase = getSyncApiBase(cfg);
     const res = await fetch(`${apiBase}/api/${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) }, body: JSON.stringify(body || {}) });
     if (!res.ok) throw new Error(await readApiError(res, `Admin HTTP ${res.status}`));
+    try { return await res.json(); } catch { return {}; }
   }
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -1041,8 +1120,10 @@
 
   function showView(name) {
     if (!getCurrentUser() && name !== "login") name = "login";
+    if (getCurrentUser() && mustChangePassword() && !["change-password", "login"].includes(name)) name = "change-password";
     if (name === "admin" && !isAdmin()) name = "home";
     $("#login-screen").hidden = name !== "login";
+    $("#change-password-screen").hidden = name !== "change-password";
     $("#home-screen").hidden = name !== "home";
     $("#records-screen").hidden = name !== "records";
     $("#record-readonly-screen").hidden = name !== "readonly";
@@ -1054,6 +1135,7 @@
     if (name === "map") setTimeout(() => renderRecordsMap(mapFocusUid), 0);
     if (name === "working-map") setTimeout(() => renderWorkingMap(), 0);
     if (name === "user") renderUserPanel();
+    if (name === "home") renderHomeSummary();
     updateCounts();
   }
 
@@ -1687,7 +1769,8 @@
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const todayCount = entries.filter((entry) => entry.obsDate === today).length;
     $("#today-count").textContent = String(todayCount);
-    $("#offline-status").textContent = navigator.onLine ? "online" : "offline";
+    if ($("#offline-status")) $("#offline-status").textContent = navigator.onLine ? "online" : "offline";
+    renderHomeSummary();
     const speciesSummary = $("#species-summary");
     if (speciesSummary) {
       const stats = new Map();
@@ -2662,7 +2745,7 @@
     renderEntries();
     updateCounts();
     renderUserPanel();
-    showView(getCurrentUser() ? "home" : "login");
+    showView(getCurrentUser() ? (mustChangePassword() ? "change-password" : "home") : "login");
     showStep(1);
     registerServiceWorker();
   }
