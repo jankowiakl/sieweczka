@@ -11,6 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
+  const APP_VERSION = "2026.05.06-users-cache-refresh";
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
@@ -42,6 +43,49 @@
   function getSyncAuthHeaders(cfg = getSyncConfig()) {
     const token = getUserToken() || cfg.token;
     return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  async function readApiError(res, fallback) {
+    try {
+      const data = await res.clone().json();
+      return data?.error || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  async function clearAppCaches() {
+    if (!("caches" in window)) return [];
+    const keys = await caches.keys();
+    const appKeys = keys.filter((key) => key.startsWith("sieweczka-"));
+    await Promise.all(appKeys.map((key) => caches.delete(key)));
+    return appKeys;
+  }
+
+  async function checkForAppUpdate() {
+    if (!("serviceWorker" in navigator)) return "Aplikacja jest aktualna.";
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) return "Aplikacja jest aktualna.";
+    await registration.update();
+    return registration.waiting || registration.installing
+      ? "Dostępna jest nowa wersja aplikacji. Kliknij, aby odświeżyć."
+      : "Aplikacja jest aktualna.";
+  }
+
+  async function refreshAppVersion() {
+    let shouldReload = true;
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        await registration.update();
+        if (registration.waiting) {
+          registration.waiting.postMessage({ type: "SKIP_WAITING" });
+          shouldReload = false;
+        }
+      }
+    }
+    await clearAppCaches();
+    if (shouldReload) window.location.reload();
   }
   function getLastSyncAt() { try { return JSON.parse(localStorage.getItem(SYNC_STATE_KEY) || "{}").lastSyncAt || null; } catch { return null; } }
   function setLastSyncAt(v) { localStorage.setItem(SYNC_STATE_KEY, JSON.stringify({ lastSyncAt: v })); }
@@ -148,6 +192,7 @@
         <p><strong>${escapeHtml(user.name)}</strong></p>
         <p>${escapeHtml(user.email)}</p>
         <p>Rola: <strong>${escapeHtml(user.role)}</strong></p>
+        <p>Wersja aplikacji: ${escapeHtml(APP_VERSION)}</p>
         <p>${formatPhotoSyncStatus(getPhotoSyncSummary())}</p>
         <p>Status: ${navigator.onLine ? "online" : "offline"}</p>
       ` : `<p>Brak zalogowanego użytkownika.</p>`;
@@ -160,11 +205,15 @@
   }
 
   async function loadAdminUsers() {
-    if (!isAdmin()) return;
+    if (!isAdmin()) {
+      $("#admin-users-status").textContent = "Brak uprawnień administratora.";
+      renderAdminUsers([]);
+      return;
+    }
     const cfg = getSyncConfig();
     const apiBase = getSyncApiBase(cfg);
     const res = await fetch(`${apiBase}/api/users`, { headers: getSyncAuthHeaders(cfg) });
-    if (!res.ok) throw new Error(`Users HTTP ${res.status}`);
+    if (!res.ok) throw new Error(await readApiError(res, `Users HTTP ${res.status}`));
     const data = await res.json();
     renderAdminUsers(data.users || []);
   }
@@ -172,18 +221,21 @@
   function renderAdminUsers(users) {
     const list = $("#admin-users-list");
     if (!list) return;
+    const currentUserId = getCurrentUser()?.id;
     list.innerHTML = users.map((user) => `
       <article class="entry-card">
         <div class="entry-main">
           <h3>${escapeHtml(user.name)}</h3>
-          <p>${escapeHtml(user.email)} • ${escapeHtml(user.role)} • ${user.is_active ? "aktywny" : "nieaktywny"}</p>
+          <p>ID: ${escapeHtml(user.id)}</p>
+          <p>${escapeHtml(user.email)} • ${escapeHtml(user.role)} • ${user.is_active ? "aktywny" : "nieaktywny"}${user.id === currentUserId ? " • To jest Twoje konto" : ""}</p>
+          <p class="muted">Utworzono: ${escapeHtml(user.created_at || "—")} • Aktualizacja: ${escapeHtml(user.updated_at || "—")} • Ostatnie logowanie: ${escapeHtml(user.last_login_at || "—")}</p>
         </div>
         <div class="entry-actions">
-          <select data-admin-action="role" data-user-id="${escapeHtml(user.id)}">
+          ${user.id === currentUserId ? "" : `<select data-admin-action="role" data-user-id="${escapeHtml(user.id)}">
             ${["observer","coordinator","admin"].map((role) => `<option value="${role}"${role === user.role ? " selected" : ""}>${role}</option>`).join("")}
-          </select>
+          </select>`}
           <button type="button" data-admin-action="reset" data-user-id="${escapeHtml(user.id)}">Reset hasła</button>
-          <button type="button" data-admin-action="${user.is_active ? "deactivate" : "activate"}" data-user-id="${escapeHtml(user.id)}">${user.is_active ? "Dezaktywuj" : "Aktywuj"}</button>
+          ${user.id === currentUserId ? "" : `<button type="button" data-admin-action="${user.is_active ? "deactivate" : "activate"}" data-user-id="${escapeHtml(user.id)}">${user.is_active ? "Dezaktywuj" : "Aktywuj"}</button>`}
         </div>
       </article>
     `).join("") || `<p class="muted">Brak użytkowników.</p>`;
@@ -211,6 +263,20 @@
       showView("admin");
       try { await loadAdminUsers(); $("#admin-users-status").textContent = ""; } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
     });
+    $("#admin-refresh-users")?.addEventListener("click", async () => {
+      try { await loadAdminUsers(); $("#admin-users-status").textContent = "Lista użytkowników odświeżona."; } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
+    });
+    $("#check-app-update")?.addEventListener("click", async () => {
+      try { $("#app-update-status").textContent = await checkForAppUpdate(); } catch (e) { $("#app-update-status").textContent = `Nie udało się sprawdzić aktualizacji: ${e.message}`; }
+    });
+    $("#refresh-app-version")?.addEventListener("click", async () => {
+      try {
+        $("#app-update-status").textContent = "Odświeżam wersję aplikacji...";
+        await refreshAppVersion();
+      } catch (e) {
+        $("#app-update-status").textContent = `Nie udało się odświeżyć wersji aplikacji: ${e.message}`;
+      }
+    });
     $("#admin-create-user")?.addEventListener("click", async () => {
       try {
         const cfg = getSyncConfig();
@@ -220,7 +286,7 @@
           headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) },
           body: JSON.stringify({ name: trim("#admin-user-name"), email: trim("#admin-user-email"), role: value("#admin-user-role", "observer"), password: value("#admin-user-password") })
         });
-        if (!res.ok) throw new Error(`Create HTTP ${res.status}`);
+        if (!res.ok) throw new Error(await readApiError(res, `Create HTTP ${res.status}`));
         $("#admin-users-status").textContent = "Utworzono użytkownika.";
         await loadAdminUsers();
       } catch (e) {
@@ -230,8 +296,14 @@
     $("#admin-users-list")?.addEventListener("change", async (event) => {
       const select = event.target.closest("select[data-admin-action='role']");
       if (!select) return;
-      await adminPatchUser(select.dataset.userId, { role: select.value });
-      await loadAdminUsers();
+      if (!confirm("Czy na pewno chcesz zmienić rolę tego użytkownika?")) { await loadAdminUsers(); return; }
+      try {
+        await adminPatchUser(select.dataset.userId, { role: select.value });
+        await loadAdminUsers();
+      } catch (e) {
+        $("#admin-users-status").textContent = `Błąd: ${e.message}`;
+        await loadAdminUsers();
+      }
     });
     $("#admin-users-list")?.addEventListener("click", async (event) => {
       const btn = event.target.closest("[data-admin-action][data-user-id]");
@@ -256,14 +328,14 @@
     const cfg = getSyncConfig();
     const apiBase = getSyncApiBase(cfg);
     const res = await fetch(`${apiBase}/api/users/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) }, body: JSON.stringify(patch) });
-    if (!res.ok) throw new Error(`Admin HTTP ${res.status}`);
+    if (!res.ok) throw new Error(await readApiError(res, `Admin HTTP ${res.status}`));
   }
 
   async function adminPost(path, body) {
     const cfg = getSyncConfig();
     const apiBase = getSyncApiBase(cfg);
     const res = await fetch(`${apiBase}/api/${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) }, body: JSON.stringify(body || {}) });
-    if (!res.ok) throw new Error(`Admin HTTP ${res.status}`);
+    if (!res.ok) throw new Error(await readApiError(res, `Admin HTTP ${res.status}`));
   }
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -2536,7 +2608,26 @@
 
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
-    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.warn));
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").then((registration) => {
+        registration.addEventListener("updatefound", () => {
+          const worker = registration.installing;
+          if (!worker) return;
+          worker.addEventListener("statechange", () => {
+            if (worker.state === "installed" && navigator.serviceWorker.controller) {
+              const status = $("#app-update-status");
+              if (status) status.textContent = "Dostępna jest nowa wersja aplikacji. Kliknij, aby odświeżyć.";
+            }
+          });
+        });
+      }).catch(console.warn);
+    });
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
   }
 
   function escapeHtml(text) {

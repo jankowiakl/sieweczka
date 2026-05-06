@@ -43,6 +43,26 @@ Po wcześniejszym zalogowaniu aplikacja działa offline: można dodawać rekordy
 
 Pole starego tokenu w sekcji synchronizacji zostaje jako tryb awaryjny/admin dla dotychczasowego `SYNC_TOKEN`. Normalna synchronizacja powinna używać tokenu zalogowanego użytkownika.
 
+## Aktualizacja PWA bez kasowania danych
+
+Po większej zmianie kodu telefon może przez chwilę trzymać starą wersję plików w Service Worker/cache. Nie używaj opcji:
+- „Wyczyść dane witryny”;
+- „Usuń dane aplikacji”;
+- „Resetuj aplikację”;
+
+jeśli na urządzeniu są niesynchronizowane dane.
+
+W panelu „Użytkownik” użyj przycisku „Odśwież wersję aplikacji”. Ten przycisk czyści tylko cache plików programu o nazwach zaczynających się od `sieweczka-` i nie usuwa:
+- rekordów lokalnych;
+- gniazd roboczych;
+- zdjęć lokalnych w IndexedDB;
+- ustawień synchronizacji;
+- danych logowania.
+
+Po większej zmianie zwiększ:
+- `APP_VERSION` w `app.js`;
+- `CACHE_NAME` w `sw.js`.
+
 ## Role
 
 - `admin`: zarządza użytkownikami, rolami, resetuje hasła, aktywuje/dezaktywuje konta, widzi i edytuje wszystkie dane.

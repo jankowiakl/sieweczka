@@ -196,16 +196,53 @@ async function usersCount() {
   return q.rows[0].count;
 }
 
+async function countActiveAdmins() {
+  const q = await db.query("SELECT count(*)::int AS count FROM users WHERE role='admin' AND is_active=true");
+  return q.rows[0].count;
+}
+
 async function createUser({ email, name, role, password }, actor) {
   const normalizedEmail = normalizeEmail(email);
-  if (!normalizedEmail || !name || !password) throw new Error('email, name and password are required');
-  if (!['admin', 'coordinator', 'observer'].includes(role)) throw new Error('invalid role');
+  if (!normalizedEmail) {
+    const error = new Error('email is required');
+    error.status = 400;
+    throw error;
+  }
+  if (!String(name || '').trim()) {
+    const error = new Error('name is required');
+    error.status = 400;
+    throw error;
+  }
+  if (!password) {
+    const error = new Error('password is required');
+    error.status = 400;
+    throw error;
+  }
+  if (String(password).length < 8) {
+    const error = new Error('password must have at least 8 characters');
+    error.status = 400;
+    throw error;
+  }
+  if (!['admin', 'coordinator', 'observer'].includes(role)) {
+    const error = new Error('invalid role');
+    error.status = 400;
+    throw error;
+  }
   const id = randomId('user');
   const passwordHash = await bcrypt.hash(String(password), 12);
-  const q = await db.query(
-    `INSERT INTO users (id,email,name,role,password_hash) VALUES ($1,$2,$3,$4,$5) RETURNING ${userPublicFields}`,
-    [id, normalizedEmail, String(name).trim(), role, passwordHash]
-  );
+  let q;
+  try {
+    q = await db.query(
+      `INSERT INTO users (id,email,name,role,password_hash) VALUES ($1,$2,$3,$4,$5) RETURNING ${userPublicFields}`,
+      [id, normalizedEmail, String(name).trim(), role, passwordHash]
+    );
+  } catch (error) {
+    if (error.code === '23505') {
+      error.status = 409;
+      error.message = 'email already exists';
+    }
+    throw error;
+  }
   await audit(actor, 'user_created', 'user', id, { email: normalizedEmail, role });
   return q.rows[0];
 }
@@ -259,11 +296,15 @@ app.post('/api/users', authenticateUser, requireRole('admin'), async (req, res, 
 
 app.patch('/api/users/:id', authenticateUser, requireRole('admin'), async (req, res, next) => {
   try {
-    const current = (await db.query('SELECT role FROM users WHERE id = $1', [req.params.id])).rows[0];
+    const current = (await db.query('SELECT role,is_active FROM users WHERE id = $1', [req.params.id])).rows[0];
     if (!current) return res.status(404).json({ error: 'not found' });
     const name = req.body.name == null ? null : String(req.body.name).trim();
     const role = req.body.role == null ? null : String(req.body.role);
     if (role && !['admin', 'coordinator', 'observer'].includes(role)) return res.status(400).json({ error: 'invalid role' });
+    if (role && role !== 'admin' && req.params.id === req.user.id) return res.status(400).json({ error: 'cannot change your own admin role' });
+    if (role && current.role === 'admin' && role !== 'admin' && current.is_active && (await countActiveAdmins()) <= 1) {
+      return res.status(409).json({ error: 'cannot remove the last active admin' });
+    }
     const q = await db.query(
       `UPDATE users SET name=COALESCE($2,name), role=COALESCE($3,role), updated_at=now() WHERE id=$1 RETURNING ${userPublicFields}`,
       [req.params.id, name, role]
@@ -289,6 +330,12 @@ app.post('/api/users/:id/reset-password', authenticateUser, requireRole('admin')
 });
 
 app.post('/api/users/:id/deactivate', authenticateUser, requireRole('admin'), async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'cannot deactivate your own account' });
+  const current = (await db.query('SELECT role,is_active FROM users WHERE id=$1', [req.params.id])).rows[0];
+  if (!current) return res.status(404).json({ error: 'not found' });
+  if (current.role === 'admin' && current.is_active && (await countActiveAdmins()) <= 1) {
+    return res.status(409).json({ error: 'cannot remove the last active admin' });
+  }
   await db.query('UPDATE users SET is_active=false, updated_at=now() WHERE id=$1', [req.params.id]);
   await audit(req.user, 'user_deactivated', 'user', req.params.id, {});
   res.json({ ok: true });
@@ -472,6 +519,7 @@ app.post('/api/photos/:id/restore', authenticateUser, requireRole('admin'), asyn
 
 app.use((error, _req, res, _next) => {
   if (error instanceof multer.MulterError) return res.status(400).json({ error: error.message });
+  if (error.status) return res.status(error.status).json({ error: error.message });
   if (['email, name and password are required', 'invalid role'].includes(error.message)) return res.status(400).json({ error: error.message });
   console.error(error);
   res.status(500).json({ error: 'internal server error' });
