@@ -96,9 +96,11 @@ Pierwsza strona pokazuje proste kafelki terenowe:
 - Gniazda robocze;
 - Lista rekordów.
 
-Drugi poziom zawiera synchronizację i eksport. Panel użytkownika, pomoc, odświeżenie wersji aplikacji oraz opcje administratora są w górnym menu aplikacji. Ustawienia techniczne są schowane w panelu „Użytkownik” i widoczne tylko dla administratora.
+Drugi poziom zawiera synchronizację i powrót do szkicu, jeśli istnieje. Eksport, panel użytkownika, pomoc, odświeżenie wersji aplikacji oraz opcje administratora są w górnym menu aplikacji. Ustawienia techniczne są schowane w panelu „Użytkownik” i widoczne tylko dla administratora.
 
 ## Eksport zdjęć z serwera
+
+Eksport jest dostępny z górnego menu aplikacji, a nie jako przycisk na pierwszym ekranie. Dla ról z uprawnieniami eksportu menu pokazuje pozycję „Eksport”.
 
 Eksport ma dwa tryby:
 - „Eksport bez zdjęć” - szybki ZIP z `sieweczka-records.csv` i `records.json`, bez pobierania plików zdjęć;
@@ -109,6 +111,30 @@ Przed eksportem ze zdjęciami aplikacja ostrzega, że może zostać pobrana duż
 Zdjęcia pobrane do eksportu nie są zapisywane trwale w IndexedDB ani w `localStorage`. Po odświeżeniu aplikacji zdjęcie serwerowe może zostać pobrane ponownie, jeśli użytkownik znów otworzy podgląd albo wykona eksport ze zdjęciami.
 
 Jeśli pojedyncze zdjęcie nie pobierze się z serwera, eksport jest kontynuowany, a błąd trafia do `photos_manifest.csv`. Offline można wyeksportować dane bez zdjęć albo tylko zdjęcia dostępne lokalnie.
+
+## Kategorie mezohabitatu
+
+Aktualne klasy mezohabitatu w buforze 15 m:
+- Piasek;
+- Żwir;
+- Kamienie;
+- Roślinność;
+- Woda / podmokłość;
+- Muszle.
+
+Zgodność ze starymi danymi:
+- dawne „Żwir / kamienie” jest pokazywane i eksportowane jako „Kamienie”;
+- dawne „Inne” w mezohabitacie jest pokazywane i eksportowane jako „Muszle”;
+- nowe osobne pole „Żwir” jest zapisywane w payload JSON jako dodatkowa wartość;
+- baza SQL nie wymaga migracji, bo dane mezohabitatu pozostają w JSON payload.
+
+Eksport tabelaryczny używa czytelnych kolumn:
+- `Mezohabitat — piasek`;
+- `Mezohabitat — żwir`;
+- `Mezohabitat — kamienie`;
+- `Mezohabitat — roślinność`;
+- `Mezohabitat — woda/podmokłość`;
+- `Mezohabitat — muszle`.
 
 ## Grid mapy
 
@@ -166,7 +192,7 @@ Niedokończony wpis zostaje zapisany pod kluczem szkicu. Dane terenowe, lokalne 
 
 ## Menu aplikacji
 
-Górny przycisk „Menu” otwiera menu aplikacji z mniej codziennymi opcjami: użytkownik, synchronizacja, pomoc, ustawienia, ustawienia zaawansowane, odświeżenie wersji aplikacji i wylogowanie. Opcja „Administrator” jest widoczna tylko dla roli `admin`, a eksport dla admina i koordynatora.
+Górny przycisk „Menu” otwiera menu aplikacji z mniej codziennymi opcjami: użytkownik, synchronizacja, eksport, pomoc, ustawienia, odświeżenie wersji aplikacji i wylogowanie. Opcja „Administrator” jest widoczna tylko dla roli `admin`, a eksport dla admina i koordynatora.
 
 To menu nie jest wylogowaniem. Wylogowanie pozostaje osobnym przyciskiem w menu i panelu użytkownika.
 
