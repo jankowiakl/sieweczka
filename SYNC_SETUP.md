@@ -7,6 +7,8 @@ Synchronizacja obejmuje teraz:
 
 Zdjęcia nie są zapisywane w PostgreSQL jako base64 ani jako dane binarne. Baza przechowuje tylko metadane, a pliki trafiają do katalogu `photo-data/`, montowanego w kontenerze jako `/data/photos`.
 
+Zdjęcia z serwera są pobierane na żądanie i nie są automatycznie zapisywane offline na urządzeniu.
+
 ## Uruchomienie
 
 1. Skopiuj `.env.example` do `.env` i ustaw `SYNC_TOKEN`, `DATABASE_URL`, `CORS_ORIGIN`, opcjonalnie `PHOTO_DIR` i `MAX_PHOTO_MB`.

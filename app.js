@@ -238,6 +238,26 @@
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
 
+  function getCachedPhotoUrl(ref) {
+    const cached = photoUrlCache.get(String(ref || ""));
+    return typeof cached === "string" ? cached : cached?.url || "";
+  }
+
+  function cachePhotoUrl(ref, url, source) {
+    photoUrlCache.set(String(ref || ""), { url, source });
+    return url;
+  }
+
+  function revokePhotoUrls(source = "server", keepRefs = []) {
+    const keep = new Set(keepRefs.map(String));
+    for (const [ref, cached] of photoUrlCache.entries()) {
+      const item = typeof cached === "string" ? { url: cached, source: "local" } : cached;
+      if (!item?.url || item.source !== source || keep.has(String(ref))) continue;
+      URL.revokeObjectURL(item.url);
+      photoUrlCache.delete(ref);
+    }
+  }
+
   async function loadGridGeoJson() {
     if (gridGeoJsonData) return gridGeoJsonData;
     if (!gridGeoJsonPromise) {
@@ -529,23 +549,23 @@
     if (!ref) return "";
     if (String(ref).startsWith("data:")) return ref;
     if (!String(ref).startsWith("idb:")) return "";
-    if (photoUrlCache.has(ref)) return photoUrlCache.get(ref);
+    const cachedUrl = getCachedPhotoUrl(ref);
+    if (cachedUrl) return cachedUrl;
     const blob = await getPhotoBlob(ref);
     if (blob) {
       const url = URL.createObjectURL(blob);
-      photoUrlCache.set(ref, url);
-      return url;
+      return cachePhotoUrl(ref, url, "local");
     }
     const server = getPhotoSyncMap()[String(ref)];
     const cfg = getSyncConfig();
     const apiBase = getSyncApiBase(cfg);
     if (!server?.url || !apiBase || !cfg.token) return "";
+    // Zdjęcia z serwera są pobierane na żądanie i nie są automatycznie zapisywane offline na urządzeniu.
     const res = await fetch(`${apiBase}${server.url}`, { headers: getSyncAuthHeaders(cfg) });
     if (!res.ok) return "";
     const serverBlob = await res.blob();
     const url = URL.createObjectURL(serverBlob);
-    photoUrlCache.set(ref, url);
-    return url;
+    return cachePhotoUrl(ref, url, "server");
   }
 
   async function saveSelectedFiles(inputSelector) {
@@ -1402,6 +1422,7 @@
   }
 
   function renderEntries() {
+    revokePhotoUrls("server");
     const list = $("#entries-list");
     if (!list) return;
     const query = trim("#record-search").toLowerCase();
@@ -1581,6 +1602,10 @@
   function showReadonlyRecord(uid) {
     const record = getEntries().find((entry) => String(entry.uid) === String(uid));
     if (!record) return;
+    revokePhotoUrls("server", [
+      ...(record.nestMicro?.photos || []),
+      ...(record.randomMicro?.photos || [])
+    ]);
     readonlyUid = record.uid;
     const nestPos = toLatLon(record.lat, record.lon);
     const randomPos = toLatLon(record.randomMicro?.lat, record.randomMicro?.lon);
@@ -1776,7 +1801,7 @@
       const card = event.target.closest(".entry-card");
       if (card?.dataset.uid) showReadonlyRecord(card.dataset.uid);
     });
-    $("#readonly-back, #readonly-back-btn").addEventListener("click", () => showView("records"));
+    $("#readonly-back, #readonly-back-btn").addEventListener("click", () => { revokePhotoUrls("server"); showView("records"); });
     $("#readonly-edit").addEventListener("click", () => { editReturnToReadonly = true; readonlyUid && editRecord(readonlyUid); });
     $("#readonly-delete").addEventListener("click", () => { if (readonlyUid) { deleteRecord(readonlyUid); showView("records"); } });
     $("#readonly-nav-nest").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.lat,r.lon); });
@@ -1885,6 +1910,7 @@
     $("#back-to-readonly")?.addEventListener("click", () => {
       if (readonlyUid) showReadonlyRecord(readonlyUid);
     });
+    window.addEventListener("beforeunload", () => revokePhotoUrls("server"));
     $("#lat")?.addEventListener("input", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
     $("#lat")?.addEventListener("change", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
     $("#lon")?.addEventListener("input", () => { autoFillNearestDistances(); void autoFillSectorFromGrid(); });
