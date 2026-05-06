@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-form-step-order-strip";
+  const APP_VERSION = "2026.05.06-pwa-ui-install-final";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -19,6 +19,7 @@
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
   const PHOTO_SYNC_KEY = "sieweczka-photo-sync-v1";
   const AUTH_STATE_KEY = "sieweczka-auth-v1";
+  let deferredInstallPrompt = null;
 
   function getClientId() {
     const key = "sieweczka-client-id-v1";
@@ -48,13 +49,54 @@
   function applyUiSettings() {
     const settings = getUiSettings();
     const size = settings.fontSize || "normal";
-    document.documentElement.classList.remove("font-small", "font-normal", "font-large", "font-xlarge");
+    const uiScale = settings.uiScale || "normal";
+    const iconSize = settings.iconSize || "normal";
+    document.documentElement.classList.remove("font-small", "font-normal", "font-large", "font-xlarge", "ui-compact", "ui-normal", "ui-large", "icons-small", "icons-normal", "icons-large");
     document.documentElement.classList.add(`font-${size}`);
+    document.documentElement.classList.add(`ui-${uiScale}`);
+    document.documentElement.classList.add(`icons-${iconSize}`);
     document.body?.classList.toggle("field-mode", !!settings.fieldMode);
     const select = document.querySelector("#ui-font-size");
     if (select) select.value = size;
+    const scaleSelect = document.querySelector("#ui-scale");
+    if (scaleSelect) scaleSelect.value = uiScale;
+    const iconSelect = document.querySelector("#ui-icon-size");
+    if (iconSelect) iconSelect.value = iconSize;
     const fieldMode = document.querySelector("#field-mode-toggle");
     if (fieldMode) fieldMode.checked = !!settings.fieldMode;
+  }
+
+  function isStandaloneApp() {
+    return window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+  }
+
+  function updateInstallStatus(message) {
+    const status = $("#install-status");
+    if (!status) return;
+    status.textContent = message || (isStandaloneApp()
+      ? "Aplikacja działa jako zainstalowana."
+      : "Jeśli przycisk instalacji nie uruchamia systemowego okna, użyj menu przeglądarki: Chrome/Brave ⋮ → Zainstaluj aplikację albo Dodaj do ekranu głównego.");
+  }
+
+  async function installApp() {
+    if (isStandaloneApp()) {
+      updateInstallStatus("Aplikacja działa jako zainstalowana.");
+      alert("Aplikacja działa jako zainstalowana.");
+      return;
+    }
+    if (deferredInstallPrompt) {
+      const promptEvent = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
+      updateInstallStatus(choice?.outcome === "accepted"
+        ? "Instalacja aplikacji została uruchomiona."
+        : "Instalacja została anulowana. Możesz użyć menu przeglądarki, aby dodać aplikację do ekranu głównego.");
+      return;
+    }
+    const manual = "Chrome/Brave: Menu ⋮ → Zainstaluj aplikację albo Dodaj do ekranu głównego. iPhone/Safari: Udostępnij → Do ekranu początkowego.";
+    updateInstallStatus(`Ta przeglądarka nie udostępniła automatycznego okna instalacji. ${manual}`);
+    alert(manual);
   }
   function getSyncAuthHeaders(cfg = getSyncConfig()) {
     const token = getUserToken() || cfg.token;
@@ -248,6 +290,11 @@
       const el = $(selector);
       if (el) el.hidden = !(isAdmin() || getCurrentUser()?.role === "coordinator");
     });
+    const diagnostics = $("#ui-diagnostics");
+    if (diagnostics) {
+      diagnostics.textContent = `Szerokość ekranu: ${window.innerWidth}px, devicePixelRatio: ${window.devicePixelRatio || 1}, standalone: ${isStandaloneApp() ? "tak" : "nie"}, wersja: ${APP_VERSION}.`;
+    }
+    updateInstallStatus();
   }
 
   function renderHomeSummary() {
@@ -286,6 +333,7 @@
         ${canExport ? `<button type="button" data-menu-action="export">Eksport</button>` : ""}
         ${isAdmin() ? `<button type="button" data-menu-action="admin">Administrator</button>` : ""}
         <button type="button" data-menu-action="settings">Ustawienia</button>
+        <button type="button" data-menu-action="install">Zainstaluj aplikację</button>
         <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
         <button type="button" data-menu-action="refresh">Odśwież wersję aplikacji</button>
         <button type="button" class="danger" data-menu-action="logout">Wyloguj</button>
@@ -315,6 +363,7 @@
       if (action === "admin") { showView("admin"); await loadAdminUsers({ force: true }).catch((error) => { $("#admin-users-status").textContent = `Błąd: ${error.message}`; }); }
       if (action === "sync") { showView("home"); $("#home-sync-now")?.click(); }
       if (action === "export") { showView("home"); $("#home-export-panel").hidden = false; $("#export-zip")?.focus(); }
+      if (action === "install") { renderUserPanel(); showView("user"); await installApp(); }
       if (action === "refresh") $("#refresh-app-version")?.click();
       if (action === "logout") $("#logout")?.click();
     });
@@ -482,6 +531,7 @@
         $("#app-update-status").textContent = `Nie udało się odświeżyć wersji aplikacji: ${e.message}`;
       }
     });
+    $("#install-app")?.addEventListener("click", () => installApp().catch((e) => updateInstallStatus(`Nie udało się uruchomić instalacji: ${e.message}`)));
     $("#admin-create-user")?.addEventListener("click", async () => {
       try {
         const cfg = getSyncConfig();
@@ -553,6 +603,17 @@
     $("#ui-font-size")?.addEventListener("change", () => {
       setUiSettings({ ...getUiSettings(), fontSize: value("#ui-font-size", "normal") });
       applyUiSettings();
+      renderUserPanel();
+    });
+    $("#ui-scale")?.addEventListener("change", () => {
+      setUiSettings({ ...getUiSettings(), uiScale: value("#ui-scale", "normal") });
+      applyUiSettings();
+      renderUserPanel();
+    });
+    $("#ui-icon-size")?.addEventListener("change", () => {
+      setUiSettings({ ...getUiSettings(), iconSize: value("#ui-icon-size", "normal") });
+      applyUiSettings();
+      renderUserPanel();
     });
     $("#field-mode-toggle")?.addEventListener("change", () => {
       setUiSettings({ ...getUiSettings(), fieldMode: !!$("#field-mode-toggle")?.checked });
@@ -2432,9 +2493,6 @@
     $("#readonly-nav-random").disabled = !randomPos;
     $("#readonly-nav-nest").disabled = !nestPos;
     $("#readonly-edit").hidden = !canEditItem(record);
-    const canDelete = canSoftDeleteItem(record);
-    $("#readonly-delete").hidden = !canDelete;
-    $("#readonly-more").hidden = !canDelete;
     $("#record-readonly-content").innerHTML = buildReadonlySections(record);
     initReadonlyCarousel();
     showView("readonly");
@@ -2641,7 +2699,6 @@
     });
     $("#readonly-back").addEventListener("click", () => { revokePhotoUrls("server"); showView("records"); });
     $("#readonly-edit").addEventListener("click", () => { editReturnToReadonly = true; readonlyUid && editRecord(readonlyUid); });
-    $("#readonly-delete").addEventListener("click", async () => { if (readonlyUid && await deleteRecord(readonlyUid)) showView("records"); });
     $("#readonly-nav-nest").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.lat,r.lon); });
     $("#readonly-nav-random").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.randomMicro?.lat,r.randomMicro?.lon); });
     $("#readonly-show-map").addEventListener("click", () => { mapFocusUid = readonlyUid; showView("map"); });
@@ -3278,6 +3335,19 @@
     });
   }
 
+  function setupPwaInstall() {
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      updateInstallStatus("Aplikację można zainstalować na tym urządzeniu. Kliknij „Zainstaluj aplikację”.");
+    });
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      updateInstallStatus("Aplikacja działa jako zainstalowana.");
+    });
+    updateInstallStatus();
+  }
+
   function escapeHtml(text) {
     return String(text ?? "").replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
@@ -3314,6 +3384,7 @@
     renderUserPanel();
     showView(getCurrentUser() ? (mustChangePassword() ? "change-password" : "home") : "login");
     showStep(1);
+    setupPwaInstall();
     registerServiceWorker();
   }
 

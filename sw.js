@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-form-step-order-strip-1";
+const CACHE_NAME = "sieweczka-app-v2026-05-pwa-ui-install-final-1";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,11 @@ const APP_SHELL = [
   "./manifest.webmanifest",
   "./data/grid_vanvan_wgs84.geojson",
   "./icons/icon.svg",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./icons/icon-maskable-192.png",
+  "./icons/icon-maskable-512.png",
+  "./icons/apple-touch-icon.png",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
 ];

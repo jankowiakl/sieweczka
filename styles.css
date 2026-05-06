@@ -15,6 +15,14 @@
   --bad-border: #dc2626;
   --shadow: 0 12px 30px rgba(15, 23, 42, .08);
   --app-font-scale: 1;
+  --ui-scale: 1;
+  --icon-size: 1.5rem;
+  --tile-icon-size: 1.75rem;
+  --tile-padding: 1rem;
+  --control-height: 48px;
+  --control-padding-y: .7rem;
+  --control-padding-x: .8rem;
+  --space-scale: 1;
 }
 
 html.font-small {
@@ -31,6 +39,43 @@ html.font-large {
 
 html.font-xlarge {
   --app-font-scale: 1.25;
+}
+
+html.ui-compact {
+  --ui-scale: .88;
+  --tile-padding: .72rem;
+  --control-height: 42px;
+  --control-padding-y: .5rem;
+  --control-padding-x: .65rem;
+  --space-scale: .85;
+}
+
+html.ui-normal {
+  --ui-scale: 1;
+}
+
+html.ui-large {
+  --ui-scale: 1.08;
+  --tile-padding: 1.1rem;
+  --control-height: 52px;
+  --control-padding-y: .82rem;
+  --control-padding-x: .95rem;
+  --space-scale: 1.12;
+}
+
+html.icons-small {
+  --icon-size: 1.15rem;
+  --tile-icon-size: 1.35rem;
+}
+
+html.icons-normal {
+  --icon-size: 1.5rem;
+  --tile-icon-size: 1.75rem;
+}
+
+html.icons-large {
+  --icon-size: 1.85rem;
+  --tile-icon-size: 2.15rem;
 }
 
 * {
@@ -62,10 +107,10 @@ input,
 select,
 textarea,
 .button-like {
-  min-height: 48px;
+  min-height: var(--control-height);
   border-radius: 12px;
   border: 1px solid var(--border);
-  padding: .7rem .8rem;
+  padding: var(--control-padding-y) var(--control-padding-x);
 }
 
 input,
@@ -196,15 +241,27 @@ button.danger {
 }
 
 button.small {
-  min-height: 40px;
-  padding: .45rem .65rem;
+  min-height: calc(var(--control-height) - 8px);
+  padding: calc(var(--control-padding-y) * .7) calc(var(--control-padding-x) * .8);
   font-size: .9rem;
 }
 
 button.big,
 .button-like.big {
-  min-height: 58px;
+  min-height: calc(var(--control-height) + 10px);
   font-size: 1.05rem;
+}
+
+button svg,
+.button-like svg,
+.app-menu-panel svg,
+.home-tile svg,
+.icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  max-width: var(--icon-size);
+  max-height: var(--icon-size);
+  flex: 0 0 auto;
 }
 
 .app-header {
@@ -353,14 +410,16 @@ label span,
 }
 
 .compass-arrow {
-  width: 44px;
-  height: 44px;
+  width: calc(var(--icon-size) * 2);
+  height: calc(var(--icon-size) * 2);
+  max-width: 52px;
+  max-height: 52px;
   border-radius: 50%;
   border: 1px solid var(--border);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.3rem;
+  font-size: var(--icon-size);
   background: #fff;
 }
 
@@ -423,17 +482,17 @@ label span,
 .home-primary-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .75rem;
-  margin: 1rem 0;
+  gap: calc(.75rem * var(--space-scale));
+  margin: calc(1rem * var(--space-scale)) 0;
 }
 
 .home-tile {
-  min-height: 108px;
+  min-height: calc(92px * var(--ui-scale));
   align-items: flex-start;
   justify-content: center;
   flex-direction: column;
   text-align: left;
-  padding: 1rem;
+  padding: var(--tile-padding);
   background: #fff;
   color: var(--text);
   border-color: #b7d4cc;
@@ -461,8 +520,8 @@ label span,
 .home-secondary-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .6rem;
-  margin: 1rem 0;
+  gap: calc(.6rem * var(--space-scale));
+  margin: calc(1rem * var(--space-scale)) 0;
 }
 
 .advanced-panel {
@@ -625,7 +684,7 @@ label span,
   background: #f8fafc;
   color: var(--text);
   border: 2px solid var(--border);
-  min-height: 52px;
+  min-height: calc(48px * var(--ui-scale));
 }
 
 .tile.selected {
@@ -833,10 +892,12 @@ summary {
 }
 
 .help-bubble-btn {
-  width: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  height: 28px;
+  width: calc(var(--icon-size) * 1.15);
+  min-width: calc(var(--icon-size) * 1.15);
+  min-height: calc(var(--icon-size) * 1.15);
+  height: calc(var(--icon-size) * 1.15);
+  max-width: 34px;
+  max-height: 34px;
   padding: 0;
   margin-left: .35rem;
   border-radius: 999px;
@@ -1004,7 +1065,7 @@ summary {
 .map-toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}
 .map-legend{margin:.2rem 0 .5rem}
 .working-legend{display:flex;gap:.45rem .8rem;flex-wrap:wrap;align-items:center}
-.legend-dot{display:inline-flex;width:1.35rem;height:1.35rem;border-radius:999px;align-items:center;justify-content:center;color:#fff;font-weight:700;line-height:1}
+.legend-dot{display:inline-flex;width:var(--icon-size);height:var(--icon-size);max-width:1.7rem;max-height:1.7rem;border-radius:999px;align-items:center;justify-content:center;color:#fff;font-weight:700;line-height:1}
 .legend-dot.g{background:#0f766e}.legend-dot.k{background:#7c3aed}
 .legend-dot.r{background:#dc2626}.legend-dot.o{background:#f59e0b}.legend-dot.x{background:#6b7280}.legend-dot.z{background:#2563eb}
 .legend-dot.do_sprawdzenia{background:#dc2626}
@@ -1012,7 +1073,7 @@ summary {
 .legend-dot.potwierdzone{background:#16a34a}
 .legend-dot.odrzucone{background:#6b7280}
 .legend-dot.przepisane{background:#2563eb}
-.map-marker .pin{width:28px;height:28px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);border-radius:60% 60% 60% 0;transform:rotate(45deg)}
+.map-marker .pin{width:28px;height:28px;max-width:28px;max-height:28px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);border-radius:60% 60% 60% 0;transform:rotate(45deg)}
 .map-marker .pin span{transform:rotate(-45deg);display:block}
 .map-marker.gniazdo .pin{background:#0f766e}
 .map-marker.kontrola .pin{background:#7c3aed}
@@ -1027,7 +1088,7 @@ summary {
 .readonly-photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.45rem}
 .readonly-thumb{width:100%;height:90px;object-fit:cover;border-radius:8px}
 .readonly-json{white-space:pre-wrap;background:#f8fafc;padding:.5rem;border-radius:8px}
-.map-heading div{color:#0b57d0;font-size:20px;text-shadow:0 0 6px #fff}
+.map-heading div{color:#0b57d0;font-size:min(var(--icon-size), 20px);text-shadow:0 0 6px #fff}
 .map-marker.working.do_sprawdzenia .pin{background:#dc2626}
 .map-marker.working.prawdopodobne .pin{background:#f59e0b}
 .map-marker.working.potwierdzone .pin{background:#16a34a}
@@ -1053,10 +1114,12 @@ summary {
 
 .legend-dot {
   display: inline-flex;
-  width: 1.35rem;
-  height: 1.35rem;
-  min-width: 1.35rem;
-  min-height: 1.35rem;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  min-width: var(--icon-size);
+  min-height: var(--icon-size);
+  max-width: 1.7rem;
+  max-height: 1.7rem;
   border-radius: 999px;
   align-items: center;
   justify-content: center;

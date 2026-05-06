@@ -37,7 +37,7 @@ Kolejnych użytkowników tworzy admin w panelu aplikacji albo przez endpointy `/
 
 ## Logowanie i tryb offline
 
-W PWA wpisz API URL na ekranie logowania, zaloguj się emailem i hasłem. Aplikacja zapisuje token i dane użytkownika lokalnie pod kluczem `sieweczka-auth-v1`.
+W PWA zaloguj się emailem i hasłem. Zwykły użytkownik nie wpisuje API URL ani tokenu. Aplikacja zapisuje token i dane użytkownika lokalnie pod kluczem `sieweczka-auth-v1`.
 
 Po wcześniejszym zalogowaniu aplikacja działa offline: można dodawać rekordy, zdjęcia lokalne i gniazda robocze. Po odzyskaniu internetu synchronizacja użyje tokenu użytkownika. Jeśli telefon nigdy nie był zalogowany, pokaże ekran logowania.
 
@@ -74,6 +74,11 @@ PUBLIC_API_URL="https://bielik.myqnapcloud.com:18443"
 
 Jeśli SMTP jest skonfigurowane, email wychodzi z backendu. Jeśli SMTP nie jest skonfigurowane, API zwraca gotowy `mailtoUrl`, a aplikacja otwiera wiadomość do wysłania ręcznie.
 
+Zaproszenie zawiera rolę użytkownika i krótki opis uprawnień:
+- Administrator — zarządzanie użytkownikami, edycja danych, przywracanie ukrytych wpisów i czynności administracyjne;
+- Koordynator — widzi i edytuje dane zespołu oraz wykonuje eksporty, ale nie zarządza użytkownikami;
+- Obserwator — dodaje własne rekordy, zdjęcia i gniazda robocze oraz synchronizuje dane.
+
 Użytkownik zaproszony hasłem tymczasowym po zalogowaniu zobaczy ekran zmiany hasła przed menu głównym.
 
 ## Panel administratora
@@ -97,6 +102,27 @@ Pierwsza strona pokazuje proste kafelki terenowe:
 - Lista rekordów.
 
 Drugi poziom zawiera synchronizację i powrót do szkicu, jeśli istnieje. Eksport, panel użytkownika, pomoc, odświeżenie wersji aplikacji oraz opcje administratora są w górnym menu aplikacji. Ustawienia techniczne są schowane w panelu „Użytkownik” i widoczne tylko dla administratora.
+
+## Instalacja PWA
+
+Aplikację można dodać do ekranu głównego telefonu. Opcja „Zainstaluj aplikację” jest dostępna w górnym menu aplikacji oraz w panelu „Użytkownik”.
+
+Jeśli przeglądarka udostępnia systemowe okno instalacji PWA, przycisk uruchomi ten prompt. Jeśli prompt nie jest dostępny, użyj instrukcji przeglądarki:
+- Chrome/Android: Menu ⋮ → Zainstaluj aplikację albo Dodaj do ekranu głównego;
+- Brave/Android: Menu ⋮ → Dodaj do ekranu głównego albo Zainstaluj aplikację;
+- iPhone/Safari: Udostępnij → Do ekranu początkowego.
+
+Jeśli aplikacja działa już w trybie standalone, panel pokaże informację „Aplikacja działa jako zainstalowana.” Manifest PWA wskazuje ikony PNG 192/512 oraz ikony maskable.
+
+## Ustawienia wyglądu
+
+Panel „Użytkownik” zawiera ustawienia lokalne zapisane w `sieweczka-ui-settings-v1`:
+- rozmiar tekstu;
+- skala interfejsu: Kompaktowa, Normalna, Duża;
+- rozmiar ikon: Małe, Normalne, Duże;
+- tryb terenowy.
+
+Te ustawienia nie są wysyłane na serwer i nie zmieniają danych terenowych. Jeśli przyciski albo ikony są zbyt duże na telefonie, ustaw skalę interfejsu na „Kompaktowa” i rozmiar ikon na „Małe”.
 
 ## Eksport zdjęć z serwera
 
@@ -273,6 +299,8 @@ Przycisk „Usuń” w aplikacji terenowej nie usuwa danych fizycznie. Dane są 
 - `delete_reason`.
 
 Rekordy i gniazda robocze oznaczone jako usunięte są domyślnie niewidoczne na listach i mapach, ale pozostają w PostgreSQL oraz w payloadzie. Zdjęcia oznaczone jako usunięte nie są domyślnie widoczne, a pliki zostają w `photo-data/`.
+
+Podstawowy podgląd rekordu nie pokazuje dolnej destrukcyjnej sekcji „Więcej”. Ukrywanie/soft delete pozostaje dostępne z listy zapisanych rekordów albo z narzędzi administracyjnych, a nie jako przypadkowa akcja w podglądzie.
 
 Trwałe czyszczenie danych powinno być osobnym narzędziem administracyjnym w przyszłości. Nie udostępniaj zwykłym użytkownikom endpointu, który fizycznie kasuje rekordy lub pliki zdjęć.
 
