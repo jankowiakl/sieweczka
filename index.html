@@ -76,8 +76,12 @@
       <div class="screen-head"><button type="button" class="back-home">← Menu główne</button><h2>Użytkownik</h2></div>
       <div id="user-details" class="record-preview"></div>
       <div class="row-actions">
+        <button id="check-app-update" type="button">Sprawdź aktualizacje</button>
+        <button id="refresh-app-version" type="button" class="primary">Odśwież wersję aplikacji</button>
         <button id="logout" type="button" class="danger">Wyloguj</button>
       </div>
+      <p class="muted">Odświeżenie wersji aplikacji nie usuwa rekordów ani zdjęć zapisanych lokalnie.</p>
+      <p id="app-update-status" class="muted"></p>
     </section>
 
     <section id="admin-screen" class="screen card" hidden>
@@ -101,6 +105,7 @@
         <button id="admin-create-user" type="button" class="primary">Utwórz użytkownika</button>
       </section>
       <div id="admin-users-status" class="muted"></div>
+      <button id="admin-refresh-users" type="button">Odśwież użytkowników</button>
       <div id="admin-users-list" class="entries-list"></div>
     </section>
 
