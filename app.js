@@ -11,8 +11,9 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-invites-home-api-refresh";
+  const APP_VERSION = "2026.05.06-export-grid-drafts-font-id";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
+  const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
@@ -42,6 +43,15 @@
   function isDeleted(item) { return !!(item?.deletedAt || item?.deleted_at); }
   function activeEntries() { return getEntries().filter((entry) => !isDeleted(entry)); }
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
+  function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
+  function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
+  function applyUiSettings() {
+    const size = getUiSettings().fontSize || "normal";
+    document.documentElement.classList.remove("font-small", "font-normal", "font-large", "font-xlarge");
+    document.documentElement.classList.add(`font-${size}`);
+    const select = document.querySelector("#ui-font-size");
+    if (select) select.value = size;
+  }
   function getSyncAuthHeaders(cfg = getSyncConfig()) {
     const token = getUserToken() || cfg.token;
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -231,7 +241,7 @@
     }
     $("#open-admin")?.toggleAttribute("hidden", !isAdmin());
     $("#sync-token-label")?.toggleAttribute("hidden", !isAdmin());
-    ["#export-csv", "#export-json", "#export-zip", "#export-kml"].forEach((selector) => {
+    ["#export-csv", "#export-json", "#export-zip", "#export-zip-photos", "#export-kml"].forEach((selector) => {
       const el = $(selector);
       if (el) el.hidden = !(isAdmin() || getCurrentUser()?.role === "coordinator");
     });
@@ -248,6 +258,7 @@
     setText("#home-online-status", onlineText);
     setText("#home-last-sync", lastSync ? new Date(lastSync).toLocaleString("pl-PL") : "—");
     setText("#home-photo-pending", String(photoSummary.pending || 0));
+    updateDraftResumeButton();
   }
 
   async function loadAdminUsers(options = {}) {
@@ -399,6 +410,10 @@
       } catch (e) {
         $("#admin-users-status").textContent = `Błąd: ${e.message}`;
       }
+    });
+    $("#ui-font-size")?.addEventListener("change", () => {
+      setUiSettings({ ...getUiSettings(), fontSize: value("#ui-font-size", "normal") });
+      applyUiSettings();
     });
   }
 
@@ -554,6 +569,7 @@
   let workingGridLayer = null;
   let gridGeoJsonData = null;
   let gridGeoJsonPromise = null;
+  const gridStatus = { records: "", working: "" };
   let workingViewMode = "map";
   let workingFocusId = null;
   let editingWorkingId = null;
@@ -585,17 +601,20 @@
   async function loadGridGeoJson() {
     if (gridGeoJsonData) return gridGeoJsonData;
     if (!gridGeoJsonPromise) {
-      gridGeoJsonPromise = fetch("data/grid_vanvan.geojson", { cache: "force-cache" })
+      gridGeoJsonPromise = fetch("data/grid_vanvan.geojson", { cache: "no-cache" })
         .then((response) => {
           if (!response.ok) throw new Error(`Nie udało się załadować gridu: ${response.status}`);
           return response.json();
         })
         .then((json) => {
+          validateGridGeoJson(json);
           gridGeoJsonData = json;
           return json;
         })
         .catch((error) => {
           console.error(error);
+          setGridStatus("records", "Nie udało się załadować gridu.");
+          setGridStatus("working", "Nie udało się załadować gridu.");
           gridGeoJsonPromise = null;
           return null;
         });
@@ -603,10 +622,52 @@
     return gridGeoJsonPromise;
   }
 
+  function setGridStatus(target, message) {
+    gridStatus[target === "working" ? "working" : "records"] = message || "";
+    const selector = target === "working" ? "#working-map-info" : "#map-info";
+    const el = $(selector);
+    if (!el) return;
+    const current = String(el.textContent || "").replace(/\s*Grid:.*$/, "");
+    el.textContent = `${current}${current ? " • " : ""}Grid: ${message}`;
+  }
+
+  function setMapInfo(target, message) {
+    const key = target === "working" ? "working" : "records";
+    const el = $(key === "working" ? "#working-map-info" : "#map-info");
+    if (!el) return;
+    el.textContent = `${message || ""}${gridStatus[key] ? ` • Grid: ${gridStatus[key]}` : ""}`;
+  }
+
+  function walkGridCoords(coords, cb) {
+    if (!Array.isArray(coords)) return;
+    if (typeof coords[0] === "number" && typeof coords[1] === "number") { cb(coords); return; }
+    coords.forEach((item) => walkGridCoords(item, cb));
+  }
+
+  function validateGridGeoJson(json) {
+    const features = json?.features || [];
+    if (!features.length) {
+      console.warn("Grid: plik data/grid_vanvan.geojson nie zawiera pól.");
+      return;
+    }
+    let invalid = false;
+    for (const feature of features) {
+      walkGridCoords(feature?.geometry?.coordinates, ([lon, lat]) => {
+        if (Math.abs(lon) > 180 || Math.abs(lat) > 90) invalid = true;
+      });
+    }
+    if (invalid) console.warn("Grid nie wygląda na EPSG:4326. Wymagana konwersja do WGS84.");
+  }
+
   async function addGridToMap(map, target) {
     if (!map || typeof L === "undefined") return null;
     const data = await loadGridGeoJson();
     if (!data) return null;
+    const count = data.features?.length || 0;
+    if (!count) {
+      setGridStatus(target, "brak pól w pliku.");
+      return null;
+    }
     const gridLayer = L.geoJSON(data, {
       pane: "overlayPane",
       interactive: false,
@@ -629,6 +690,8 @@
     gridLayer.addTo(map);
     if (target === "records") recordsGridLayer = gridLayer;
     if (target === "working") workingGridLayer = gridLayer;
+    setGridStatus(target, `załadowano ${count} pól`);
+    console.info(`Grid: załadowano ${count} pól (${target})`);
     return gridLayer;
   }
 
@@ -801,7 +864,7 @@
   async function syncPhotoMetadataFromServer(entries, workingNests) {
     const cfg = getSyncConfig();
     const apiBase = getSyncApiBase(cfg);
-    if (!apiBase || !cfg.token) return getPhotoSyncSummary();
+    if (!apiBase || !(getUserToken() || cfg.token)) return getPhotoSyncSummary();
     const map = getPhotoSyncMap();
     const seenRecords = new Set((entries || []).map((entry) => entry?.uid).filter(Boolean).map(String));
     const seenWorking = new Set((workingNests || []).map((nest) => nest?.id).filter(Boolean).map(String));
@@ -830,7 +893,7 @@
   async function uploadPhotoRef(localRef, context = {}) {
     const cfg = getSyncConfig();
     const apiBase = getSyncApiBase(cfg);
-    if (!apiBase || !cfg.token) throw new Error("Brak konfiguracji synchronizacji zdjęć");
+    if (!apiBase || !(getUserToken() || cfg.token)) throw new Error("Brak konfiguracji synchronizacji zdjęć");
     const map = getPhotoSyncMap();
     if (map[localRef]?.status === "uploaded") return map[localRef];
     const blob = await getPhotoBlob(localRef);
@@ -885,13 +948,66 @@
     const server = getPhotoSyncMap()[String(ref)];
     const cfg = getSyncConfig();
     const apiBase = getSyncApiBase(cfg);
-    if (!server?.url || !apiBase || !cfg.token) return "";
+    if (!server?.url || !apiBase || !(getUserToken() || cfg.token)) return "";
     // Zdjęcia z serwera są pobierane na żądanie i nie są automatycznie zapisywane offline na urządzeniu.
     const res = await fetch(`${apiBase}${server.url}`, { headers: getSyncAuthHeaders(cfg) });
     if (!res.ok) return "";
     const serverBlob = await res.blob();
     const url = URL.createObjectURL(serverBlob);
     return cachePhotoUrl(ref, url, "server");
+  }
+
+  function buildApiUrl(path, cfg = getSyncConfig()) {
+    if (/^https?:\/\//i.test(String(path || ""))) return String(path);
+    const apiBase = getSyncApiBase(cfg);
+    if (!apiBase) return "";
+    return `${apiBase}${String(path || "").startsWith("/") ? "" : "/"}${path}`;
+  }
+
+  async function fetchServerPhotoBlob(photo, cfg = getSyncConfig()) {
+    const url = photo?.url || (photo?.id ? `/api/photos/${encodeURIComponent(photo.id)}` : "");
+    if (!url) throw new Error("Brak adresu zdjęcia na serwerze");
+    const res = await fetch(buildApiUrl(url, cfg), { headers: getSyncAuthHeaders(cfg), cache: "no-store" });
+    if (!res.ok) throw new Error(await readApiError(res, `Photo HTTP ${res.status}`));
+    return res.blob();
+  }
+
+  async function fetchPhotoMetadataForContext(context = {}, cfg = getSyncConfig()) {
+    const path = context.recordUid
+      ? `/api/records/${encodeURIComponent(context.recordUid)}/photos`
+      : context.workingNestId
+        ? `/api/working-nests/${encodeURIComponent(context.workingNestId)}/photos`
+        : "";
+    if (!path) return [];
+    const res = await fetch(buildApiUrl(path, cfg), { headers: getSyncAuthHeaders(cfg), cache: "no-store" });
+    if (!res.ok) throw new Error(await readApiError(res, `Photos HTTP ${res.status}`));
+    const data = await res.json();
+    return Array.isArray(data.photos) ? data.photos.filter((photo) => !isDeleted(photo)) : [];
+  }
+
+  async function resolvePhotoBlobForExport(localRef, context = {}, options = {}) {
+    let localBlob = null;
+    try {
+      localBlob = await getPhotoBlob(localRef);
+    } catch (error) {
+      console.warn("Nie udało się odczytać lokalnego zdjęcia do eksportu", localRef, error);
+    }
+    if (localBlob) return { blob: localBlob, source: "local", photo: null };
+    if (!options.includeServer) throw new Error("Zdjęcie nie jest dostępne lokalnie");
+    const cfg = getSyncConfig();
+    if (!(getUserToken() || cfg.token)) throw new Error("Brak tokenu do pobrania zdjęcia z serwera");
+
+    const mapped = getPhotoSyncMap()[String(localRef)];
+    if (mapped?.url || mapped?.serverId) {
+      const photo = { id: mapped.serverId, url: mapped.url, localRef, photoRole: context.photoRole };
+      return { blob: await fetchServerPhotoBlob(photo, cfg), source: "server-map", photo };
+    }
+
+    const metadata = await fetchPhotoMetadataForContext(context, cfg);
+    const matched = metadata.find((photo) => String(photo.localRef || "") === String(localRef))
+      || metadata.find((photo) => String(photo.photoRole || photo.photo_role || "") === String(context.photoRole || ""));
+    if (!matched) throw new Error("Brak metadanych zdjęcia na serwerze");
+    return { blob: await fetchServerPhotoBlob(matched, cfg), source: "server-metadata", photo: matched };
   }
 
   async function saveSelectedFiles(inputSelector) {
@@ -1035,13 +1151,34 @@
 
   function parseNestId(text) {
     const value = String(text || "").trim();
-    const match = value.match(/^([^-]+)-(\d{8})-(\d{4})-(.*)$/);
+    const match = value.match(/^([^-]+)-(\d{8})(?:-\d{4})?-(.*)$/);
     if (!match) return null;
-    return { code: match[1], date: match[2], time: match[3], suffix: match[4] || "" };
+    return { code: match[1], date: match[2], suffix: match[3] || "" };
+  }
+
+  function ymdFromDateText(text) {
+    const raw = String(text || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.replaceAll("-", "");
+    const now = new Date();
+    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  }
+
+  function nextNestDailyNumber(speciesValue, dateText, excludeUid = editingUid) {
+    const ymd = ymdFromDateText(dateText);
+    const species = speciesValue || "unknown";
+    const count = activeEntries().filter((entry) =>
+      String(entry.uid) !== String(excludeUid || "") &&
+      (entry.species || "unknown") === species &&
+      ymdFromDateText(entry.obsDate) === ymd
+    ).length;
+    return String(count + 1).padStart(3, "0");
   }
 
   function buildNestId(speciesValue, suffix = "", now = new Date()) {
-    return `${speciesCode(speciesValue)}-${formatNestIdDateTime(now)}-${suffix}`;
+    const dateText = value("#obs-date") || now.toISOString().slice(0, 10);
+    const ymd = ymdFromDateText(dateText);
+    const seq = suffix || nextNestDailyNumber(speciesValue, dateText);
+    return `${speciesCode(speciesValue)}-${ymd}-${seq}`;
   }
 
   function setupNestIdAutofill() {
@@ -1049,25 +1186,27 @@
     const speciesInput = $("#species");
     const generateBtn = $("#nest-id-generate");
     if (!nestIdInput || !speciesInput) return;
+    nestIdInput.addEventListener("input", () => { nestIdInput.dataset.manual = "1"; });
 
     const refreshFromSpecies = () => {
-      const current = parseNestId(nestIdInput.value);
-      if (current) {
-        nestIdInput.value = buildNestId(speciesInput.value, current.suffix);
-        return;
+      if (editingUid || nestIdInput.dataset.manual === "1") return;
+      if (!String(nestIdInput.value || "").trim() || nestIdInput.dataset.auto === "1") {
+        nestIdInput.value = buildNestId(speciesInput.value);
+        nestIdInput.dataset.auto = "1";
       }
-      if (!String(nestIdInput.value || "").trim()) nestIdInput.value = buildNestId(speciesInput.value);
     };
 
     speciesInput.addEventListener("change", refreshFromSpecies);
+    $("#obs-date")?.addEventListener("change", refreshFromSpecies);
     document.addEventListener("click", (event) => {
       if (event.target.closest('.tile-group[data-target="species"] .tile')) {
         requestAnimationFrame(refreshFromSpecies);
       }
     });
     if (generateBtn) generateBtn.addEventListener("click", () => {
-      const current = parseNestId(nestIdInput.value);
-      nestIdInput.value = buildNestId(speciesInput.value, current ? current.suffix : "");
+      nestIdInput.value = buildNestId(speciesInput.value);
+      nestIdInput.dataset.auto = "1";
+      delete nestIdInput.dataset.manual;
     });
   }
 
@@ -1171,6 +1310,7 @@
         const target = $(`#${group.dataset.target}`);
         if (!target) return;
         target.value = tile.dataset.value;
+        target.dispatchEvent(new Event("change", { bubbles: true }));
         syncTilesFromInputs();
       });
     });
@@ -1415,6 +1555,12 @@
     const addWarn = (step, field, message) => warnings.push({ step, field, message });
 
     if (!record.nestId) addErr(1, "#nest-id", "Brakuje ID gniazda.");
+    if (record.nestId) {
+      const duplicate = activeEntries().find((entry) =>
+        String(entry.uid) !== String(record.uid) && String(entry.nestId || "").trim() === String(record.nestId || "").trim()
+      );
+      if (duplicate) addWarn(1, "#nest-id", "Ten identyfikator gniazda już istnieje. Możesz go zmienić ręcznie albo wygenerować kolejny.");
+    }
     if (!record.obsDate) addErr(1, "#obs-date", "Brakuje daty.");
     if (!record.obsTime) addErr(1, "#obs-time", "Brakuje godziny.");
     if (!record.sector) addErr(1, "#sector", "Brakuje sektora / części wyspy.");
@@ -1529,6 +1675,7 @@
     currentNestPhotos = [];
     currentRandomPhotos = [];
     localStorage.removeItem(DRAFT_KEY);
+    updateDraftResumeButton();
     renderEntries();
     resetForm();
     showView("records");
@@ -1536,15 +1683,69 @@
     if (navigator.onLine) { syncNow().catch(() => { markSyncStatus(record.uid, "error"); }); }
   }
 
-  function saveDraft() {
+  function writeDraft(showAlert = true) {
     const data = {};
     new FormData($("#entry-form")).forEach((v, k) => { data[k] = v; });
     // FormData does not include hidden fields without name attributes, so save by id as well.
-    $$("input, select, textarea").forEach((el) => {
+    $$("input, select, textarea", $("#entry-form")).forEach((el) => {
       if (el.id && el.type !== "file") data[el.id] = el.value;
     });
     localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data }));
-    alert("Szkic zapisany lokalnie.");
+    updateDraftResumeButton();
+    if (showAlert) alert("Szkic zapisany lokalnie.");
+  }
+
+  function saveDraft() {
+    writeDraft(true);
+  }
+
+  function saveDraftSilently() {
+    writeDraft(false);
+  }
+
+  function getDraft() {
+    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; }
+  }
+
+  function updateDraftResumeButton() {
+    const btn = $("#resume-draft");
+    if (btn) btn.hidden = !getDraft();
+  }
+
+  function loadDraftToForm() {
+    const draft = getDraft();
+    if (!draft?.data) return false;
+    resetForm();
+    Object.entries(draft.data).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (el && el.type !== "file") el.value = val;
+    });
+    syncTilesFromInputs();
+    updatePercentSummaries();
+    renderPhotoPreviews();
+    showView("form");
+    showStep(1);
+    return true;
+  }
+
+  function formHasStarted() {
+    if ($("#form-screen")?.hidden) return false;
+    if (editingUid || currentStep > 1 || getDraft()) return true;
+    if ((currentNestPhotos || []).length || (currentRandomPhotos || []).length) return true;
+    if ($("#nest-photos")?.files?.length || $("#random-photos")?.files?.length) return true;
+    const meaningful = ["#nest-id", "#season", "#observer", "#sector", "#lat", "#lon", "#notes-identification", "#notes-nest-micro", "#notes-random-micro", "#notes-meso", "#notes"];
+    return meaningful.some((selector) => String($(selector)?.value || "").trim());
+  }
+
+  function goHomeFromMaybeForm() {
+    if (formHasStarted()) {
+      const ok = confirm("Wychodzisz z arkusza. Niedokończony wpis zostanie zapisany w szkicach. Czy kontynuować?");
+      if (!ok) return;
+      saveDraftSilently();
+    }
+    revokePhotoUrls("server");
+    updateDraftResumeButton();
+    showView("home");
   }
 
   function resetForm() {
@@ -1582,6 +1783,11 @@
 
     $("#nest-photo-preview").innerHTML = "";
     $("#random-photo-preview").innerHTML = "";
+    const nestIdEl = $("#nest-id");
+    if (nestIdEl) {
+      delete nestIdEl.dataset.manual;
+      delete nestIdEl.dataset.auto;
+    }
     if ($("#validation-override-summary")) $("#validation-override-summary").checked = false;
     const sectorEl = $("#sector");
     if (sectorEl) {
@@ -1608,6 +1814,8 @@
     $("#edit-record-label").textContent = `${record.nestId || "rekord"} (${record.obsDate || ""})`;
 
     setValue("#nest-id", record.nestId);
+    const nestIdEl = $("#nest-id");
+    if (nestIdEl) nestIdEl.dataset.manual = "1";
     setValue("#season", record.season);
     setValue("#obs-date", record.obsDate);
     setValue("#obs-time", record.obsTime);
@@ -2045,10 +2253,10 @@
       const focusCtrl = toLatLon(focusRecord?.randomMicro?.lat, focusRecord?.randomMicro?.lon);
       const focusPos = focusNest || focusCtrl;
       if (focusPos) recordsMap.setView(focusPos, 19);
-      else $("#map-info").textContent = "Wybrany rekord nie ma poprawnych współrzędnych GPS.";
+      else setMapInfo("records", "Wybrany rekord nie ma poprawnych współrzędnych GPS.");
     }
-    if (!points.length) {$("#map-info").textContent="Brak zapisanych punktów z GPS do pokazania na mapie."; recordsMap.setView([52,19],7);}
-    $("#map-info").textContent = `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`;
+    if (!points.length) {setMapInfo("records", "Brak zapisanych punktów z GPS do pokazania na mapie."); recordsMap.setView([52,19],7);}
+    setMapInfo("records", `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`);
     if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
     ensureUserLocationTracking(points, focusUid); syncUserLocationLayers("records");
@@ -2072,7 +2280,7 @@
       }, () => {
         $("#map-user-status").textContent = "Twoja pozycja: niedostępna";
         $("#working-user-status").textContent = "Twoja pozycja: niedostępna";
-        if (!points.length) $("#map-info").textContent = "Brak zapisanych punktów z GPS do pokazania na mapie.";
+        if (!points.length) setMapInfo("records", "Brak zapisanych punktów z GPS do pokazania na mapie.");
       }, {enableHighAccuracy:true, maximumAge:10000, timeout:12000});
     } else {
       const statusText = latestUserLatLng ? "Twoja pozycja: aktywna" : "Twoja pozycja: oczekiwanie…";
@@ -2129,8 +2337,11 @@
   }
 
   function setupNavigation() {
-    $("#home-shortcut").addEventListener("click", () => showView("home"));
-    $$(".back-home").forEach((btn) => btn.addEventListener("click", () => showView("home")));
+    $("#home-shortcut").addEventListener("click", goHomeFromMaybeForm);
+    $$(".back-home").forEach((btn) => btn.addEventListener("click", goHomeFromMaybeForm));
+    $("#resume-draft")?.addEventListener("click", () => {
+      if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
+    });
     $("#start-new").addEventListener("click", () => { editReturnToReadonly = false; startNewRecord(); });
     $("#open-records").addEventListener("click", () => {
       renderEntries();
@@ -2365,7 +2576,18 @@
     $("#export-csv").addEventListener("click", () => {
       downloadText(`sieweczka-records-${dateStamp()}.csv`, buildCsv(getEntries()), "text/csv;charset=utf-8");
     });
-    $("#export-zip").addEventListener("click", exportZip);
+    $("#export-zip").addEventListener("click", () => exportZip({ includePhotos: false }).catch((error) => {
+      console.error(error);
+      alert(`Eksport nie powiódł się: ${error.message || error}`);
+    }));
+    $("#export-zip-photos")?.addEventListener("click", async () => {
+      const warning = "Eksport ze zdjęciami może pobrać dużą ilość danych z serwera. Upewnij się, że masz stabilny internet i wystarczająco dużo miejsca na telefonie. Zdjęcia zostaną pobrane tylko do pliku eksportu i nie będą zapisywane trwale w pamięci aplikacji.";
+      if (!confirm(`${warning}\n\nKontynuuj ze zdjęciami?`)) return;
+      await exportZip({ includePhotos: true }).catch((error) => {
+        console.error(error);
+        alert(`Eksport ze zdjęciami nie powiódł się: ${error.message || error}`);
+      });
+    });
     $("#export-kml")?.addEventListener("click", exportKml);
   }
 
@@ -2472,7 +2694,49 @@
     return [headers.join(";"), ...rows.map((row) => headers.map((header) => escape(row[header])).join(";"))].join("\n");
   }
 
-  async function exportZip() {
+  function setExportStatus(message) {
+    const status = $("#sync-status");
+    if (status) status.textContent = message;
+  }
+
+  function csvFromRows(rows, headers) {
+    const escape = (cell) => {
+      const text = cell == null ? "" : String(cell);
+      return /[",\n;]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+    };
+    return [headers.join(";"), ...rows.map((row) => headers.map((header) => escape(row[header])).join(";"))].join("\n");
+  }
+
+  function photoExtension(blob, photo = {}) {
+    const mime = String(photo.mimeType || photo.mime_type || blob?.type || "image/jpeg").toLowerCase();
+    if (mime.includes("png")) return "png";
+    if (mime.includes("webp")) return "webp";
+    if (mime.includes("heic")) return "heic";
+    return "jpg";
+  }
+
+  function collectExportPhotoItems(entries, workingNests = []) {
+    const items = [];
+    for (const entry of entries) {
+      for (const ref of entry.nestMicro?.photos || []) {
+        const localRef = String(ref?.dataUrl || ref || "");
+        if (localRef) items.push({ localRef, recordUid: entry.uid, recordNestId: entry.nestId, photoRole: "nest" });
+      }
+      for (const ref of entry.randomMicro?.photos || []) {
+        const localRef = String(ref?.dataUrl || ref || "");
+        if (localRef) items.push({ localRef, recordUid: entry.uid, recordNestId: entry.nestId, photoRole: "random" });
+      }
+    }
+    for (const nest of workingNests) {
+      for (const ref of nest.photos || []) {
+        const localRef = String(ref?.dataUrl || ref || "");
+        if (localRef) items.push({ localRef, workingNestId: nest.id, recordNestId: nest.label, photoRole: "working" });
+      }
+    }
+    return items;
+  }
+
+  async function exportZip(options = {}) {
     const entries = activeEntries();
     if (!window.JSZip) {
       alert("Biblioteka ZIP nie jest dostępna. Eksportuję CSV i JSON osobno.");
@@ -2480,28 +2744,68 @@
       downloadText(`sieweczka-records-${dateStamp()}.json`, JSON.stringify(entries, null, 2), "application/json");
       return;
     }
-    const zip = new JSZip();
-    zip.file("records.csv", buildCsv(entries));
-    zip.file("records.json", JSON.stringify(entries, null, 2));
-    const photos = zip.folder("photos");
-
-    for (const entry of entries) {
-      const nestPhotos = entry.nestMicro?.photos || [];
-      const randomPhotos = entry.randomMicro?.photos || [];
-      let i = 1;
-      for (const ref of nestPhotos) {
-        const blob = await getPhotoBlob(ref);
-        if (blob) photos.file(`${safeFile(entry.nestId)}_nest_${String(i++).padStart(2, "0")}.jpg`, blob);
-      }
-      i = 1;
-      for (const ref of randomPhotos) {
-        const blob = await getPhotoBlob(ref);
-        if (blob) photos.file(`${safeFile(entry.nestId)}_random_${String(i++).padStart(2, "0")}.jpg`, blob);
-      }
+    const includePhotos = options.includePhotos === true;
+    let includeServer = includePhotos;
+    if (includePhotos && !navigator.onLine) {
+      const localOnly = confirm("Nie można pobrać zdjęć z serwera offline. Możesz wyeksportować dane bez zdjęć albo tylko zdjęcia dostępne lokalnie.\n\nEksportować tylko zdjęcia dostępne lokalnie?");
+      if (!localOnly) return;
+      includeServer = false;
     }
 
+    setExportStatus(includePhotos ? "Przygotowuję eksport ze zdjęciami..." : "Tworzę archiwum...");
+    const zip = new JSZip();
+    zip.file("sieweczka-records.csv", buildCsv(entries));
+    zip.file("records.json", JSON.stringify(entries, null, 2));
+    const manifest = [];
+
+    if (includePhotos) {
+      const photos = zip.folder("photos");
+      const items = collectExportPhotoItems(entries, activeWorkingNests());
+      for (let index = 0; index < items.length; index += 1) {
+        const item = items[index];
+        setExportStatus(`Pobieram zdjęcie ${index + 1} z ${items.length}...`);
+        try {
+          const resolved = await resolvePhotoBlobForExport(item.localRef, item, { includeServer });
+          const serverId = resolved.photo?.id || getPhotoSyncMap()[item.localRef]?.serverId || "";
+          const filename = `photos/${safeFile(item.recordUid || item.recordNestId || "record")}_${safeFile(item.photoRole)}_${safeFile(serverId || item.localRef.replace(/^idb:/, ""))}.${photoExtension(resolved.blob, resolved.photo)}`;
+          photos.file(filename.replace(/^photos\//, ""), resolved.blob);
+          manifest.push({
+            record_uid: item.recordUid || "",
+            working_nest_id: item.workingNestId || "",
+            photo_role: item.photoRole || "",
+            local_ref: item.localRef || "",
+            server_id: serverId,
+            filename,
+            original_name: resolved.photo?.originalName || resolved.photo?.original_name || "",
+            mime_type: resolved.photo?.mimeType || resolved.photo?.mime_type || resolved.blob?.type || "",
+            size_bytes: resolved.photo?.sizeBytes || resolved.photo?.size_bytes || resolved.blob?.size || "",
+            source: resolved.source,
+            error: ""
+          });
+        } catch (error) {
+          manifest.push({
+            record_uid: item.recordUid || "",
+            working_nest_id: item.workingNestId || "",
+            photo_role: item.photoRole || "",
+            local_ref: item.localRef || "",
+            server_id: "",
+            filename: "",
+            original_name: "",
+            mime_type: "",
+            size_bytes: "",
+            source: "",
+            error: error.message || String(error)
+          });
+          console.warn("Nie udało się dodać zdjęcia do eksportu", item, error);
+        }
+      }
+      zip.file("photos_manifest.csv", csvFromRows(manifest, ["record_uid", "working_nest_id", "photo_role", "local_ref", "server_id", "filename", "original_name", "mime_type", "size_bytes", "source", "error"]));
+    }
+
+    setExportStatus("Tworzę archiwum...");
     const blob = await zip.generateAsync({ type: "blob" });
     downloadBlob(`sieweczka-export-${dateStamp()}.zip`, blob);
+    setExportStatus("Eksport gotowy.");
   }
 
 
@@ -2668,7 +2972,7 @@
       m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
-    $("#working-map-info").textContent = `Punkty robocze: ${enriched.length}`;
+    setMapInfo("working", `Punkty robocze: ${enriched.length}`);
     $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button>${canEditItem(w) ? `<button data-w-action="edit" data-working-id="${w.id}">Edytuj</button>` : ""}${canSoftDeleteItem(w) ? `<button class="danger" data-w-action="delete" data-working-id="${w.id}">Ukryj</button>` : ""}${canEditItem(w) ? `<select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}</div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
@@ -2725,6 +3029,7 @@
 
   function init() {
     migrateLegacyEntries();
+    applyUiSettings();
     setupPercentGroups();
     setupTiles();
     setDefaultDateTime();
@@ -2744,6 +3049,7 @@
     updatePercentSummaries();
     renderEntries();
     updateCounts();
+    updateDraftResumeButton();
     renderUserPanel();
     showView(getCurrentUser() ? (mustChangePassword() ? "change-password" : "home") : "login");
     showStep(1);

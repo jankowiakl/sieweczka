@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-invites-home-1";
+const CACHE_NAME = "sieweczka-app-v2026-05-export-grid-drafts-1";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -957,6 +957,18 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.pathname.startsWith("/api/") || url.pathname.includes("/api/")) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+  if (url.pathname.endsWith("/data/grid_vanvan.geojson") || url.pathname.endsWith("data/grid_vanvan.geojson")) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request).then((cached) => cached || new Response("Grid offline", { status: 503, statusText: "Offline" })))
+    );
     return;
   }
   if (url.pathname.endsWith("/app.js") || url.pathname.endsWith("app.js")) {

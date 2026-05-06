@@ -76,6 +76,7 @@
       <div class="home-secondary-actions">
         <button id="home-sync-now" type="button">Synchronizuj teraz</button>
         <button id="home-export-toggle" type="button">Eksport</button>
+        <button id="resume-draft" type="button" hidden>Wróć do ostatniego szkicu</button>
         <button id="open-user" type="button">Użytkownik</button>
         <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
         <button id="open-admin" type="button" hidden>Administrator</button>
@@ -85,7 +86,8 @@
         <div class="row-actions">
           <button id="export-csv" type="button">Eksport CSV</button>
           <button id="export-json" type="button">Eksport JSON</button>
-          <button id="export-zip" type="button">Eksport ZIP + zdjęcia</button>
+          <button id="export-zip" type="button">Eksport bez zdjęć</button>
+          <button id="export-zip-photos" type="button">Eksport ze zdjęciami</button>
           <button id="export-kml" type="button">Eksport KML</button>
         </div>
       </section>
@@ -107,6 +109,15 @@
     <section id="user-screen" class="screen card" hidden>
       <div class="screen-head"><button type="button" class="back-home">← Menu główne</button><h2>Użytkownik</h2></div>
       <div id="user-details" class="record-preview"></div>
+      <label>Rozmiar tekstu
+        <select id="ui-font-size">
+          <option value="small">Mały</option>
+          <option value="normal">Normalny</option>
+          <option value="large">Duży</option>
+          <option value="xlarge">Bardzo duży</option>
+        </select>
+      </label>
+      <p class="record-preview">Przykładowy tekst</p>
       <div class="row-actions">
         <button id="check-app-update" type="button">Sprawdź aktualizacje</button>
         <button id="refresh-app-version" type="button" class="primary">Odśwież wersję aplikacji</button>

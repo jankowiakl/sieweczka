@@ -98,6 +98,64 @@ Pierwsza strona pokazuje proste kafelki terenowe:
 
 Drugi poziom zawiera synchronizację, eksport, panel użytkownika i pomoc. Ustawienia techniczne są schowane w „Ustawieniach zaawansowanych”.
 
+## Eksport zdjęć z serwera
+
+Eksport ma dwa tryby:
+- „Eksport bez zdjęć” - szybki ZIP z `sieweczka-records.csv` i `records.json`, bez pobierania plików zdjęć;
+- „Eksport ze zdjęciami” - ZIP z danymi, folderem `photos/` oraz `photos_manifest.csv`.
+
+Przed eksportem ze zdjęciami aplikacja ostrzega, że może zostać pobrana duża ilość danych. Zdjęcia lokalne są używane z IndexedDB. Zdjęcia wykonane na innym telefonie są pobierane z API przez `fetch` z nagłówkiem `Authorization` tylko na czas tworzenia pliku ZIP.
+
+Zdjęcia pobrane do eksportu nie są zapisywane trwale w IndexedDB ani w `localStorage`. Po odświeżeniu aplikacji zdjęcie serwerowe może zostać pobrane ponownie, jeśli użytkownik znów otworzy podgląd albo wykona eksport ze zdjęciami.
+
+Jeśli pojedyncze zdjęcie nie pobierze się z serwera, eksport jest kontynuowany, a błąd trafia do `photos_manifest.csv`. Offline można wyeksportować dane bez zdjęć albo tylko zdjęcia dostępne lokalnie.
+
+## Grid mapy
+
+Grid mapy jest ładowany z pliku:
+
+```text
+data/grid_vanvan.geojson
+```
+
+Plik musi być dostępny po wdrożeniu PWA i jest dodany do cache aplikacji w `sw.js`. Service Worker nie cache'uje endpointów `/api/*`, ale może cache'ować statyczny plik gridu.
+
+GeoJSON gridu musi być wyeksportowany w EPSG:4326, z kolejnością współrzędnych `[lon, lat]`. Leaflet rysuje taki GeoJSON poprawnie na tle Esri World Imagery. Jeśli grid jest przesunięty, nie należy przesuwać go „na oko”; trzeba ponownie wyeksportować plik jako GeoJSON EPSG:4326 i sprawdzić kolejność współrzędnych.
+
+Aplikacja pokazuje diagnostykę gridu w statusie mapy. Jeśli plik jest pusty, niedostępny albo współrzędne nie wyglądają na WGS84, w konsoli i UI pojawi się komunikat zamiast cichej awarii.
+
+## Szkice
+
+Przy wyjściu z arkusza do menu aplikacja ostrzega:
+
+```text
+Wychodzisz z arkusza. Niedokończony wpis zostanie zapisany w szkicach.
+```
+
+Po potwierdzeniu dane formularza są zapisane lokalnie jako szkic. Jeśli istnieje szkic, na ekranie głównym pojawia się przycisk „Wróć do ostatniego szkicu”.
+
+## Rozmiar tekstu
+
+W panelu „Użytkownik” można zmienić „Rozmiar tekstu”: Mały, Normalny, Duży albo Bardzo duży. Wybór jest zapisywany lokalnie w `sieweczka-ui-settings-v1` i działa od razu bez restartu aplikacji. Ustawienie nie jest synchronizowane z serwerem.
+
+## Automatyczne ID gniazda
+
+Automatyczne ID gniazda jest generowane na podstawie gatunku, daty obserwacji i kolejnego numeru dla danego gatunku w danym dniu:
+
+```text
+<speciesCode>-<YYYYMMDD>-<NNN>
+```
+
+Przykład:
+
+```text
+SOb-20260506-001
+```
+
+Pierwszy rekord danego gatunku danego dnia dostaje końcówkę `001`, drugi `002` itd. Inny gatunek tego samego dnia zaczyna od `001`, a ten sam gatunek następnego dnia też zaczyna od `001`.
+
+Pole ID nadal można zmienić ręcznie. Po ręcznej zmianie aplikacja nie nadpisuje ID automatycznie. Przycisk „Wygeneruj ID” wymusza ponowne przeliczenie na podstawie aktualnej daty i gatunku.
+
 ## Aktualizacja PWA bez kasowania danych
 
 Po większej zmianie kodu telefon może przez chwilę trzymać starą wersję plików w Service Worker/cache. Nie używaj opcji:
