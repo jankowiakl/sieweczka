@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-clean-v23-photo-sync";
+const CACHE_NAME = "sieweczka-clean-v24-users-soft-delete";
 const APP_SHELL = [
   "./",
   "./index.html",

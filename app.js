@@ -15,6 +15,7 @@
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
   const PHOTO_SYNC_KEY = "sieweczka-photo-sync-v1";
+  const AUTH_STATE_KEY = "sieweczka-auth-v1";
 
   function getClientId() {
     const key = "sieweczka-client-id-v1";
@@ -25,7 +26,23 @@
   function getSyncConfig() { try { return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY) || "{}"); } catch { return {}; } }
   function setSyncConfig(cfg) { localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(cfg)); }
   function getSyncApiBase(cfg = getSyncConfig()) { return String(cfg.apiUrl || "").trim().replace(/\/+$/, "").replace(/\/api$/i, ""); }
-  function getSyncAuthHeaders(cfg = getSyncConfig()) { return cfg.token ? { Authorization: `Bearer ${cfg.token}` } : {}; }
+  function getAuthState() { try { return JSON.parse(localStorage.getItem(AUTH_STATE_KEY) || "{}"); } catch { return {}; } }
+  function setAuthState(state) { localStorage.setItem(AUTH_STATE_KEY, JSON.stringify(state || {})); }
+  function clearAuthState() { localStorage.removeItem(AUTH_STATE_KEY); }
+  function getCurrentUser() { return getAuthState().user || null; }
+  function getUserToken() { return getAuthState().token || ""; }
+  function isAdmin() { return getCurrentUser()?.role === "admin"; }
+  function canManageData() { return ["admin", "coordinator"].includes(getCurrentUser()?.role); }
+  function ownsItem(item) { return !!getCurrentUser()?.id && String(item?.createdBy || item?.created_by || item?.uploadedBy || "") === String(getCurrentUser().id); }
+  function canSoftDeleteItem(item) { return canManageData() || (getCurrentUser()?.role === "observer" && ownsItem(item)); }
+  function canEditItem(item) { return canManageData() || getCurrentUser()?.role === "observer" && ownsItem(item); }
+  function isDeleted(item) { return !!(item?.deletedAt || item?.deleted_at); }
+  function activeEntries() { return getEntries().filter((entry) => !isDeleted(entry)); }
+  function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
+  function getSyncAuthHeaders(cfg = getSyncConfig()) {
+    const token = getUserToken() || cfg.token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
   function getLastSyncAt() { try { return JSON.parse(localStorage.getItem(SYNC_STATE_KEY) || "{}").lastSyncAt || null; } catch { return null; } }
   function setLastSyncAt(v) { localStorage.setItem(SYNC_STATE_KEY, JSON.stringify({ lastSyncAt: v })); }
   async function testSyncConnection() {
@@ -36,7 +53,7 @@
   }
   async function syncNow() {
     const cfg = getSyncConfig();
-    if (!cfg.apiUrl || !cfg.token) throw new Error("Brak konfiguracji synchronizacji");
+    if (!cfg.apiUrl || !(getUserToken() || cfg.token)) throw new Error("Brak konfiguracji synchronizacji");
     const apiBase = getSyncApiBase(cfg);
     const entries = getEntries();
     const workingNests = getWorkingNests();
@@ -91,6 +108,162 @@
       } catch (e) { $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`; }
     });
     window.addEventListener("online", () => { syncNow().catch(()=>{}); });
+  }
+
+  async function loginUser() {
+    const existing = getSyncConfig();
+    const loginApiUrl = trim("#login-api-url");
+    if (loginApiUrl) setSyncConfig({ ...existing, apiUrl: loginApiUrl });
+    setValue("#sync-api-url", getSyncConfig().apiUrl || "");
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    if (!apiBase) throw new Error("Najpierw wpisz API URL w ustawieniach synchronizacji.");
+    const res = await fetch(`${apiBase}/api/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: trim("#login-email"), password: value("#login-password") })
+    });
+    if (!res.ok) throw new Error(`Logowanie HTTP ${res.status}`);
+    const data = await res.json();
+    setAuthState({ token: data.token, user: data.user, loggedAt: new Date().toISOString() });
+    return data.user;
+  }
+
+  async function fetchMe() {
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    if (!apiBase || !getUserToken()) return null;
+    const res = await fetch(`${apiBase}/api/me`, { headers: getSyncAuthHeaders(cfg) });
+    if (!res.ok) throw new Error(`Me HTTP ${res.status}`);
+    const data = await res.json();
+    setAuthState({ ...getAuthState(), user: data.user });
+    return data.user;
+  }
+
+  function renderUserPanel() {
+    const user = getCurrentUser();
+    const details = $("#user-details");
+    if (details) {
+      details.innerHTML = user ? `
+        <p><strong>${escapeHtml(user.name)}</strong></p>
+        <p>${escapeHtml(user.email)}</p>
+        <p>Rola: <strong>${escapeHtml(user.role)}</strong></p>
+        <p>${formatPhotoSyncStatus(getPhotoSyncSummary())}</p>
+        <p>Status: ${navigator.onLine ? "online" : "offline"}</p>
+      ` : `<p>Brak zalogowanego użytkownika.</p>`;
+    }
+    $("#open-admin")?.toggleAttribute("hidden", !isAdmin());
+    ["#export-csv", "#export-json", "#export-zip", "#export-kml"].forEach((selector) => {
+      const el = $(selector);
+      if (el) el.hidden = !(isAdmin() || getCurrentUser()?.role === "coordinator");
+    });
+  }
+
+  async function loadAdminUsers() {
+    if (!isAdmin()) return;
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    const res = await fetch(`${apiBase}/api/users`, { headers: getSyncAuthHeaders(cfg) });
+    if (!res.ok) throw new Error(`Users HTTP ${res.status}`);
+    const data = await res.json();
+    renderAdminUsers(data.users || []);
+  }
+
+  function renderAdminUsers(users) {
+    const list = $("#admin-users-list");
+    if (!list) return;
+    list.innerHTML = users.map((user) => `
+      <article class="entry-card">
+        <div class="entry-main">
+          <h3>${escapeHtml(user.name)}</h3>
+          <p>${escapeHtml(user.email)} • ${escapeHtml(user.role)} • ${user.is_active ? "aktywny" : "nieaktywny"}</p>
+        </div>
+        <div class="entry-actions">
+          <select data-admin-action="role" data-user-id="${escapeHtml(user.id)}">
+            ${["observer","coordinator","admin"].map((role) => `<option value="${role}"${role === user.role ? " selected" : ""}>${role}</option>`).join("")}
+          </select>
+          <button type="button" data-admin-action="reset" data-user-id="${escapeHtml(user.id)}">Reset hasła</button>
+          <button type="button" data-admin-action="${user.is_active ? "deactivate" : "activate"}" data-user-id="${escapeHtml(user.id)}">${user.is_active ? "Dezaktywuj" : "Aktywuj"}</button>
+        </div>
+      </article>
+    `).join("") || `<p class="muted">Brak użytkowników.</p>`;
+  }
+
+  function setupAuthUI() {
+    setValue("#login-api-url", getSyncConfig().apiUrl || "");
+    $("#login-submit")?.addEventListener("click", async () => {
+      try {
+        const user = await loginUser();
+        $("#login-status").textContent = `Zalogowano: ${user.name}`;
+        renderUserPanel();
+        showView("home");
+      } catch (error) {
+        $("#login-status").textContent = `Błąd logowania: ${error.message}`;
+      }
+    });
+    $("#logout")?.addEventListener("click", () => {
+      clearAuthState();
+      renderUserPanel();
+      showView("login");
+    });
+    $("#open-user")?.addEventListener("click", () => { renderUserPanel(); showView("user"); });
+    $("#open-admin")?.addEventListener("click", async () => {
+      showView("admin");
+      try { await loadAdminUsers(); $("#admin-users-status").textContent = ""; } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
+    });
+    $("#admin-create-user")?.addEventListener("click", async () => {
+      try {
+        const cfg = getSyncConfig();
+        const apiBase = getSyncApiBase(cfg);
+        const res = await fetch(`${apiBase}/api/users`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) },
+          body: JSON.stringify({ name: trim("#admin-user-name"), email: trim("#admin-user-email"), role: value("#admin-user-role", "observer"), password: value("#admin-user-password") })
+        });
+        if (!res.ok) throw new Error(`Create HTTP ${res.status}`);
+        $("#admin-users-status").textContent = "Utworzono użytkownika.";
+        await loadAdminUsers();
+      } catch (e) {
+        $("#admin-users-status").textContent = `Błąd: ${e.message}`;
+      }
+    });
+    $("#admin-users-list")?.addEventListener("change", async (event) => {
+      const select = event.target.closest("select[data-admin-action='role']");
+      if (!select) return;
+      await adminPatchUser(select.dataset.userId, { role: select.value });
+      await loadAdminUsers();
+    });
+    $("#admin-users-list")?.addEventListener("click", async (event) => {
+      const btn = event.target.closest("[data-admin-action][data-user-id]");
+      if (!btn || btn.tagName === "SELECT") return;
+      const action = btn.dataset.adminAction;
+      try {
+        if (action === "reset") {
+          const password = prompt("Nowe hasło dla użytkownika (min. 8 znaków):");
+          if (!password) return;
+          await adminPost(`users/${btn.dataset.userId}/reset-password`, { password });
+        } else {
+          await adminPost(`users/${btn.dataset.userId}/${action}`, {});
+        }
+        await loadAdminUsers();
+      } catch (e) {
+        $("#admin-users-status").textContent = `Błąd: ${e.message}`;
+      }
+    });
+  }
+
+  async function adminPatchUser(id, patch) {
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    const res = await fetch(`${apiBase}/api/users/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) }, body: JSON.stringify(patch) });
+    if (!res.ok) throw new Error(`Admin HTTP ${res.status}`);
+  }
+
+  async function adminPost(path, body) {
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    const res = await fetch(`${apiBase}/api/${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) }, body: JSON.stringify(body || {}) });
+    if (!res.ok) throw new Error(`Admin HTTP ${res.status}`);
   }
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -416,6 +589,7 @@
   function collectPhotoRefsFromEntries(entries) {
     const refs = new Map();
     for (const entry of entries || []) {
+      if (isDeleted(entry)) continue;
       for (const ref of entry?.nestMicro?.photos || []) {
         const localRef = String(ref?.dataUrl || ref || "");
         if (localRef.startsWith("idb:") && !refs.has(localRef)) refs.set(localRef, { localRef, recordUid: entry.uid, photoRole: "nest" });
@@ -431,6 +605,7 @@
   function collectPhotoRefsFromWorkingNests(workingNests) {
     const refs = new Map();
     for (const nest of workingNests || []) {
+      if (isDeleted(nest)) continue;
       for (const ref of nest?.photos || []) {
         const localRef = String(ref?.dataUrl || ref || "");
         if (localRef.startsWith("idb:") && !refs.has(localRef)) refs.set(localRef, { localRef, workingNestId: nest.id, photoRole: "working" });
@@ -600,6 +775,13 @@
       protocolVersion: entry.protocolVersion || PROTOCOL_VERSION,
       createdAt: entry.createdAt || new Date().toISOString(),
       updatedAt: entry.updatedAt || entry.createdAt || new Date().toISOString(),
+      createdBy: entry.createdBy || entry.created_by || "",
+      createdByName: entry.createdByName || "",
+      updatedBy: entry.updatedBy || entry.updated_by || "",
+      updatedByName: entry.updatedByName || "",
+      deletedAt: entry.deletedAt || entry.deleted_at || null,
+      deletedBy: entry.deletedBy || entry.deleted_by || null,
+      deleteReason: entry.deleteReason || entry.delete_reason || "",
       season: entry.season || "",
       observer: entry.observer || "",
       docPhotoDone: entry.docPhotoDone || "unknown",
@@ -776,7 +958,7 @@
   function autoFillNearestDistances() {
     const lat = getNumber("#lat", null), lon = getNumber("#lon", null);
     if (lat == null || lon == null) return;
-    const entries = getEntries();
+    const entries = activeEntries();
     const nearest = (sp) => entries
       .filter((e) => e.species === sp && e.uid !== editingUid && hasValidCoords(e.lat, e.lon))
       .reduce((best, e) => Math.min(best, haversineM(lat, lon, Number(e.lat), Number(e.lon))), Infinity);
@@ -786,14 +968,20 @@
   }
 
   function showView(name) {
+    if (!getCurrentUser() && name !== "login") name = "login";
+    if (name === "admin" && !isAdmin()) name = "home";
+    $("#login-screen").hidden = name !== "login";
     $("#home-screen").hidden = name !== "home";
     $("#records-screen").hidden = name !== "records";
     $("#record-readonly-screen").hidden = name !== "readonly";
     $("#map-screen").hidden = name !== "map";
     $("#working-map-screen").hidden = name !== "working-map";
     $("#form-screen").hidden = name !== "form";
+    $("#user-screen").hidden = name !== "user";
+    $("#admin-screen").hidden = name !== "admin";
     if (name === "map") setTimeout(() => renderRecordsMap(mapFocusUid), 0);
     if (name === "working-map") setTimeout(() => renderWorkingMap(), 0);
+    if (name === "user") renderUserPanel();
     updateCounts();
   }
 
@@ -966,12 +1154,20 @@
 
     const uid = editingUid || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
     const now = new Date().toISOString();
+    const user = getCurrentUser();
 
     return {
       uid,
       protocolVersion: PROTOCOL_VERSION,
       createdAt: existing?.createdAt || now,
       updatedAt: now,
+      createdBy: existing?.createdBy || user?.id || "",
+      createdByName: existing?.createdByName || user?.name || "",
+      updatedBy: user?.id || existing?.updatedBy || "",
+      updatedByName: user?.name || existing?.updatedByName || "",
+      deletedAt: existing?.deletedAt || null,
+      deletedBy: existing?.deletedBy || null,
+      deleteReason: existing?.deleteReason || "",
 
       nestId: trim("#nest-id"),
       season: trim("#season"),
@@ -1355,14 +1551,31 @@
     if (backBtn) backBtn.hidden = !editReturnToReadonly;
   }
 
-  function deleteRecord(uid) {
+  async function deleteRecord(uid) {
     const entries = getEntries();
     const target = entries.find((entry) => String(entry.uid) === String(uid));
-    if (!target) return;
-    if (!confirm(`Usunąć rekord ${target.nestId || ""}?`)) return;
-    setEntries(entries.filter((entry) => String(entry.uid) !== String(uid)));
+    if (!target) return false;
+    if (!canSoftDeleteItem(target)) { alert("Brak uprawnień do oznaczenia tego rekordu jako usuniętego."); return false; }
+    if (!confirm(`Dane zostaną ukryte w aplikacji, ale pozostaną w bazie i mogą zostać odzyskane przez administratora.\n\nUkryć rekord ${target.nestId || ""}?`)) return false;
+    const reason = prompt("Powód usunięcia/ukrycia (opcjonalnie):") || "";
+    let updated = { ...target, deletedAt: new Date().toISOString(), deletedBy: getCurrentUser()?.id || "", deleteReason: reason, updatedAt: new Date().toISOString(), updatedBy: getCurrentUser()?.id || "", updatedByName: getCurrentUser()?.name || "" };
+    if (navigator.onLine && getUserToken()) {
+      try {
+        const cfg = getSyncConfig();
+        const res = await fetch(`${getSyncApiBase(cfg)}/api/records/${encodeURIComponent(uid)}/delete`, { method: "POST", headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) }, body: JSON.stringify({ reason }) });
+        if (res.ok) updated = normalizeEntry((await res.json()).record || updated);
+      } catch {
+        // Offline-first: local soft delete will be synchronized later.
+      }
+    }
+    const idx = entries.findIndex((entry) => String(entry.uid) === String(uid));
+    if (idx >= 0) entries[idx] = updated;
+    else entries.unshift(updated);
+    setEntries(entries);
     renderEntries();
     updateCounts();
+    if (navigator.onLine) syncNow().catch(() => markSyncStatus(uid, "error"));
+    return true;
   }
 
   async function renderPhotoPreviews() {
@@ -1396,7 +1609,7 @@
   }
 
   function updateCounts() {
-    const entries = getEntries();
+    const entries = activeEntries();
     $("#entry-count").textContent = String(entries.length);
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -1426,7 +1639,7 @@
     const list = $("#entries-list");
     if (!list) return;
     const query = trim("#record-search").toLowerCase();
-    const entries = getEntries();
+    const entries = activeEntries();
     const filtered = !query ? entries : entries.filter((entry) => {
       const text = [
         entry.nestId,
@@ -1459,8 +1672,8 @@
         </div>
         <div class="entry-actions">
           <button type="button" data-action="share" data-uid="${entry.uid}">Udostępnij</button>
-          <button type="button" data-action="edit" data-uid="${entry.uid}">Edytuj</button>
-          <button type="button" data-action="delete" data-uid="${entry.uid}" class="danger">Usuń</button>
+          ${canEditItem(entry) ? `<button type="button" data-action="edit" data-uid="${entry.uid}">Edytuj</button>` : ""}
+          ${canSoftDeleteItem(entry) ? `<button type="button" data-action="delete" data-uid="${entry.uid}" class="danger">Ukryj</button>` : ""}
         </div>
       `;
       list.appendChild(card);
@@ -1590,7 +1803,7 @@
   function normalizeWorkingNest(w) {
     const now = new Date().toISOString();
     const normalizedStatus = ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].includes(w?.status) ? w.status : 'do_sprawdzenia';
-    return { ...w, id: w?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), lat: Number(w?.lat), lon: Number(w?.lon), status: normalizedStatus, note: String(w?.note ?? w?.notes ?? ""), notes: String(w?.notes ?? w?.note ?? ""), createdAt: w?.createdAt || now, updatedAt: w?.updatedAt || w?.createdAt || now };
+    return { ...w, id: w?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), lat: Number(w?.lat), lon: Number(w?.lon), status: normalizedStatus, note: String(w?.note ?? w?.notes ?? ""), notes: String(w?.notes ?? w?.note ?? ""), createdAt: w?.createdAt || now, updatedAt: w?.updatedAt || w?.createdAt || now, createdBy: w?.createdBy || w?.created_by || "", createdByName: w?.createdByName || "", updatedBy: w?.updatedBy || w?.updated_by || "", updatedByName: w?.updatedByName || "", deletedAt: w?.deletedAt || w?.deleted_at || null, deletedBy: w?.deletedBy || w?.deleted_by || null, deleteReason: w?.deleteReason || w?.delete_reason || "" };
   }
 
   function navigateTo(lat, lon) {
@@ -1612,6 +1825,8 @@
     $("#readonly-nav-random").hidden = !randomPos;
     $("#readonly-nav-random").disabled = !randomPos;
     $("#readonly-nav-nest").disabled = !nestPos;
+    $("#readonly-edit").hidden = !canEditItem(record);
+    $("#readonly-delete").hidden = !canSoftDeleteItem(record);
     $("#record-readonly-content").innerHTML = buildReadonlySections(record);
     initReadonlyCarousel();
     showView("readonly");
@@ -1652,7 +1867,7 @@
       recordsMap.removeLayer(recordsGridLayer);
     }
     mapMarkersLayer.clearLayers();
-    const entries = getEntries();
+    const entries = activeEntries();
     const points = [];
     let missingNest = 0, missingCtrl = 0;
     entries.forEach((entry) => {
@@ -1666,7 +1881,7 @@
       const m = L.marker(p.pos,{icon}).addTo(mapMarkersLayer);
       if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(LABELS.species[p.entry.species] || p.entry.species || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
-      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> <button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button> <button data-map-action='delete' data-uid='${e.uid}'>Usuń</button> <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
+      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
     });
     if (focusUid) {
@@ -1803,7 +2018,7 @@
     });
     $("#readonly-back, #readonly-back-btn").addEventListener("click", () => { revokePhotoUrls("server"); showView("records"); });
     $("#readonly-edit").addEventListener("click", () => { editReturnToReadonly = true; readonlyUid && editRecord(readonlyUid); });
-    $("#readonly-delete").addEventListener("click", () => { if (readonlyUid) { deleteRecord(readonlyUid); showView("records"); } });
+    $("#readonly-delete").addEventListener("click", async () => { if (readonlyUid && await deleteRecord(readonlyUid)) showView("records"); });
     $("#readonly-nav-nest").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.lat,r.lon); });
     $("#readonly-nav-random").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.randomMicro?.lat,r.randomMicro?.lon); });
     $("#readonly-show-map").addEventListener("click", () => { mapFocusUid = readonlyUid; showView("map"); });
@@ -1906,7 +2121,7 @@
     $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
     $("#working-edit-form").addEventListener("submit", onWorkingEditSubmit);
     $("#working-edit-cancel").addEventListener("click", closeWorkingEditPanel);
-    $("#working-edit-delete").addEventListener("click", () => { if (editingWorkingId && confirm("Usunąć punkt roboczy?")) deleteWorkingNest(editingWorkingId); });
+    $("#working-edit-delete").addEventListener("click", () => { if (editingWorkingId && confirm("Dane zostaną ukryte w aplikacji, ale pozostaną w bazie i mogą zostać odzyskane przez administratora.")) deleteWorkingNest(editingWorkingId); });
     $("#back-to-readonly")?.addEventListener("click", () => {
       if (readonlyUid) showReadonlyRecord(readonlyUid);
     });
@@ -2103,7 +2318,7 @@
   }
 
   async function exportZip() {
-    const entries = getEntries();
+    const entries = activeEntries();
     if (!window.JSZip) {
       alert("Biblioteka ZIP nie jest dostępna. Eksportuję CSV i JSON osobno.");
       downloadText(`sieweczka-records-${dateStamp()}.csv`, buildCsv(entries), "text/csv;charset=utf-8");
@@ -2140,7 +2355,7 @@
   }
 
   function exportKml() {
-    const entries = getEntries();
+    const entries = activeEntries();
     const placemarks = [];
     const buildDescription = (entry, pos) => [
       `ID gniazda: ${entry.nestId || "(bez ID)"}`,`Gatunek: ${LABELS.species[entry.species] || entry.species || "-"}`,`Data: ${entry.obsDate || "-"}`,`Liczba jaj: ${entry.eggCount ?? "brak"}`,`Obserwator: ${entry.observer || "-"}`,`Sektor: ${entry.sector || "-"}`,`Lat/Lon: ${pos[0]}, ${pos[1]}`
@@ -2187,19 +2402,35 @@
     const items = getWorkingNests();
     const idx = items.findIndex((w) => String(w.id) === String(id));
     if (idx < 0) return null;
-    const updated = normalizeWorkingNest({ ...items[idx], ...patch, updatedAt: new Date().toISOString() });
+    const user = getCurrentUser();
+    const updated = normalizeWorkingNest({ ...items[idx], ...patch, updatedAt: new Date().toISOString(), updatedBy: user?.id || items[idx].updatedBy || "", updatedByName: user?.name || items[idx].updatedByName || "" });
     items[idx] = updated;
     setWorkingNests(items);
     renderWorkingMap();
     return updated;
   }
-  function deleteWorkingNest(id) {
+  async function deleteWorkingNest(id) {
     const items = getWorkingNests();
-    const next = items.filter((w) => String(w.id) !== String(id));
-    if (next.length === items.length) return false;
-    setWorkingNests(next);
+    const idx = items.findIndex((w) => String(w.id) === String(id));
+    if (idx < 0) return false;
+    const target = items[idx];
+    if (!canSoftDeleteItem(target)) return alert("Brak uprawnień do oznaczenia tego punktu jako usuniętego.");
+    const reason = prompt("Powód usunięcia/ukrycia (opcjonalnie):") || "";
+    let updated = normalizeWorkingNest({ ...target, deletedAt: new Date().toISOString(), deletedBy: getCurrentUser()?.id || "", deleteReason: reason, updatedAt: new Date().toISOString(), updatedBy: getCurrentUser()?.id || "", updatedByName: getCurrentUser()?.name || "" });
+    if (navigator.onLine && getUserToken()) {
+      try {
+        const cfg = getSyncConfig();
+        const res = await fetch(`${getSyncApiBase(cfg)}/api/working-nests/${encodeURIComponent(id)}/delete`, { method: "POST", headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) }, body: JSON.stringify({ reason }) });
+        if (res.ok) updated = normalizeWorkingNest((await res.json()).workingNest || updated);
+      } catch {
+        // Offline-first: local soft delete will be synchronized later.
+      }
+    }
+    items[idx] = updated;
+    setWorkingNests(items);
     if (editingWorkingId && String(editingWorkingId) === String(id)) closeWorkingEditPanel();
     renderWorkingMap();
+    if (navigator.onLine) syncNow().catch(() => {});
     return true;
   }
   function openWorkingEditPanel(id) {
@@ -2217,7 +2448,7 @@
   }
   function closeWorkingEditPanel() { editingWorkingId = null; const panel = $("#working-edit-panel"); if (panel) panel.hidden = true; }
   function fitWorkingMapBounds() {
-    const points = getWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
+    const points = activeWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
     if (points.length) workingMap?.fitBounds(L.latLngBounds(points), { padding: [30, 30] });
     else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 18);
     else workingMap?.setView([52, 19], 7);
@@ -2228,7 +2459,8 @@
       const items = getWorkingNests();
       const pos=[+coords.latitude.toFixed(6), +coords.longitude.toFixed(6)];
       const label=nextWorkingLabel(items);
-      const point=normalizeWorkingNest({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia' });
+      const user = getCurrentUser();
+      const point=normalizeWorkingNest({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia', createdBy: user?.id || "", createdByName: user?.name || "", updatedBy: user?.id || "", updatedByName: user?.name || "" });
       setWorkingNests([point,...getWorkingNests()]);
       workingFocusId=point.id;
       workingViewMode='map';
@@ -2240,7 +2472,7 @@
     const id = btn.dataset.workingId; const item = findWorkingNest(id); if (!item) return;
     if (btn.dataset.wAction === "show") { workingViewMode='map'; workingFocusId=item.id; renderWorkingMap(); return; }
     if (btn.dataset.wAction === "nav") { navigateTo(item.lat, item.lon); return; }
-    if (btn.dataset.wAction === "delete" && confirm("Usunąć punkt roboczy?")) { deleteWorkingNest(item.id); return; }
+    if (btn.dataset.wAction === "delete" && confirm("Dane zostaną ukryte w aplikacji, ale pozostaną w bazie i mogą zostać odzyskane przez administratora.")) { deleteWorkingNest(item.id); return; }
     if (btn.dataset.wAction === "edit") { openWorkingEditPanel(item.id); return; }
   }
   function onWorkingScreenChange(event) {
@@ -2272,17 +2504,17 @@
       workingMap.removeLayer(workingGridLayer);
     }
     workingLayer.clearLayers();
-    const items = getWorkingNests();
+    const items = activeWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
     enriched.forEach(({w,pos}) => {
       const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }) }).addTo(workingLayer);
       const noteText = String(w.note ?? w.notes ?? "").trim();
       if (workingNotesVisible && noteText) m.bindTooltip(escapeHtml(noteText), { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
-      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> <button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button><br><select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>`);
+      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
     $("#working-map-info").textContent = `Punkty robocze: ${enriched.length}`;
-    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button><button data-w-action="edit" data-working-id="${w.id}">Edytuj</button><button class="danger" data-w-action="delete" data-working-id="${w.id}">Usuń</button><select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select></div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
+    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button>${canEditItem(w) ? `<button data-w-action="edit" data-working-id="${w.id}">Edytuj</button>` : ""}${canSoftDeleteItem(w) ? `<button class="danger" data-w-action="delete" data-working-id="${w.id}">Ukryj</button>` : ""}${canEditItem(w) ? `<select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}</div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
     workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); ensureUserLocationTracking([], null); syncUserLocationLayers("working");} 
@@ -2333,11 +2565,13 @@
     setupExports();
     setupFieldMode();
     setupSyncUI();
+    setupAuthUI();
     syncTilesFromInputs();
     updatePercentSummaries();
     renderEntries();
     updateCounts();
-    showView("home");
+    renderUserPanel();
+    showView(getCurrentUser() ? "home" : "login");
     showStep(1);
     registerServiceWorker();
   }

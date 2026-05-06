@@ -19,6 +19,18 @@
   </header>
 
   <main id="app">
+    <section id="login-screen" class="screen card" hidden>
+      <h2>Logowanie</h2>
+      <p class="lead">Zaloguj się raz, aby móc pracować także offline na tym urządzeniu.</p>
+      <label>API URL <input id="login-api-url" type="url" placeholder="https://twoj-serwer" /></label>
+      <label>Email <input id="login-email" type="email" autocomplete="username" /></label>
+      <label>Hasło <input id="login-password" type="password" autocomplete="current-password" /></label>
+      <div class="row-actions">
+        <button id="login-submit" type="button" class="primary">Zaloguj</button>
+      </div>
+      <p id="login-status" class="muted">Wymagane pierwsze logowanie online.</p>
+    </section>
+
     <section id="home-screen" class="screen card">
       <h2>Menu główne</h2>
       <p class="lead">Zbieranie danych terenowych przy gniazdach sieweczek.</p>
@@ -35,6 +47,8 @@
         <button id="open-records" type="button" class="big">Zapisane rekordy</button>
         <button id="open-map" type="button" class="big">Mapa rekordów</button>
         <button id="open-working-map" type="button" class="big">Mapa gniazd roboczych</button>
+        <button id="open-user" type="button" class="big">Użytkownik</button>
+        <button id="open-admin" type="button" class="big" hidden>Panel admina</button>
         <button id="export-csv" type="button" class="big">Eksport CSV</button>
         <button id="export-json" type="button" class="big">Eksport JSON</button>
         <button id="export-zip" type="button" class="big">Eksport ZIP + zdjęcia</button>
@@ -46,7 +60,7 @@
       <section class="card" id="sync-settings">
         <h3>Synchronizacja</h3>
         <label>API URL <input id="sync-api-url" type="url" placeholder="https://twoj-serwer" /></label>
-        <label>Token synchronizacji <input id="sync-token" type="password" placeholder="Bearer token" /></label>
+        <label>Token awaryjny/admin <input id="sync-token" type="password" placeholder="Opcjonalny legacy SYNC_TOKEN" /></label>
         <div class="row-actions">
           <button id="sync-save-config" type="button">Zapisz ustawienia</button>
           <button id="sync-test-connection" type="button">Test połączenia</button>
@@ -56,6 +70,38 @@
       </section>
 
       <p class="hint">Wersja czysta: formularz krokowy, bezpieczny zapis i edycja, pełny zestaw pól z arkusza terenowego.</p>
+    </section>
+
+    <section id="user-screen" class="screen card" hidden>
+      <div class="screen-head"><button type="button" class="back-home">← Menu główne</button><h2>Użytkownik</h2></div>
+      <div id="user-details" class="record-preview"></div>
+      <div class="row-actions">
+        <button id="logout" type="button" class="danger">Wyloguj</button>
+      </div>
+    </section>
+
+    <section id="admin-screen" class="screen card" hidden>
+      <div class="screen-head"><button type="button" class="back-home">← Menu główne</button><h2>Panel admina</h2></div>
+      <section class="card">
+        <h3>Dodaj użytkownika</h3>
+        <div class="row-2">
+          <label>Nazwa <input id="admin-user-name" type="text" /></label>
+          <label>Email <input id="admin-user-email" type="email" /></label>
+        </div>
+        <div class="row-2">
+          <label>Rola
+            <select id="admin-user-role">
+              <option value="observer">observer</option>
+              <option value="coordinator">coordinator</option>
+              <option value="admin">admin</option>
+            </select>
+          </label>
+          <label>Hasło <input id="admin-user-password" type="password" /></label>
+        </div>
+        <button id="admin-create-user" type="button" class="primary">Utwórz użytkownika</button>
+      </section>
+      <div id="admin-users-status" class="muted"></div>
+      <div id="admin-users-list" class="entries-list"></div>
     </section>
 
     <section id="records-screen" class="screen card" hidden>
