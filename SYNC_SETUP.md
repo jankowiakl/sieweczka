@@ -37,7 +37,7 @@ Kolejnych użytkowników tworzy admin w panelu aplikacji albo przez endpointy `/
 
 ## Logowanie i tryb offline
 
-W PWA zaloguj się emailem i hasłem. Zwykły użytkownik nie wpisuje API URL ani tokenu. Aplikacja zapisuje token i dane użytkownika lokalnie pod kluczem `sieweczka-auth-v1`.
+W PWA zaloguj się emailem i hasłem. Zwykły użytkownik widzi na ekranie logowania tylko pola email/hasło i przycisk „Zaloguj” — nie wpisuje API URL ani tokenu. Aplikacja zapisuje token i dane użytkownika lokalnie pod kluczem `sieweczka-auth-v1`.
 
 Po wcześniejszym zalogowaniu aplikacja działa offline: można dodawać rekordy, zdjęcia lokalne i gniazda robocze. Po odzyskaniu internetu synchronizacja użyje tokenu użytkownika. Jeśli telefon nigdy nie był zalogowany, pokaże ekran logowania.
 
@@ -53,7 +53,7 @@ DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443"
 
 Autoryzacja użytkowników działa przez email i hasło, a aplikacja używa JWT otrzymanego z `/api/login`. `SYNC_TOKEN` zostaje tylko jako awaryjny mechanizm serwerowy i nie jest zaszyty w frontendzie.
 
-Ustawienia API URL są ukryte w ustawieniach technicznych administratora w panelu „Użytkownik” i powinny być zmieniane tylko przez administratora lub podczas diagnostyki. Zwykły użytkownik nie widzi pola API URL ani tokenu.
+Ustawienia API URL są ukryte w ustawieniach technicznych administratora w panelu „Użytkownik” i powinny być zmieniane tylko przez administratora lub podczas diagnostyki. Zwykły użytkownik nie widzi pola API URL ani tokenu; jeśli połączenie nie działa, powinien sprawdzić internet albo skontaktować się z administratorem.
 
 ## Zaproszenia użytkowników
 
@@ -97,7 +97,7 @@ Admin nie może odebrać sam sobie roli admin ani zdezaktywować własnego konta
 
 Pierwsza strona pokazuje proste kafelki terenowe:
 - Nowy rekord;
-- Mapa;
+- Mapa — opis „Zobacz rekordy”;
 - Gniazda robocze;
 - Lista rekordów.
 
@@ -221,6 +221,8 @@ Wychodzisz z arkusza. Niedokończony wpis zostanie zapisany w szkicach.
 
 Po potwierdzeniu dane formularza są zapisane lokalnie jako szkic. Jeśli istnieje szkic, na ekranie głównym pojawia się informacja „Masz niedokończony wpis” oraz przycisk „Wróć do szkicu”.
 
+Przy pasku kroków formularza są szybkie przyciski „Początek” i „Koniec”. „Początek” przechodzi do pierwszego kroku bez kasowania wpisanych danych, a „Koniec” przechodzi do ostatniego kroku/podsumowania zgodnie z tą samą logiką nawigacji kroków, która działa dla przewijanego paska.
+
 ## Wyjście z arkusza
 
 Przycisk „Wróć do menu” w arkuszu rekordu służy tylko do opuszczenia formularza i nie wylogowuje użytkownika. Nie zmienia `sieweczka-auth-v1` ani tokenu logowania.
@@ -230,6 +232,10 @@ Jeśli formularz jest pusty, aplikacja wraca do menu bez ostrzeżenia. Jeśli wp
 - „Zapisz szkic i wyjdź”.
 
 Niedokończony wpis zostaje zapisany pod kluczem szkicu. Dane terenowe, lokalne rekordy i zdjęcia pozostają na urządzeniu. Zdjęcia wybrane do szkicu są zapisywane lokalnie jako referencje `idb:...`, tak jak zdjęcia zrobione tym telefonem.
+
+## Mapy i kierunek
+
+Na mapie rekordów oraz mapie gniazd roboczych przycisk kierunku działa jako przełącznik. Pierwsze kliknięcie włącza heading/strzałkę kierunku, aktualizuje stan przycisku i prosi o zgodę przeglądarki, jeśli urządzenie jej wymaga. Drugie kliknięcie wyłącza tylko kierunek i usuwa strzałkę, ale nie wyłącza lokalizacji GPS ani centrowania mapy.
 
 ## Menu aplikacji
 
