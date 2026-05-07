@@ -94,34 +94,44 @@
       <div id="user-details" class="record-preview"></div>
       <label>Rozmiar tekstu
         <select id="ui-font-size">
-          <option value="small">Mały</option>
-          <option value="normal">Normalny</option>
-          <option value="large">Duży</option>
-          <option value="xlarge">Bardzo duży</option>
+          <option value="font-xsmall">Bardzo mały</option>
+          <option value="font-small">Mały</option>
+          <option value="font-normal">Normalny</option>
+          <option value="font-large">Duży</option>
+          <option value="font-xlarge">Bardzo duży</option>
         </select>
       </label>
       <label>Skala interfejsu
         <select id="ui-scale">
-          <option value="compact">Kompaktowa</option>
-          <option value="normal">Normalna</option>
-          <option value="large">Duża</option>
+          <option value="ui-xcompact">Bardzo kompaktowa</option>
+          <option value="ui-compact">Kompaktowa</option>
+          <option value="ui-normal">Normalna</option>
+          <option value="ui-comfortable">Wygodna</option>
+          <option value="ui-large">Duża</option>
         </select>
       </label>
       <label>Rozmiar przycisków
         <select id="ui-button-size">
-          <option value="small">Małe</option>
-          <option value="normal">Normalne</option>
-          <option value="large">Duże</option>
+          <option value="buttons-xsmall">Bardzo małe</option>
+          <option value="buttons-small">Małe</option>
+          <option value="buttons-normal">Normalne</option>
+          <option value="buttons-large">Duże</option>
+          <option value="buttons-xlarge">Bardzo duże</option>
         </select>
       </label>
       <label>Rozmiar ikon
         <select id="ui-icon-size">
-          <option value="small">Małe</option>
-          <option value="normal">Normalne</option>
-          <option value="large">Duże</option>
+          <option value="icons-xsmall">Bardzo małe</option>
+          <option value="icons-small">Małe</option>
+          <option value="icons-normal">Normalne</option>
+          <option value="icons-large">Duże</option>
         </select>
       </label>
-      <p class="muted">Jeśli na Twoim telefonie przyciski lub menu są zbyt duże, wybierz skalę Kompaktowa i mały rozmiar przycisków.</p>
+      <div class="ui-presets row-actions">
+        <button id="preset-small-screen" type="button">Dopasuj do małego ekranu</button>
+        <button id="preset-comfort-view" type="button" class="ghost-light">Wygodny widok</button>
+      </div>
+      <p class="muted">Użyj, jeśli na iPhonie albo małym ekranie menu i kafelki są zbyt duże.</p>
       <p class="record-preview">Przykładowy tekst</p>
       <label class="inline-check user-setting-toggle">
         <input id="field-mode-toggle" type="checkbox" />
