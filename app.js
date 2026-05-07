@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-folded-map-ui";
+  const APP_VERSION = "2026.05.07-folded-map-ui-v2";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -2873,6 +2873,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const shouldStartFresh = nextMode !== "off" && (state.finished || (state.mode !== "off" && state.mode !== nextMode));
     state.mode = nextMode;
     state.finished = false;
+    const panel = $(`#${mapId}-measure-panel`);
+    if (panel && nextMode !== "off") panel.open = true;
     if (shouldStartFresh) clearMeasure(mapId, { keepMode: true });
     updateMeasureGeometry(mapId);
     updateMeasureResult(mapId);
@@ -2923,6 +2925,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       state.mode = "off";
       const select = $(`#${mapId}-measure-mode`);
       if (select) select.value = "off";
+      const panel = $(`#${mapId}-measure-panel`);
+      if (panel) panel.open = false;
     }
     updateMeasureResult(mapId, "Pomiar wyczyszczony");
     if (!options.keepMode) setMeasurePanelOpen(mapId, false);
