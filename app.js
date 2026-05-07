@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-responsive-ui-6";
+  const APP_VERSION = "2026.05.07-geoportal-orto-default";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -2588,12 +2588,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
 
   function createBaseLayers() {
+    const geoportalOrto = createGeoportalOrtoLayer();
     const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
     const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
     const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
     return {
-      defaultLayer: esriImgLbl,
+      defaultLayer: geoportalOrto,
       layers: {
+        "Ortofotomapa Geoportal": geoportalOrto,
+        "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }),
         "Esri Imagery + Labels": esriImgLbl,
         "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
         "Esri World Imagery": esriImg,
@@ -2604,6 +2607,22 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
       }
     };
+  }
+
+  function createGeoportalOrtoLayer() {
+    return L.tileLayer.wms(
+      "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution",
+      {
+        layers: "Raster",
+        styles: "",
+        format: "image/jpeg",
+        transparent: false,
+        version: "1.3.0",
+        crs: L.CRS.EPSG3857,
+        attribution: "Ortofotomapa: Geoportal / GUGiK",
+        maxZoom: 21
+      }
+    );
   }
 
   async function showMyLocationOnMap(map, statusSelector) {

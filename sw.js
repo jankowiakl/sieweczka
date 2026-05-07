@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-07-responsive-ui-6";
+const CACHE_NAME = "sieweczka-app-v2026-05-07-geoportal-orto-default";
 
 const APP_SHELL = [
   "./",
