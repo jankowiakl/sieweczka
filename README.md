@@ -62,13 +62,24 @@ Co dostajesz:
 
 Android, iPhone, Safari, Chrome, Brave oraz tryb PWA mogą inaczej skalować tekst, ikony, odstępy i przyciski. Aplikacja ogranicza automatyczne powiększanie tekstu na iOS, ale nadal pozwala użytkownikowi korzystać z zoomu przeglądarki.
 
-W panelu **Użytkownik** można dostosować lokalny wygląd aplikacji bez zmiany danych terenowych:
-- **Rozmiar tekstu** — Mały, Normalny, Duży albo Bardzo duży;
-- **Skala interfejsu** — Kompaktowa, Normalna albo Duża;
-- **Rozmiar przycisków** — Małe, Normalne albo Duże;
-- **Rozmiar ikon** — Małe, Normalne albo Duże.
+## Dopasowanie wyglądu
 
-Jeśli menu albo przyciski są zbyt duże, ustaw skalę interfejsu na **Kompaktowa** i rozmiar przycisków na **Małe**. W tej samej sekcji jest zwijana **Diagnostyka interfejsu**, która pokazuje wymiary ekranu, `devicePixelRatio`, tryb PWA, wersję aplikacji i aktualne ustawienia UI.
+W panelu **Użytkownik** można dostosować lokalny wygląd aplikacji bez zmiany danych terenowych. Dostępne są niezależne ustawienia tekstu, skali interfejsu, przycisków i ikon:
+
+- **Skala interfejsu**: Minimalna, Bardzo kompaktowa, Kompaktowa, Normalna, Wygodna albo Duża. Skala interfejsu zmienia przede wszystkim odstępy, wysokość kart, panele, chipy kroków, miniatury i gęstość formularzy.
+- **Rozmiar przycisków**: Minimalne, Bardzo małe, Małe, Normalne, Duże albo Bardzo duże.
+- **Rozmiar ikon**: Minimalne, Bardzo małe, Małe, Normalne albo Duże.
+- **Rozmiar tekstu**: Minimalny, Bardzo mały, Mały, Normalny, Duży albo Bardzo duży. Zmiana rozmiaru tekstu to nie to samo co skala interfejsu: tekst zmienia litery, a skala interfejsu zmienia układ, karty i odstępy.
+
+Dostępne presety:
+
+- **Dopasuj do małego ekranu** — zagęszcza UI dla wąskich telefonów.
+- **Najmniejszy widok** — ustawia minimalny interfejs, przyciski, ikony i tekst dla sytuacji, gdy trzeba zmieścić jak najwięcej treści.
+- **Widok standardowy** — przywraca normalny interfejs, przyciski, ikony i tekst.
+
+Na iPhone o szerokości około 393px warto użyć presetu **Najmniejszy widok** albo **Dopasuj do małego ekranu**. Aplikacja automatycznie rozpoznaje wąski widok (`viewport-narrow`) do 430px oraz ciaśniejszy widok (`viewport-tight`) do 395px, aby zmniejszyć menu, karty, formularze, panele pomocy i modale bez czyszczenia danych lokalnych.
+
+W tej samej sekcji jest zwijana **Diagnostyka interfejsu**, która pokazuje wymiary ekranu, `devicePixelRatio`, tryb PWA, wersję aplikacji, aktywny preset, klasy HTML, breakpoint układu i wybrane zmienne CSS.
 
 ## Instrukcja PDF
 

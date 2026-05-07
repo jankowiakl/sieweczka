@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-responsive-ui-3";
+  const APP_VERSION = "2026.05.07-responsive-ui-4";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -47,11 +47,26 @@
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
   function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
   function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
+  const UI_CLASS_VALUES = {
+    font: ["font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge"],
+    ui: ["ui-minimal", "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large"],
+    buttons: ["buttons-minimal", "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge"],
+    icons: ["icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large"]
+  };
+  const UI_LEGACY_VALUES = {
+    font: { tiny: "font-minimal", xsmall: "font-xsmall", small: "font-small", normal: "font-normal", large: "font-large", xlarge: "font-xlarge" },
+    ui: { minimal: "ui-minimal", tiny: "ui-minimal", xcompact: "ui-xcompact", compact: "ui-compact", normal: "ui-normal", comfortable: "ui-comfortable", large: "ui-large" },
+    buttons: { minimal: "buttons-minimal", tiny: "buttons-minimal", xsmall: "buttons-xsmall", small: "buttons-small", normal: "buttons-normal", large: "buttons-large", xlarge: "buttons-xlarge" },
+    icons: { minimal: "icons-minimal", tiny: "icons-minimal", xsmall: "icons-xsmall", small: "icons-small", normal: "icons-normal", large: "icons-large" }
+  };
+
   function normalizeUiClass(value, prefix, fallback) {
     const raw = String(value || "").trim();
     if (!raw) return fallback;
-    if (raw.startsWith(`${prefix}-`)) return raw;
-    return `${prefix}-${raw}`;
+    const prefixed = raw.startsWith(`${prefix}-`) ? raw : `${prefix}-${raw}`;
+    const legacyKey = raw.replace(`${prefix}-`, "");
+    const compatible = UI_LEGACY_VALUES[prefix]?.[legacyKey] || prefixed;
+    return UI_CLASS_VALUES[prefix]?.includes(compatible) ? compatible : fallback;
   }
   function normalizeUiSettings(settings = getUiSettings()) {
     return {
@@ -72,25 +87,29 @@
   }
   function getLayoutBreakpoint() {
     const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    if (width <= 395) return "tight";
     if (width <= 430) return "narrow";
     if (width >= 760) return "wide";
     return "standard";
   }
 
   function updateViewportLayoutClasses() {
-    const narrow = (window.innerWidth || document.documentElement.clientWidth || 0) <= 430;
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    const narrow = width <= 430;
+    const tight = width <= 395;
     document.documentElement.classList.toggle("viewport-narrow", narrow);
-    return narrow;
+    document.documentElement.classList.toggle("viewport-tight", tight);
+    return { narrow, tight };
   }
 
   function applyUiSettings() {
     updateViewportLayoutClasses();
     const settings = normalizeUiSettings();
     document.documentElement.classList.remove(
-      "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge",
-      "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large",
-      "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge",
-      "icons-xsmall", "icons-small", "icons-normal", "icons-large"
+      "font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge",
+      "ui-minimal", "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large",
+      "buttons-minimal", "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge",
+      "icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large"
     );
     document.documentElement.classList.add(settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize);
     document.body?.classList.toggle("field-mode", !!settings.fieldMode);
@@ -340,16 +359,22 @@
         `devicePixelRatio: <strong>${window.devicePixelRatio || 1}</strong>`,
         `PWA standalone: <strong>${isStandaloneApp() ? "tak" : "nie"}</strong>`,
         `APP_VERSION: <strong>${escapeHtml(APP_VERSION)}</strong>`,
+        `aktywny preset: <strong>${escapeHtml(settings.activePreset || "ręczne / brak")}</strong>`,
         `viewport-narrow: <strong>${document.documentElement.classList.contains("viewport-narrow") ? "tak" : "nie"}</strong>`,
+        `viewport-tight: <strong>${document.documentElement.classList.contains("viewport-tight") ? "tak" : "nie"}</strong>`,
         `layout breakpoint: <strong>${escapeHtml(getLayoutBreakpoint())}</strong>`,
         `Aktualne ustawienia UI: <strong>${escapeHtml([settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize].join(" / "))}</strong>`,
         `Klasy HTML: <span>${escapeHtml(Array.from(document.documentElement.classList).join(" ") || "—")}</span>`,
         `--ui-scale: <strong>${escapeHtml(cssVar("--ui-scale"))}</strong>`,
+        `--space-scale: <strong>${escapeHtml(cssVar("--space-scale"))}</strong>`,
+        `--card-padding: <strong>${escapeHtml(cssVar("--card-padding"))}</strong>`,
         `--button-min-height: <strong>${escapeHtml(cssVar("--button-min-height"))}</strong>`,
         `--button-font-size: <strong>${escapeHtml(cssVar("--button-font-size"))}</strong>`,
         `--tile-padding: <strong>${escapeHtml(cssVar("--tile-padding"))}</strong>`,
         `--menu-width: <strong>${escapeHtml(cssVar("--menu-width"))}</strong>`,
         `--menu-button-height: <strong>${escapeHtml(cssVar("--menu-button-height"))}</strong>`,
+        `--icon-size: <strong>${escapeHtml(cssVar("--icon-size"))}</strong>`,
+        `--tile-icon-size: <strong>${escapeHtml(cssVar("--tile-icon-size"))}</strong>`,
         `UserAgent: <span>${escapeHtml(shortUserAgent)}</span>`
       ].join("<br>");
     }
@@ -465,7 +490,7 @@
           </select>`}
           <button type="button" data-admin-action="reset" data-user-id="${escapeHtml(user.id)}">Reset hasła</button>
           <button type="button" data-admin-action="invite" data-user-id="${escapeHtml(user.id)}">Wyślij zaproszenie</button>
-          ${user.id === currentUserId ? "" : `<button type="button" data-admin-action="${user.is_active ? "deactivate" : "activate"}" data-user-id="${escapeHtml(user.id)}">${user.is_active ? "Dezaktywuj" : "Aktywuj"}</button>`}
+          ${user.id === currentUserId ? "" : `<button type="button" class="${user.is_active ? "danger" : ""}" data-admin-action="${user.is_active ? "deactivate" : "activate"}" data-user-id="${escapeHtml(user.id)}">${user.is_active ? "Dezaktywuj" : "Aktywuj"}</button>`}
         </div>
       </article>
     `).join("") || `<p class="muted">Brak użytkowników.</p>`;
@@ -655,30 +680,36 @@
       }
     });
     $("#ui-font-size")?.addEventListener("change", () => {
-      saveUiSettingsPatch({ fontSize: value("#ui-font-size", "font-normal") });
+      saveUiSettingsPatch({ fontSize: value("#ui-font-size", "font-normal"), activePreset: "" });
       applyUiSettings();
       renderUserPanel();
     });
     $("#ui-scale")?.addEventListener("change", () => {
-      saveUiSettingsPatch({ uiScale: value("#ui-scale", "ui-normal") });
+      saveUiSettingsPatch({ uiScale: value("#ui-scale", "ui-normal"), activePreset: "" });
       applyUiSettings();
       renderUserPanel();
     });
     $("#ui-button-size")?.addEventListener("change", () => {
-      saveUiSettingsPatch({ buttonSize: value("#ui-button-size", "buttons-normal") });
+      saveUiSettingsPatch({ buttonSize: value("#ui-button-size", "buttons-normal"), activePreset: "" });
       applyUiSettings();
       renderUserPanel();
     });
     $("#ui-icon-size")?.addEventListener("change", () => {
-      saveUiSettingsPatch({ iconSize: value("#ui-icon-size", "icons-normal") });
+      saveUiSettingsPatch({ iconSize: value("#ui-icon-size", "icons-normal"), activePreset: "" });
       applyUiSettings();
       renderUserPanel();
     });
     $("#preset-small-screen")?.addEventListener("click", () => {
-      applyUiPreset({ uiScale: "ui-xcompact", buttonSize: "buttons-xsmall", iconSize: "icons-xsmall", fontSize: "font-small" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small" });
+    });
+    $("#preset-smallest-view")?.addEventListener("click", () => {
+      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-minimal" });
+    });
+    $("#preset-standard-view")?.addEventListener("click", () => {
+      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal" });
     });
     $("#preset-comfort-view")?.addEventListener("click", () => {
-      applyUiPreset({ uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal" });
+      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal" });
     });
     $("#field-mode-toggle")?.addEventListener("change", () => {
       saveUiSettingsPatch({ fieldMode: !!$("#field-mode-toggle")?.checked });
@@ -2608,7 +2639,7 @@
       const m = L.marker(p.pos,{icon}).addTo(mapMarkersLayer);
       if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(LABELS.species[p.entry.species] || p.entry.species || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
-      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
+      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
     });
     if (focusUid) {
@@ -3439,7 +3470,7 @@
       </div>`;
     const close = () => modal.remove();
     modal.querySelector("[data-compact-enable]")?.addEventListener("click", () => {
-      applyUiPreset({ uiScale: "ui-xcompact", buttonSize: "buttons-xsmall", iconSize: "icons-xsmall", fontSize: "font-small" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small" });
       close();
     });
     modal.querySelector("[data-compact-dismiss]")?.addEventListener("click", close);
