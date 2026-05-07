@@ -57,6 +57,19 @@ Co dostajesz:
 2. jeden plik ZIP zawierający CSV i wszystkie zdjęcia JPG.
 
 
+
+## Wygląd na różnych telefonach
+
+Android, iPhone, Safari, Chrome, Brave oraz tryb PWA mogą inaczej skalować tekst, ikony, odstępy i przyciski. Aplikacja ogranicza automatyczne powiększanie tekstu na iOS, ale nadal pozwala użytkownikowi korzystać z zoomu przeglądarki.
+
+W panelu **Użytkownik** można dostosować lokalny wygląd aplikacji bez zmiany danych terenowych:
+- **Rozmiar tekstu** — Mały, Normalny, Duży albo Bardzo duży;
+- **Skala interfejsu** — Kompaktowa, Normalna albo Duża;
+- **Rozmiar przycisków** — Małe, Normalne albo Duże;
+- **Rozmiar ikon** — Małe, Normalne albo Duże.
+
+Jeśli menu albo przyciski są zbyt duże, ustaw skalę interfejsu na **Kompaktowa** i rozmiar przycisków na **Małe**. W tej samej sekcji jest zwijana **Diagnostyka interfejsu**, która pokazuje wymiary ekranu, `devicePixelRatio`, tryb PWA, wersję aplikacji i aktualne ustawienia UI.
+
 ## Instrukcja PDF
 
 Aplikacja pokazuje w menu przycisk pobrania instrukcji PDF z pliku:

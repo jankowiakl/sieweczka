@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-ux-stable-final";
+  const APP_VERSION = "2026.05.07-responsive-ui-1";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -50,16 +50,20 @@
     const settings = getUiSettings();
     const size = settings.fontSize || "normal";
     const uiScale = settings.uiScale || "normal";
+    const buttonSize = settings.buttonSize || "normal";
     const iconSize = settings.iconSize || "normal";
-    document.documentElement.classList.remove("font-small", "font-normal", "font-large", "font-xlarge", "ui-compact", "ui-normal", "ui-large", "icons-small", "icons-normal", "icons-large");
+    document.documentElement.classList.remove("font-small", "font-normal", "font-large", "font-xlarge", "ui-compact", "ui-normal", "ui-large", "buttons-small", "buttons-normal", "buttons-large", "icons-small", "icons-normal", "icons-large");
     document.documentElement.classList.add(`font-${size}`);
     document.documentElement.classList.add(`ui-${uiScale}`);
+    document.documentElement.classList.add(`buttons-${buttonSize}`);
     document.documentElement.classList.add(`icons-${iconSize}`);
     document.body?.classList.toggle("field-mode", !!settings.fieldMode);
     const select = document.querySelector("#ui-font-size");
     if (select) select.value = size;
     const scaleSelect = document.querySelector("#ui-scale");
     if (scaleSelect) scaleSelect.value = uiScale;
+    const buttonSelect = document.querySelector("#ui-button-size");
+    if (buttonSelect) buttonSelect.value = buttonSize;
     const iconSelect = document.querySelector("#ui-icon-size");
     if (iconSelect) iconSelect.value = iconSize;
     const fieldMode = document.querySelector("#field-mode-toggle");
@@ -289,7 +293,21 @@
     });
     const diagnostics = $("#ui-diagnostics");
     if (diagnostics) {
-      diagnostics.textContent = `Szerokość ekranu: ${window.innerWidth}px, devicePixelRatio: ${window.devicePixelRatio || 1}, standalone: ${isStandaloneApp() ? "tak" : "nie"}, wersja: ${APP_VERSION}.`;
+      const settings = getUiSettings();
+      const userAgent = navigator.userAgent || "—";
+      const shortUserAgent = userAgent.length > 150 ? `${userAgent.slice(0, 147)}…` : userAgent;
+      diagnostics.innerHTML = [
+        `Szerokość ekranu: <strong>${window.innerWidth}px</strong>`,
+        `Wysokość ekranu: <strong>${window.innerHeight}px</strong>`,
+        `devicePixelRatio: <strong>${window.devicePixelRatio || 1}</strong>`,
+        `PWA standalone: <strong>${isStandaloneApp() ? "tak" : "nie"}</strong>`,
+        `APP_VERSION: <strong>${escapeHtml(APP_VERSION)}</strong>`,
+        `Rozmiar tekstu: <strong>${escapeHtml(settings.fontSize || "normal")}</strong>`,
+        `Skala interfejsu: <strong>${escapeHtml(settings.uiScale || "normal")}</strong>`,
+        `Rozmiar przycisków: <strong>${escapeHtml(settings.buttonSize || "normal")}</strong>`,
+        `Rozmiar ikon: <strong>${escapeHtml(settings.iconSize || "normal")}</strong>`,
+        `UserAgent: <span>${escapeHtml(shortUserAgent)}</span>`
+      ].join("<br>");
     }
     updateInstallStatus();
   }
@@ -599,6 +617,11 @@
     });
     $("#ui-scale")?.addEventListener("change", () => {
       setUiSettings({ ...getUiSettings(), uiScale: value("#ui-scale", "normal") });
+      applyUiSettings();
+      renderUserPanel();
+    });
+    $("#ui-button-size")?.addEventListener("change", () => {
+      setUiSettings({ ...getUiSettings(), buttonSize: value("#ui-button-size", "normal") });
       applyUiSettings();
       renderUserPanel();
     });
