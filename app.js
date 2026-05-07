@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-folded-map-ui-v3";
+  const APP_VERSION = "2026.05.07-menu-settings-return-v1";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -491,12 +491,10 @@
     modal.className = "app-menu-modal";
     modal.innerHTML = `
       <div class="app-menu-panel" role="dialog" aria-modal="true" aria-label="Menu aplikacji">
-        <div class="screen-head">
-          <h2>Menu</h2>
+        <div class="app-menu-actions">
           <button type="button" class="ghost-light small" data-menu-action="close">Zamknij</button>
         </div>
         <button type="button" data-menu-action="home">Menu główne</button>
-        <button type="button" data-menu-action="user">Użytkownik</button>
         <button type="button" data-menu-action="sync">Synchronizacja</button>
         ${canExport ? `<button type="button" data-menu-action="export">Eksport</button>` : ""}
         ${isAdmin() ? `<button type="button" data-menu-action="admin">Administrator</button>` : ""}
@@ -527,11 +525,11 @@
         if (!leftForm) return;
       }
       if (action === "home") showView("home");
-      if (action === "user" || action === "settings") { renderUserPanel(); showView("user"); }
+      if (action === "settings") { userPanelReturnToMenu = true; renderUserPanel(); showView("user"); }
       if (action === "admin") { showView("admin"); await loadAdminUsers({ force: true }).catch((error) => { $("#admin-users-status").textContent = `Błąd: ${error.message}`; }); }
       if (action === "sync") { showView("home"); $("#home-sync-now")?.click(); }
       if (action === "export") { showView("home"); $("#home-export-panel").hidden = false; $("#export-zip")?.focus(); }
-      if (action === "install") { renderUserPanel(); showView("user"); await installApp(); }
+      if (action === "install") { userPanelReturnToMenu = true; renderUserPanel(); showView("user"); await installApp(); }
       if (action === "refresh") $("#refresh-app-version")?.click();
       if (action === "logout") $("#logout")?.click();
     });
@@ -669,7 +667,7 @@
       renderUserPanel();
       showView("login");
     });
-    $("#open-user")?.addEventListener("click", () => { renderUserPanel(); showView("user"); });
+    $("#open-user")?.addEventListener("click", () => { userPanelReturnToMenu = false; renderUserPanel(); showView("user"); });
     $("#open-admin")?.addEventListener("click", async () => {
       showView("admin");
       try { await loadAdminUsers({ force: true }); } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
@@ -967,6 +965,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let editingUid = null;
   let readonlyUid = null;
   let editReturnToReadonly = false;
+  let userPanelReturnToMenu = false;
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
@@ -3737,6 +3736,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     $("#home-shortcut").addEventListener("click", openAppMenu);
     $$(".back-home").forEach((btn) => btn.addEventListener("click", handleHomeExit));
+    $("#user-back")?.addEventListener("click", () => {
+      showView("home");
+      if (userPanelReturnToMenu) {
+        userPanelReturnToMenu = false;
+        setTimeout(openAppMenu, 0);
+      }
+    });
     $("#resume-draft")?.addEventListener("click", () => {
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
     });

@@ -570,6 +570,15 @@ button:disabled {
   font-size: var(--menu-button-font-size);
 }
 
+.app-menu-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: .15rem;
+}
+
+.app-menu-actions button {
+  min-height: calc(var(--menu-button-height) * .85);
+}
 
 .app-menu-panel .screen-head {
   margin-bottom: .25rem;
