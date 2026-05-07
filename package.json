@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "viewport-check": "playwright install chromium && node tools/viewport-check.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0"
+  }
+}

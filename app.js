@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-responsive-ui-5";
+  const APP_VERSION = "2026.05.07-responsive-ui-6";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -73,13 +73,17 @@
     return UI_CLASS_VALUES[prefix]?.includes(compatible) ? compatible : fallback;
   }
   function normalizeUiSettings(settings = getUiSettings()) {
+    const uiScale = normalizeUiClass(settings.uiScale, "ui", "ui-normal");
+    const buttonSize = normalizeUiClass(settings.buttonSize, "buttons", "buttons-normal");
+    const iconSize = normalizeUiClass(settings.iconSize, "icons", "icons-normal");
+    const layoutWidth = normalizeUiClass(settings.layoutWidth, "layout", "layout-normal");
     return {
       ...settings,
       fontSize: normalizeUiClass(settings.fontSize, "font", "font-normal"),
-      uiScale: normalizeUiClass(settings.uiScale, "ui", "ui-normal"),
-      buttonSize: normalizeUiClass(settings.buttonSize, "buttons", "buttons-normal"),
-      iconSize: normalizeUiClass(settings.iconSize, "icons", "icons-normal"),
-      layoutWidth: normalizeUiClass(settings.layoutWidth, "layout", "layout-normal"),
+      uiScale: uiScale === "ui-minimal" ? "ui-normal" : uiScale,
+      buttonSize: buttonSize === "buttons-minimal" ? "buttons-normal" : buttonSize,
+      iconSize: iconSize === "icons-minimal" ? "icons-normal" : iconSize,
+      layoutWidth: layoutWidth === "layout-minimal" ? "layout-normal" : layoutWidth,
       tileLayout: normalizeUiClass(settings.tileLayout, "tiles", "tiles-auto")
     };
   }
@@ -93,7 +97,7 @@
   }
   function getLayoutBreakpoint() {
     const width = window.innerWidth || document.documentElement.clientWidth || 0;
-    if (width <= 395) return "tight";
+    if (width <= 375) return "tight";
     if (width <= 430) return "narrow";
     if (width >= 760) return "wide";
     return "standard";
@@ -102,7 +106,7 @@
   function updateViewportLayoutClasses() {
     const width = window.innerWidth || document.documentElement.clientWidth || 0;
     const narrow = width <= 430;
-    const tight = width <= 395;
+    const tight = width <= 375;
     document.documentElement.classList.toggle("viewport-narrow", narrow);
     document.documentElement.classList.toggle("viewport-tight", tight);
     return { narrow, tight };
@@ -790,13 +794,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       renderUserPanel();
     });
     $("#preset-small-screen")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-compact", buttonSize: "buttons-small", iconSize: "icons-small", fontSize: "font-small", layoutWidth: "layout-narrow", tileLayout: "tiles-auto" });
     });
     $("#preset-smallest-view")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-minimal", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
+      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-xcompact", buttonSize: "buttons-xsmall", iconSize: "icons-xsmall", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-one" });
     });
     $("#preset-iphone-narrow")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "iPhone / wąski ekran", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
+      applyUiPreset({ activePreset: "iPhone / wąski ekran", uiScale: "ui-compact", buttonSize: "buttons-small", iconSize: "icons-small", fontSize: "font-small", layoutWidth: "layout-normal", tileLayout: "tiles-one" });
     });
     $("#preset-standard-view")?.addEventListener("click", () => {
       applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "layout-normal", tileLayout: "tiles-auto" });
@@ -3563,7 +3567,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       </div>`;
     const close = () => modal.remove();
     modal.querySelector("[data-compact-enable]")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-compact", buttonSize: "buttons-small", iconSize: "icons-small", fontSize: "font-small", layoutWidth: "layout-narrow", tileLayout: "tiles-auto" });
       close();
     });
     modal.querySelector("[data-compact-dismiss]")?.addEventListener("click", close);
