@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-gps-confirm-map-fullscreen-v1";
+  const APP_VERSION = "2026.05.07-working-point-cancel-danger-v2";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -4445,7 +4445,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
           </label>
           <div class="row-actions">
             <button type="button" class="primary" data-working-point-choice="add">Dodaj punkt</button>
-            <button type="button" class="ghost" data-working-point-choice="cancel">Anuluj</button>
+            <button type="button" class="danger" data-working-point-choice="cancel">Anuluj</button>
           </div>
         </div>
       `;
