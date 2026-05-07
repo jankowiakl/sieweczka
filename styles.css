@@ -1702,6 +1702,57 @@ summary {
   top:calc(.65rem + var(--safe-top));
   box-shadow:0 8px 22px rgba(15,23,42,.22);
 }
+.map-fullscreen-open{
+  overflow:hidden;
+}
+.map-fullscreen-screen{
+  position:fixed;
+  inset:0;
+  z-index:1300;
+  width:100%;
+  max-width:none;
+  height:100dvh;
+  margin:0;
+  padding:calc(.6rem + var(--safe-top)) calc(.65rem + var(--safe-right)) calc(.8rem + var(--safe-bottom)) calc(.65rem + var(--safe-left));
+  border-radius:0;
+  overflow:auto;
+}
+.map-fullscreen-screen .screen-head{
+  padding-right:3.2rem;
+}
+.map-fullscreen-screen .map-canvas,
+.map-fullscreen-screen #working-map.map-canvas{
+  height:calc(100dvh - 12rem);
+  min-height:520px;
+  max-height:none;
+}
+.map-fullscreen-close{
+  position:fixed;
+  top:calc(.65rem + var(--safe-top));
+  right:calc(.65rem + var(--safe-right));
+  z-index:1400;
+  width:44px;
+  height:44px;
+  min-height:44px;
+  padding:0;
+  border-radius:999px;
+  font-size:1.55rem;
+  line-height:1;
+  font-weight:900;
+  box-shadow:0 10px 24px rgba(15,23,42,.24);
+}
+.map-fullscreen-screen .map-overlay-action{
+  top:calc(3.5rem + var(--safe-top));
+}
+@supports not (height: 1dvh){
+  .map-fullscreen-screen{
+    height:100vh;
+  }
+  .map-fullscreen-screen .map-canvas,
+  .map-fullscreen-screen #working-map.map-canvas{
+    height:calc(100vh - 12rem);
+  }
+}
 .map-offline-status{
   margin:.45rem 0 0;
   padding:.5rem .65rem;

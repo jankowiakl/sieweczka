@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-menu-export-screen-v1";
+  const APP_VERSION = "2026.05.07-gps-confirm-map-fullscreen-v1";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -1009,6 +1009,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let recordSpeciesLabelsVisible = true;
   let workingMap = null;
   let workingLayer = null;
+  let activeMapFullscreen = null;
   let recordsGridLayer = null;
   let workingGridLayer = null;
   let gridGeoJsonData = null;
@@ -1818,6 +1819,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!getCurrentUser() && name !== "login") name = "login";
     if (getCurrentUser() && mustChangePassword() && !["change-password", "login"].includes(name)) name = "change-password";
     if (name === "admin" && !isAdmin()) name = "home";
+    if (name !== "map") setMapFullscreen("records", false);
+    if (name !== "working-map") setMapFullscreen("working", false);
     $("#login-screen").hidden = name !== "login";
     $("#change-password-screen").hidden = name !== "change-password";
     $("#home-screen").hidden = name !== "home";
@@ -1834,6 +1837,32 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (name === "user") renderUserPanel();
     if (name === "home") renderHomeSummary();
     updateCounts();
+  }
+
+  function setMapFullscreen(mapId, enabled) {
+    const screen = mapId === "working" ? $("#working-map-screen") : $("#map-screen");
+    const closeBtn = mapId === "working" ? $("#working-fullscreen-close") : $("#records-fullscreen-close");
+    const map = mapId === "working" ? workingMap : recordsMap;
+    if (!screen) return;
+    if (enabled && activeMapFullscreen && activeMapFullscreen !== mapId) {
+      setMapFullscreen(activeMapFullscreen, false);
+    }
+    screen.classList.toggle("map-fullscreen-screen", !!enabled);
+    document.documentElement.classList.toggle("map-fullscreen-open", !!enabled);
+    document.body?.classList.toggle("map-fullscreen-open", !!enabled);
+    if (closeBtn) closeBtn.hidden = !enabled;
+    activeMapFullscreen = enabled ? mapId : (activeMapFullscreen === mapId ? null : activeMapFullscreen);
+    setTimeout(() => {
+      if (mapId === "working" && enabled && workingViewMode !== "map") {
+        workingViewMode = "map";
+        renderWorkingMap();
+      }
+      map?.invalidateSize();
+    }, 120);
+  }
+
+  function closeActiveMapFullscreen() {
+    if (activeMapFullscreen) setMapFullscreen(activeMapFullscreen, false);
   }
 
   function showStep(step) {
@@ -3837,6 +3866,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#readonly-nav-random").addEventListener("click", () => { const r=getEntries().find((e)=>String(e.uid)===String(readonlyUid)); if (r) navigateTo(r.randomMicro?.lat,r.randomMicro?.lon); });
     $("#readonly-show-map").addEventListener("click", () => { mapFocusUid = readonlyUid; showView("map"); });
     $("#map-back").addEventListener("click", () => showView("records"));
+    $("#records-fullscreen-map")?.addEventListener("click", () => setMapFullscreen("records", true));
+    $("#records-fullscreen-close")?.addEventListener("click", () => setMapFullscreen("records", false));
     $("#map-center-user").addEventListener("click", () => {
       if (!latestUserLatLng) return alert("Twoja pozycja jest jeszcze niedostępna.");
       recordsMap?.setView(latestUserLatLng, 18);
@@ -3880,6 +3911,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#validation-override-summary")?.addEventListener("change", () => renderValidationAndPreview());
     $("#working-map-back").addEventListener("click", () => showView("home"));
     $("#working-add-gps").addEventListener("click", addWorkingNestFromGps);
+    $("#working-fullscreen-map")?.addEventListener("click", () => setMapFullscreen("working", true));
+    $("#working-fullscreen-close")?.addEventListener("click", () => setMapFullscreen("working", false));
     $("#working-center-user").addEventListener("click", async () => {
       try {
         await showMyLocationOnMap(workingMap, "#working-user-status");
@@ -3915,6 +3948,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-edit-form").addEventListener("submit", onWorkingEditSubmit);
     $("#working-edit-cancel").addEventListener("click", closeWorkingEditPanel);
     $("#working-edit-delete").addEventListener("click", () => { if (editingWorkingId && confirm("Dane zostaną ukryte w aplikacji, ale pozostaną w bazie i mogą zostać odzyskane przez administratora.")) deleteWorkingNest(editingWorkingId); });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeActiveMapFullscreen();
+    });
     $("#back-to-readonly")?.addEventListener("click", () => {
       if (readonlyUid) showReadonlyRecord(readonlyUid);
     });
@@ -4388,14 +4424,44 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 18);
     else workingMap?.setView([52, 19], 7);
   }
+  function askWorkingGpsPointDetails() {
+    if (!confirm("Dodać punkt roboczy w miejscu Twojej aktualnej pozycji GPS?")) return null;
+    const choice = prompt(
+      "Wybierz rodzaj punktu:\n1 - do sprawdzenia\n2 - prawdopodobne\n3 - potwierdzone\n4 - odrzucone",
+      "1"
+    );
+    if (choice == null) return null;
+    const normalizedChoice = String(choice).trim().toLowerCase();
+    const statusByChoice = {
+      "1": "do_sprawdzenia",
+      "2": "prawdopodobne",
+      "3": "potwierdzone",
+      "4": "odrzucone",
+      "do sprawdzenia": "do_sprawdzenia",
+      "do_sprawdzenia": "do_sprawdzenia",
+      "prawdopodobne": "prawdopodobne",
+      "potwierdzone": "potwierdzone",
+      "odrzucone": "odrzucone"
+    };
+    const status = statusByChoice[normalizedChoice];
+    if (!status) {
+      alert("Nie rozpoznano rodzaju punktu. Punkt nie został dodany.");
+      return null;
+    }
+    const note = prompt("Notatka do punktu (opcjonalnie, możesz zostawić puste):", "");
+    if (note == null) return null;
+    return { status, note: String(note).trim() };
+  }
   function addWorkingNestFromGps() {
+    const details = askWorkingGpsPointDetails();
+    if (!details) return;
     if (!navigator.geolocation) return alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       const items = getWorkingNests();
       const pos=[+coords.latitude.toFixed(6), +coords.longitude.toFixed(6)];
       const label=nextWorkingLabel(items);
       const user = getCurrentUser();
-      const point=normalizeWorkingNest({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: "", status:'do_sprawdzenia', createdBy: user?.id || "", createdByName: user?.name || "", updatedBy: user?.id || "", updatedByName: user?.name || "" });
+      const point=normalizeWorkingNest({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), label, createdAt: new Date().toISOString(), lat: pos[0], lon: pos[1], accuracy: Math.round(coords.accuracy), note: details.note, notes: details.note, status: details.status, createdBy: user?.id || "", createdByName: user?.name || "", updatedBy: user?.id || "", updatedByName: user?.name || "" });
       setWorkingNests([point,...getWorkingNests()]);
       workingFocusId=point.id;
       workingViewMode='map';

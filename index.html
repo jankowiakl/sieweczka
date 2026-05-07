@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=2026.05.07-menu-export-screen-v1" />
+  <link rel="stylesheet" href="styles.css?v=2026.05.07-gps-confirm-map-fullscreen-v1" />
 </head>
 <body>
   <noscript>
@@ -285,6 +285,7 @@
             <option value="OpenTopoMap">OpenTopoMap</option>
           </select>
         </label>
+        <button id="records-fullscreen-map" type="button">Pełny ekran</button>
       </div>
       <details id="records-navigation-panel" class="map-options-panel">
         <summary>Nawigacja i status mapy</summary>
@@ -310,6 +311,7 @@
         </details>
       </details>
       <div id="records-map" class="map-canvas"></div>
+      <button id="records-fullscreen-close" class="map-fullscreen-close" type="button" hidden aria-label="Zamknij pełny ekran">×</button>
       <p id="records-orto-cache-status" class="map-offline-status info" hidden></p>
       <details id="records-measure-panel" class="map-measure-panel">
         <summary>Pomiar odległości i powierzchni</summary>
@@ -333,6 +335,7 @@
       <div class="map-primary-actions">
         <button id="working-show-map" type="button">Mapa</button>
         <button id="working-show-list" type="button">Lista</button>
+        <button id="working-fullscreen-map" type="button">Pełny ekran</button>
         <label class="inline-field map-base-layer-field">Podkład mapy
           <select id="working-base-layer">
             <option value="Ortofotomapa Geoportal">Ortofotomapa Geoportal</option>
@@ -411,6 +414,7 @@
         <div id="working-map" class="map-canvas"></div>
         <button id="working-add-gps" class="primary map-overlay-action" type="button">Dodaj moje GPS</button>
       </div>
+      <button id="working-fullscreen-close" class="map-fullscreen-close" type="button" hidden aria-label="Zamknij pełny ekran">×</button>
       <p id="working-orto-cache-status" class="map-offline-status info" hidden></p>
       <details id="working-measure-panel" class="map-measure-panel">
         <summary>Pomiar odległości i powierzchni</summary>
@@ -950,8 +954,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="app.js?v=2026.05.07-menu-export-screen-v1"></script>
-  <script src="field-help.js?v=2026.05.07-menu-export-screen-v1"></script>
+  <script src="app.js?v=2026.05.07-gps-confirm-map-fullscreen-v1"></script>
+  <script src="field-help.js?v=2026.05.07-gps-confirm-map-fullscreen-v1"></script>
   <script>
   (() => {
     "use strict";
