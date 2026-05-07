@@ -11,9 +11,10 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-responsive-ui-2";
+  const APP_VERSION = "2026.05.07-responsive-ui-3";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
+  const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
@@ -46,6 +47,29 @@
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
   function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
   function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
+  function normalizeUiClass(value, prefix, fallback) {
+    const raw = String(value || "").trim();
+    if (!raw) return fallback;
+    if (raw.startsWith(`${prefix}-`)) return raw;
+    return `${prefix}-${raw}`;
+  }
+  function normalizeUiSettings(settings = getUiSettings()) {
+    return {
+      ...settings,
+      fontSize: normalizeUiClass(settings.fontSize, "font", "font-normal"),
+      uiScale: normalizeUiClass(settings.uiScale, "ui", "ui-normal"),
+      buttonSize: normalizeUiClass(settings.buttonSize, "buttons", "buttons-normal"),
+      iconSize: normalizeUiClass(settings.iconSize, "icons", "icons-normal")
+    };
+  }
+  function saveUiSettingsPatch(patch, manual = true) {
+    setUiSettings({ ...normalizeUiSettings(), ...patch, uiTouched: manual || !!normalizeUiSettings().uiTouched });
+  }
+  function applyUiPreset(preset) {
+    saveUiSettingsPatch(preset, true);
+    applyUiSettings();
+    renderUserPanel();
+  }
   function getLayoutBreakpoint() {
     const width = window.innerWidth || document.documentElement.clientWidth || 0;
     if (width <= 430) return "narrow";
@@ -61,25 +85,23 @@
 
   function applyUiSettings() {
     updateViewportLayoutClasses();
-    const settings = getUiSettings();
-    const size = settings.fontSize || "normal";
-    const uiScale = settings.uiScale || "normal";
-    const buttonSize = settings.buttonSize || "normal";
-    const iconSize = settings.iconSize || "normal";
-    document.documentElement.classList.remove("font-small", "font-normal", "font-large", "font-xlarge", "ui-compact", "ui-normal", "ui-large", "buttons-small", "buttons-normal", "buttons-large", "icons-small", "icons-normal", "icons-large");
-    document.documentElement.classList.add(`font-${size}`);
-    document.documentElement.classList.add(`ui-${uiScale}`);
-    document.documentElement.classList.add(`buttons-${buttonSize}`);
-    document.documentElement.classList.add(`icons-${iconSize}`);
+    const settings = normalizeUiSettings();
+    document.documentElement.classList.remove(
+      "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge",
+      "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large",
+      "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge",
+      "icons-xsmall", "icons-small", "icons-normal", "icons-large"
+    );
+    document.documentElement.classList.add(settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize);
     document.body?.classList.toggle("field-mode", !!settings.fieldMode);
     const select = document.querySelector("#ui-font-size");
-    if (select) select.value = size;
+    if (select) select.value = settings.fontSize;
     const scaleSelect = document.querySelector("#ui-scale");
-    if (scaleSelect) scaleSelect.value = uiScale;
+    if (scaleSelect) scaleSelect.value = settings.uiScale;
     const buttonSelect = document.querySelector("#ui-button-size");
-    if (buttonSelect) buttonSelect.value = buttonSize;
+    if (buttonSelect) buttonSelect.value = settings.buttonSize;
     const iconSelect = document.querySelector("#ui-icon-size");
-    if (iconSelect) iconSelect.value = iconSize;
+    if (iconSelect) iconSelect.value = settings.iconSize;
     const fieldMode = document.querySelector("#field-mode-toggle");
     if (fieldMode) fieldMode.checked = !!settings.fieldMode;
   }
@@ -307,22 +329,27 @@
     });
     const diagnostics = $("#ui-diagnostics");
     if (diagnostics) {
-      const settings = getUiSettings();
+      const settings = normalizeUiSettings();
+      const styles = getComputedStyle(document.documentElement);
+      const cssVar = (name) => styles.getPropertyValue(name).trim() || "—";
       const userAgent = navigator.userAgent || "—";
       const shortUserAgent = userAgent.length > 150 ? `${userAgent.slice(0, 147)}…` : userAgent;
       diagnostics.innerHTML = [
-        `Szerokość ekranu: <strong>${window.innerWidth}px</strong>`,
-        `Wysokość ekranu: <strong>${window.innerHeight}px</strong>`,
+        `window.innerWidth: <strong>${window.innerWidth}px</strong>`,
+        `window.innerHeight: <strong>${window.innerHeight}px</strong>`,
         `devicePixelRatio: <strong>${window.devicePixelRatio || 1}</strong>`,
         `PWA standalone: <strong>${isStandaloneApp() ? "tak" : "nie"}</strong>`,
         `APP_VERSION: <strong>${escapeHtml(APP_VERSION)}</strong>`,
         `viewport-narrow: <strong>${document.documentElement.classList.contains("viewport-narrow") ? "tak" : "nie"}</strong>`,
         `layout breakpoint: <strong>${escapeHtml(getLayoutBreakpoint())}</strong>`,
-        `Rozmiar tekstu: <strong>${escapeHtml(settings.fontSize || "normal")}</strong>`,
-        `Skala interfejsu: <strong>${escapeHtml(settings.uiScale || "normal")}</strong>`,
-        `Rozmiar przycisków: <strong>${escapeHtml(settings.buttonSize || "normal")}</strong>`,
-        `Rozmiar ikon: <strong>${escapeHtml(settings.iconSize || "normal")}</strong>`,
-        `Klasy UI: <span>${escapeHtml(Array.from(document.documentElement.classList).filter((name) => /^(font|ui|buttons|icons)-/.test(name) || name === "viewport-narrow").join(" ") || "—")}</span>`,
+        `Aktualne ustawienia UI: <strong>${escapeHtml([settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize].join(" / "))}</strong>`,
+        `Klasy HTML: <span>${escapeHtml(Array.from(document.documentElement.classList).join(" ") || "—")}</span>`,
+        `--ui-scale: <strong>${escapeHtml(cssVar("--ui-scale"))}</strong>`,
+        `--button-min-height: <strong>${escapeHtml(cssVar("--button-min-height"))}</strong>`,
+        `--button-font-size: <strong>${escapeHtml(cssVar("--button-font-size"))}</strong>`,
+        `--tile-padding: <strong>${escapeHtml(cssVar("--tile-padding"))}</strong>`,
+        `--menu-width: <strong>${escapeHtml(cssVar("--menu-width"))}</strong>`,
+        `--menu-button-height: <strong>${escapeHtml(cssVar("--menu-button-height"))}</strong>`,
         `UserAgent: <span>${escapeHtml(shortUserAgent)}</span>`
       ].join("<br>");
     }
@@ -628,27 +655,33 @@
       }
     });
     $("#ui-font-size")?.addEventListener("change", () => {
-      setUiSettings({ ...getUiSettings(), fontSize: value("#ui-font-size", "normal") });
+      saveUiSettingsPatch({ fontSize: value("#ui-font-size", "font-normal") });
       applyUiSettings();
       renderUserPanel();
     });
     $("#ui-scale")?.addEventListener("change", () => {
-      setUiSettings({ ...getUiSettings(), uiScale: value("#ui-scale", "normal") });
+      saveUiSettingsPatch({ uiScale: value("#ui-scale", "ui-normal") });
       applyUiSettings();
       renderUserPanel();
     });
     $("#ui-button-size")?.addEventListener("change", () => {
-      setUiSettings({ ...getUiSettings(), buttonSize: value("#ui-button-size", "normal") });
+      saveUiSettingsPatch({ buttonSize: value("#ui-button-size", "buttons-normal") });
       applyUiSettings();
       renderUserPanel();
     });
     $("#ui-icon-size")?.addEventListener("change", () => {
-      setUiSettings({ ...getUiSettings(), iconSize: value("#ui-icon-size", "normal") });
+      saveUiSettingsPatch({ iconSize: value("#ui-icon-size", "icons-normal") });
       applyUiSettings();
       renderUserPanel();
     });
+    $("#preset-small-screen")?.addEventListener("click", () => {
+      applyUiPreset({ uiScale: "ui-xcompact", buttonSize: "buttons-xsmall", iconSize: "icons-xsmall", fontSize: "font-small" });
+    });
+    $("#preset-comfort-view")?.addEventListener("click", () => {
+      applyUiPreset({ uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal" });
+    });
     $("#field-mode-toggle")?.addEventListener("change", () => {
-      setUiSettings({ ...getUiSettings(), fieldMode: !!$("#field-mode-toggle")?.checked });
+      saveUiSettingsPatch({ fieldMode: !!$("#field-mode-toggle")?.checked });
       applyUiSettings();
     });
   }
@@ -3387,6 +3420,32 @@
     applyUiSettings();
   }
 
+  function maybeShowCompactSuggestion() {
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    const rawSettings = getUiSettings();
+    const settings = normalizeUiSettings(rawSettings);
+    const hasManualUiSettings = ["fontSize", "uiScale", "buttonSize", "iconSize"].some((key) => rawSettings[key] != null);
+    if (width > 430 || settings.uiTouched || hasManualUiSettings || localStorage.getItem(UI_COMPACT_SUGGESTION_KEY) === "1") return;
+    localStorage.setItem(UI_COMPACT_SUGGESTION_KEY, "1");
+    const modal = document.createElement("div");
+    modal.className = "ui-compact-suggestion";
+    modal.innerHTML = `
+      <div class="ui-compact-suggestion-panel" role="dialog" aria-modal="true" aria-label="Sugestia widoku kompaktowego">
+        <p><strong>Ten telefon ma wąski ekran.</strong> Możesz włączyć widok kompaktowy, aby zmieścić więcej treści.</p>
+        <div class="row-actions">
+          <button type="button" data-compact-enable>Włącz kompaktowy</button>
+          <button type="button" class="ghost-light" data-compact-dismiss>Nie teraz</button>
+        </div>
+      </div>`;
+    const close = () => modal.remove();
+    modal.querySelector("[data-compact-enable]")?.addEventListener("click", () => {
+      applyUiPreset({ uiScale: "ui-xcompact", buttonSize: "buttons-xsmall", iconSize: "icons-xsmall", fontSize: "font-small" });
+      close();
+    });
+    modal.querySelector("[data-compact-dismiss]")?.addEventListener("click", close);
+    document.body.append(modal);
+  }
+
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
@@ -3475,6 +3534,7 @@
     updateDraftResumeButton();
     renderUserPanel();
     showView(getCurrentUser() ? (mustChangePassword() ? "change-password" : "home") : "login");
+    maybeShowCompactSuggestion();
     showStep(1);
     setupPwaInstall();
     registerServiceWorker();
