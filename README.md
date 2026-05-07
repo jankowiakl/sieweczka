@@ -75,14 +75,22 @@ W panelu **Użytkownik** można dostosować lokalny wygląd aplikacji bez zmiany
 
 Dostępne presety:
 
-- **Dopasuj do małego ekranu** — zagęszcza UI dla wąskich telefonów.
-- **Najmniejszy widok** — ustawia minimalny interfejs, przyciski, ikony i tekst dla sytuacji, gdy trzeba zmieścić jak najwięcej treści.
-- **iPhone bez poziomego przewijania** — ustawia minimalną szerokość układu i jedną kolumnę kafelków, gdy aplikację da się przesuwać poziomo.
+- **iPhone bez poziomego przewijania** — wybiera bezpieczny, zwarty układ dla wąskich telefonów bez skalowania całej aplikacji.
 - **Widok standardowy** — przywraca normalny interfejs, przyciski, ikony i tekst.
+- **Resetuj wygląd** — resetuje tylko ustawienia interfejsu do stabilnych wartości domyślnych.
 
-Na iPhone o szerokości około 393px warto użyć presetu **iPhone bez poziomego przewijania**, **Najmniejszy widok** albo **Dopasuj do małego ekranu**. Aplikacja automatycznie rozpoznaje wąski widok (`viewport-narrow`) do 430px oraz ciaśniejszy widok (`viewport-tight`) do 395px, aby zmniejszyć menu, karty, formularze, panele pomocy i modale bez czyszczenia danych lokalnych.
+Na iPhone o szerokości około 393px warto użyć presetu **iPhone bez poziomego przewijania** albo przycisku **Resetuj wygląd**, jeśli wcześniejsze ustawienia były zbyt agresywne. Aplikacja automatycznie rozpoznaje wąski widok (`viewport-narrow`) do 430px oraz ciaśniejszy widok (`viewport-tight`) do 395px, aby zmniejszyć menu, karty, formularze, panele pomocy i modale bez czyszczenia danych lokalnych.
 
 W tej samej sekcji jest zwijana **Diagnostyka interfejsu**, która pokazuje wymiary ekranu, `devicePixelRatio`, tryb PWA, wersję aplikacji, aktywny preset, klasy HTML, breakpoint układu i wybrane zmienne CSS, szerokości `scrollWidth` oraz wykryte elementy powodujące poziomy overflow.
+
+
+### Awaryjne przywrócenie wyglądu
+
+Jeśli aplikacja po zmianach wyglądu pokaże pusty/biały ekran albo wygląda, jakby ekran był przykryty panelem:
+
+1. Otwórz adres aplikacji z parametrem `?resetUi=1`.
+2. Jeśli to nie pomoże, użyj `?safeUi=1`.
+3. Ten reset dotyczy tylko ustawień wyglądu — nie usuwa danych terenowych, szkiców ani zdjęć.
 
 ## Instrukcja PDF
 
@@ -98,7 +106,7 @@ Na iPhonie aplikacja może mieć węższy viewport CSS niż na części telefon�
 Jeśli ekran wydaje się za szeroki albo można przesuwać aplikację poziomo:
 
 1. Otwórz **Użytkownik** i użyj presetu **iPhone bez poziomego przewijania**.
-2. W razie potrzeby zmień **Zwartość szerokości** na **Minimalna** albo **Bardzo zwężona**.
+2. Jeśli ekran nadal jest niestabilny, kliknij **Resetuj wygląd** albo użyj awaryjnego adresu `?resetUi=1`.
 3. Zmień **Układ kafelków** na **Jedna kolumna**, jeśli dwie kolumny są za ciasne dla długich etykiet.
 4. W sekcji **Diagnostyka interfejsu** kliknij **Pokaż elementy wychodzące poza ekran**. Diagnostyka pokazuje szerokość okna, `scrollWidth`, różnicę względem viewportu i listę elementów, które wystają poza ekran.
 

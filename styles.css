@@ -82,7 +82,7 @@ html.ui-minimal {
   --control-padding-y: clamp(0.22rem, .85vw, 0.34rem);
   --control-padding-x: clamp(0.3rem, 1vw, 0.48rem);
   --space-scale: .4;
-  --menu-width: min(76vw, 300px);
+  --menu-width: min(90vw, 400px);
   --menu-button-height: clamp(1.95rem, 5.2vw, 2.25rem);
   --menu-button-font-size: clamp(.74rem, 2vw, .84rem);
   --menu-gap: .18rem;
@@ -394,6 +394,12 @@ html.ui-xcompact.buttons-xsmall {
   box-sizing: border-box;
 }
 
+[hidden],
+.is-hidden {
+  display: none !important;
+  pointer-events: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
@@ -441,6 +447,9 @@ textarea {
 button,
 .button-like {
   cursor: pointer;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
   font-size: var(--button-font-size);
   background: var(--primary);
   color: #fff;
@@ -512,10 +521,10 @@ button:disabled {
 
 .app-menu-panel {
   box-sizing: border-box;
-  width: var(--menu-width);
-  max-width: var(--menu-width);
-  max-height: min(82vh, 720px);
-  max-height: min(82svh, 720px);
+  width: min(90vw, 400px);
+  max-width: calc(100vw - 1rem);
+  max-height: calc(100vh - 1rem);
+  max-height: calc(100svh - 1rem);
   overflow-y: auto;
   overscroll-behavior: contain;
   display: grid;
@@ -1936,20 +1945,20 @@ html.layout-xnarrow {
 
 html.width-minimal,
 html.layout-minimal {
-  --app-max-width: 600px;
-  --app-inline-padding: clamp(.2rem, 1vw, .42rem);
-  --card-max-width: 600px;
-  --menu-width: min(74vw, 300px);
-  --content-width-scale: .78;
+  --app-max-width: 680px;
+  --app-inline-padding: clamp(.32rem, 1.6vw, .56rem);
+  --card-max-width: 680px;
+  --menu-width: min(90vw, 400px);
+  --content-width-scale: .9;
 }
 
 html.viewport-tight.width-minimal,
 html.viewport-tight.layout-minimal,
 html.viewport-tight.ui-minimal {
-  --app-inline-padding: .2rem;
-  --control-padding-x: .24rem;
-  --button-inline-padding: .24rem;
-  --menu-width: min(70vw, 280px);
+  --app-inline-padding: .36rem;
+  --control-padding-x: .5rem;
+  --button-inline-padding: .5rem;
+  --menu-width: min(90vw, 400px);
 }
 
 html.ui-minimal,
@@ -2531,4 +2540,34 @@ html.viewport-tight.tiles-compact .home-primary-actions,
 html.viewport-tight.tiles-compact .home-secondary-actions,
 html.viewport-tight.tiles-compact .home-status-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+
+html.safe-ui,
+html.safe-ui body {
+  overflow-x: hidden;
+}
+
+html.safe-ui #app {
+  width: 100%;
+  max-width: 840px;
+  margin: 0 auto;
+  padding: .6rem;
+  overflow: visible;
+}
+
+html.safe-ui .card {
+  width: 100%;
+  max-width: 100%;
+  padding: .75rem;
+}
+
+html.safe-ui .app-menu-modal,
+html.safe-ui .ui-compact-suggestion {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+html.safe-ui .overflow-debug-outline {
+  outline: none !important;
 }

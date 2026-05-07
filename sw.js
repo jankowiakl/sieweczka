@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-07-global-responsive-ui-1";
+const CACHE_NAME = "sieweczka-app-v2026-05-07-ui-overlay-hotfix-1";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -957,7 +957,7 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith("/api/") || url.pathname.includes("/api/")) {
+  if (url.pathname === "/api" || url.pathname.startsWith("/api/") || url.pathname.includes("/api/")) {
     event.respondWith(fetch(event.request));
     return;
   }

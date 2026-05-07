@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-global-responsive-ui-1";
+  const APP_VERSION = "2026.05.07-ui-overlay-hotfix-1";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -21,6 +21,7 @@
   const PHOTO_SYNC_KEY = "sieweczka-photo-sync-v1";
   const AUTH_STATE_KEY = "sieweczka-auth-v1";
   let deferredInstallPrompt = null;
+  let appMenuKeyHandler = null;
 
   function getClientId() {
     const key = "sieweczka-client-id-v1";
@@ -47,6 +48,69 @@
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
   function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
   function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
+  function getDefaultUiSettings() {
+    return {
+      fontSize: "font-normal",
+      uiScale: "ui-normal",
+      buttonSize: "buttons-normal",
+      iconSize: "icons-normal",
+      layoutWidth: "width-normal",
+      tileLayout: "tiles-auto",
+      fieldMode: false,
+      activePreset: "Widok standardowy",
+      uiTouched: true
+    };
+  }
+  function resetUiSettingsOnly() {
+    setUiSettings(getDefaultUiSettings());
+  }
+  function cleanupTransientOverlays() {
+    [
+      "#app-menu-modal",
+      ".app-menu-modal",
+      ".ui-compact-suggestion",
+      "#field-help-panel",
+      "#install-helper-card",
+      ".install-helper-card",
+      ".overflow-debug-overlay",
+      ".diagnostic-overlay",
+      ".debug-overlay",
+      ".draft-exit-modal"
+    ].forEach((selector) => $$(selector).forEach((el) => el.remove()));
+    $$(".overflow-debug-outline").forEach((el) => el.classList.remove("overflow-debug-outline"));
+    if (appMenuKeyHandler) {
+      document.removeEventListener("keydown", appMenuKeyHandler);
+      appMenuKeyHandler = null;
+    }
+    if (document.body) {
+      document.body.style.overflow = "";
+      document.body.style.position = "";
+      document.body.style.touchAction = "";
+    }
+    document.documentElement.style.overflow = "";
+    document.documentElement.style.position = "";
+    document.documentElement.style.touchAction = "";
+  }
+  function applyEmergencyUiModeFromUrl() {
+    const params = new URLSearchParams(window.location.search || "");
+    const resetUi = params.get("resetUi") === "1";
+    const safeUi = params.get("safeUi") === "1";
+    if (!resetUi && !safeUi) return;
+    resetUiSettingsOnly();
+    cleanupTransientOverlays();
+    if (safeUi) document.documentElement.classList.add("safe-ui");
+    history.replaceState({}, "", window.location.pathname + window.location.hash);
+  }
+  function resetUiAndNotify() {
+    resetUiSettingsOnly();
+    cleanupTransientOverlays();
+    applyUiSettings();
+    renderUserPanel();
+    const status = $("#app-update-status") || $("#install-status");
+    const message = "Wygląd przywrócony. Dane terenowe nie zostały usunięte.";
+    if (status) status.textContent = message;
+    alert(message);
+  }
   const UI_CLASS_VALUES = {
     font: ["font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge"],
     ui: ["ui-minimal", "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large"],
@@ -471,7 +535,14 @@
   }
 
   function closeAppMenu() {
+    if (appMenuKeyHandler) {
+      document.removeEventListener("keydown", appMenuKeyHandler);
+      appMenuKeyHandler = null;
+    }
     $("#app-menu-modal")?.remove();
+    $$(".app-menu-modal").forEach((el) => el.remove());
+    if (document.body) document.body.style.overflow = "";
+    document.documentElement.style.overflow = "";
   }
 
   function openAppMenu() {
@@ -499,19 +570,16 @@
       </div>
     `;
     const onKey = (event) => {
-      if (event.key === "Escape") {
-        document.removeEventListener("keydown", onKey);
-        closeAppMenu();
-      }
+      if (event.key === "Escape") closeAppMenu();
     };
+    appMenuKeyHandler = onKey;
     document.addEventListener("keydown", onKey);
     modal.addEventListener("click", async (event) => {
-      if (event.target === modal) { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
-      if (event.target.closest("a")) { document.removeEventListener("keydown", onKey); setTimeout(closeAppMenu, 0); return; }
+      if (event.target === modal) { closeAppMenu(); return; }
+      if (event.target.closest("a")) { setTimeout(closeAppMenu, 0); return; }
       const action = event.target.closest("[data-menu-action]")?.dataset.menuAction;
       if (!action) return;
-      if (action === "close") { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
-      document.removeEventListener("keydown", onKey);
+      if (action === "close") { closeAppMenu(); return; }
       closeAppMenu();
       if (!$("#form-screen")?.hidden) {
         const leftForm = await goHomeFromMaybeForm();
@@ -784,6 +852,7 @@
       applyUiSettings();
       renderUserPanel();
     });
+    $("#reset-ui-settings")?.addEventListener("click", resetUiAndNotify);
     $("#check-horizontal-overflow")?.addEventListener("click", () => {
       const items = detectHorizontalOverflow({ outline: true });
       const list = items.slice(0, 10).map((item, index) => `${index + 1}. ${item.tagName}${item.id ? "#" + item.id : ""}${item.className ? "." + item.className.replace(/\s+/g, ".") : ""} — width ${item.width}px, right ${item.right}px / viewport ${item.windowInnerWidth}px`).join("\n");
@@ -793,13 +862,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       renderUserPanel();
     });
     $("#preset-small-screen")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "width-xcompact", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-compact", buttonSize: "buttons-small", iconSize: "icons-small", fontSize: "font-small", layoutWidth: "width-xcompact", tileLayout: "tiles-auto" });
     });
     $("#preset-smallest-view")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-minimal", layoutWidth: "width-minimal", tileLayout: "tiles-one" });
+      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-xcompact", buttonSize: "buttons-xsmall", iconSize: "icons-xsmall", fontSize: "font-small", layoutWidth: "width-xcompact", tileLayout: "tiles-auto" });
     });
     $("#preset-iphone-narrow")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "iPhone bez poziomego przewijania", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "width-minimal", tileLayout: "tiles-one" });
+      applyUiPreset({ activePreset: "iPhone bez poziomego przewijania", uiScale: "ui-compact", buttonSize: "buttons-small", iconSize: "icons-small", fontSize: "font-small", layoutWidth: "width-xcompact", tileLayout: "tiles-auto" });
     });
     $("#preset-standard-view")?.addEventListener("click", () => {
       applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "width-normal", tileLayout: "tiles-auto" });
@@ -3566,7 +3635,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       </div>`;
     const close = () => modal.remove();
     modal.querySelector("[data-compact-enable]")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "width-xcompact", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-compact", buttonSize: "buttons-small", iconSize: "icons-small", fontSize: "font-small", layoutWidth: "width-xcompact", tileLayout: "tiles-auto" });
       close();
     });
     modal.querySelector("[data-compact-dismiss]")?.addEventListener("click", close);
@@ -3636,6 +3705,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function init() {
+    cleanupTransientOverlays();
+    applyEmergencyUiModeFromUrl();
     migrateLegacyEntries();
     setupViewportLayoutWatcher();
     applyUiSettings();
@@ -3661,7 +3732,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     updateDraftResumeButton();
     renderUserPanel();
     showView(getCurrentUser() ? (mustChangePassword() ? "change-password" : "home") : "login");
-    maybeShowCompactSuggestion();
+    cleanupTransientOverlays();
     showStep(1);
     setupPwaInstall();
     registerServiceWorker();
