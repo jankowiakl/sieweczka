@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-egg-measurements";
+  const APP_VERSION = "2026.05.07-folded-map-ui";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -2837,6 +2837,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!state || state.bound) return;
     state.map = map;
     state.bound = true;
+    disableMapPanelPropagation(mapId);
     const toolbar = $(`#${mapId}-measure-toolbar`);
     if (toolbar && typeof L !== "undefined") {
       L.DomEvent.disableClickPropagation(toolbar);
@@ -2850,6 +2851,21 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     updateMeasureResult(mapId);
   }
 
+  function disableMapPanelPropagation(mapId) {
+    if (typeof L === "undefined") return;
+    $$(
+      `#${mapId}-measure-panel, #${mapId}-options-panel, #${mapId}-legend-panel`
+    ).forEach((panel) => {
+      L.DomEvent.disableClickPropagation(panel);
+      L.DomEvent.disableScrollPropagation(panel);
+    });
+  }
+
+  function setMeasurePanelOpen(mapId, open) {
+    const panel = $(`#${mapId}-measure-panel`);
+    if (panel) panel.open = !!open;
+  }
+
   function setMeasureMode(mapId, mode) {
     const state = measureStates[mapId];
     if (!state) return;
@@ -2860,6 +2876,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (shouldStartFresh) clearMeasure(mapId, { keepMode: true });
     updateMeasureGeometry(mapId);
     updateMeasureResult(mapId);
+    setMeasurePanelOpen(mapId, nextMode !== "off");
   }
 
   function addMeasurePoint(mapId, latlng) {
@@ -2908,6 +2925,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (select) select.value = "off";
     }
     updateMeasureResult(mapId, "Pomiar wyczyszczony");
+    if (!options.keepMode) setMeasurePanelOpen(mapId, false);
   }
 
   function finishMeasure(mapId) {
@@ -3256,8 +3274,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       `Status: ${navigator.onLine ? "online" : "offline"}.`,
       state?.lastError ? `Ostatni błąd: ${state.lastError}.` : ""
     ].filter(Boolean).join(" ");
-    const type = /błąd|brak kafli|limit/i.test(message) ? "warning" : /usunięto|zapisano|dostępny/i.test(message) ? "success" : "info";
-    showMapOfflineStatus(mapId, message, { type, autoHide: !state?.running, timeoutMs: 9000 });
+    const type = /błąd/i.test(message) ? "error" : /brak kafli|limit/i.test(message) ? "warning" : /usunięto|zapisano|dostępny/i.test(message) ? "success" : "info";
+    showMapOfflineStatus(mapId, message, { type, autoHide: type !== "error" && !state?.running, timeoutMs: 9000 });
   }
 
   async function switchToOfflineOrtoIfNeeded(map, mapId) {
@@ -3265,7 +3283,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!map || navigator.onLine || !state?.offlineLayer) return;
     const summary = await getViewedOrtoCacheSummary();
     if (summary.count > 0) {
-      state.offlineLayer.addTo(map);
+      setMapBaseLayer(map, mapId, "Ortofotomapa offline");
       showMapOfflineStatus(mapId, "Brak internetu. Pokazuję zapisane kafle offline.", { type: "warning" });
     } else {
       showMapOfflineStatus(mapId, "Brak kafli offline dla tego widoku.", { type: "warning", autoHide: true, timeoutMs: 8000 });
@@ -3293,7 +3311,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         item.savedSession = 0;
         item.skippedSession = 0;
         item.lastError = "";
-        if (item.map && item.onlineLayer && navigator.onLine) item.onlineLayer.addTo(item.map);
+        if (item.map && item.onlineLayer && navigator.onLine) {
+          const clearedMapId = item === ortoCacheState.records ? "records" : "working";
+          setMapBaseLayer(item.map, clearedMapId, "Ortofotomapa Geoportal");
+        }
       }
       await updateViewedOrtoCacheDiagnostics(mapId, "Usunięto ortofotomapę offline. Rekordy i gniazda robocze pozostały bez zmian.");
       const otherMapId = mapId === "records" ? "working" : "records";
@@ -3333,6 +3354,32 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
       }
     };
+  }
+
+  function setMapBaseLayer(map, mapId, layerName) {
+    const state = ortoCacheState[mapId];
+    const layers = state?.baseLayers;
+    const nextLayer = layers?.[layerName];
+    if (!map || !nextLayer || !layers) return;
+    Object.values(layers).forEach((layer) => {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+    });
+    nextLayer.addTo(map);
+    state.currentBaseLayerName = layerName;
+    const select = $(`#${mapId}-base-layer`);
+    if (select) select.value = layerName;
+  }
+
+  function initMapBaseLayerSelect(map, mapId, base) {
+    const state = ortoCacheState[mapId];
+    const select = $(`#${mapId}-base-layer`);
+    if (!state || !select) return;
+    state.baseLayers = base.layers;
+    state.currentBaseLayerName = select.value || "Ortofotomapa Geoportal";
+    if (!state.baseLayerSelectBound) {
+      state.baseLayerSelectBound = true;
+      select.addEventListener("change", () => setMapBaseLayer(map, mapId, select.value));
+    }
   }
 
   function createGeoportalOrtoLayer() {
@@ -3482,7 +3529,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const base = createBaseLayers();
       recordsMap = L.map(mapEl, { layers: [base.defaultLayer] });
       recordsMap.attributionControl.setPrefix("");
-      L.control.layers(base.layers).addTo(recordsMap);
+      initMapBaseLayerSelect(recordsMap, "records", base);
       ortoCacheState.records.map = recordsMap;
       ortoCacheState.records.onlineLayer = base.onlineLayer;
       ortoCacheState.records.offlineLayer = base.offlineLayer;
@@ -4337,7 +4384,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const base = createBaseLayers();
       workingMap = L.map(mapEl, { layers: [base.defaultLayer] });
       workingMap.attributionControl.setPrefix("");
-      L.control.layers(base.layers).addTo(workingMap);
+      initMapBaseLayerSelect(workingMap, "working", base);
       ortoCacheState.working.map = workingMap;
       ortoCacheState.working.onlineLayer = base.onlineLayer;
       ortoCacheState.working.offlineLayer = base.offlineLayer;
