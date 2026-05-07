@@ -117,12 +117,30 @@ Jeśli aplikacja działa już w trybie standalone, panel pokaże informację „
 ## Ustawienia wyglądu
 
 Panel „Użytkownik” zawiera ustawienia lokalne zapisane w `sieweczka-ui-settings-v1`:
-- rozmiar tekstu;
-- skala interfejsu: Kompaktowa, Normalna, Duża;
-- rozmiar ikon: Małe, Normalne, Duże;
+- rozmiar tekstu: Bardzo mały, Mały, Normalny, Duży, Bardzo duży;
+- skala interfejsu: Bardzo kompaktowa, Kompaktowa, Normalna, Wygodna, Duża;
+- rozmiar przycisków: Bardzo małe, Małe, Normalne, Duże, Bardzo duże;
+- rozmiar ikon: Bardzo małe, Małe, Normalne, Duże;
 - tryb terenowy.
 
-Te ustawienia nie są wysyłane na serwer i nie zmieniają danych terenowych. Jeśli przyciski albo ikony są zbyt duże na telefonie, ustaw skalę interfejsu na „Kompaktowa” i rozmiar ikon na „Małe”.
+Te ustawienia nie są wysyłane na serwer i nie zmieniają danych terenowych. Jeśli menu albo przyciski są zbyt duże na telefonie, ustaw skalę interfejsu na „Bardzo kompaktowa” i rozmiar przycisków na „Bardzo małe”; jeśli problem dotyczy symboli, ustaw też rozmiar ikon na „Bardzo małe”.
+
+### Dostosowanie wyglądu na małym ekranie
+
+Telefony o podobnej fizycznej wielkości mogą mieć różną szerokość CSS. iPhone może raportować mniejszą szerokość CSS niż Android, dlatego ten sam interfejs wygląda na nim większy mimo podobnego rozmiaru urządzenia.
+
+Jeśli elementy są za duże na iPhonie albo innym małym ekranie, użyj w panelu „Użytkownik”:
+- Skala interfejsu: Bardzo kompaktowa;
+- Rozmiar przycisków: Bardzo małe;
+- Rozmiar ikon: Bardzo małe.
+
+Możesz też kliknąć preset „Dopasuj do małego ekranu”. Preset od razu zapisuje ustawienia lokalnie i zagęszcza menu, kafelki ekranu głównego, odstępy oraz przyciski bez usuwania rekordów, szkiców ani zdjęć lokalnych.
+
+### Wygląd na różnych telefonach
+
+Android/iPhone oraz Brave, Safari, Chrome i tryb PWA mogą inaczej interpretować automatyczne skalowanie tekstu i elementów dotykowych. Widok główny, menu aplikacji, kafelki, przyciski i ikony korzystają z ograniczeń `clamp()`, aby nie rosły niekontrolowanie na iOS, ale nadal pozostały wygodne w terenie.
+
+Jeśli menu albo przyciski są zbyt duże, ustaw skalę interfejsu na „Bardzo kompaktowa” i rozmiar przycisków na „Bardzo małe” albo użyj presetu „Dopasuj do małego ekranu”. W panelu „Użytkownik” można również zmienić rozmiar tekstu i ikon oraz otworzyć zwijaną sekcję „Diagnostyka interfejsu” z szerokością/wysokością okna, `devicePixelRatio`, user agentem, trybem PWA, wersją aplikacji, aktualnymi klasami HTML, ustawieniami UI i efektywnymi zmiennymi CSS.
 
 ## Eksport zdjęć z serwera
 

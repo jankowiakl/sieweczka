@@ -11,9 +11,10 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.06-ux-stable-final";
+  const APP_VERSION = "2026.05.07-responsive-ui-5";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
+  const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
@@ -46,24 +47,142 @@
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
   function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
   function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
+  const UI_CLASS_VALUES = {
+    font: ["font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge"],
+    ui: ["ui-minimal", "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large"],
+    buttons: ["buttons-minimal", "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge"],
+    icons: ["icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large"],
+    layout: ["layout-full", "layout-normal", "layout-narrow", "layout-xnarrow", "layout-minimal"],
+    tiles: ["tiles-auto", "tiles-two", "tiles-one", "tiles-compact"]
+  };
+  const UI_LEGACY_VALUES = {
+    font: { tiny: "font-minimal", xsmall: "font-xsmall", small: "font-small", normal: "font-normal", large: "font-large", xlarge: "font-xlarge" },
+    ui: { minimal: "ui-minimal", tiny: "ui-minimal", xcompact: "ui-xcompact", compact: "ui-compact", normal: "ui-normal", comfortable: "ui-comfortable", large: "ui-large" },
+    buttons: { minimal: "buttons-minimal", tiny: "buttons-minimal", xsmall: "buttons-xsmall", small: "buttons-small", normal: "buttons-normal", large: "buttons-large", xlarge: "buttons-xlarge" },
+    icons: { minimal: "icons-minimal", tiny: "icons-minimal", xsmall: "icons-xsmall", small: "icons-small", normal: "icons-normal", large: "icons-large" },
+    layout: { full: "layout-full", normal: "layout-normal", narrow: "layout-narrow", xnarrow: "layout-xnarrow", minimal: "layout-minimal" },
+    tiles: { auto: "tiles-auto", two: "tiles-two", one: "tiles-one", compact: "tiles-compact" }
+  };
+
+  function normalizeUiClass(value, prefix, fallback) {
+    const raw = String(value || "").trim();
+    if (!raw) return fallback;
+    const prefixed = raw.startsWith(`${prefix}-`) ? raw : `${prefix}-${raw}`;
+    const legacyKey = raw.replace(`${prefix}-`, "");
+    const compatible = UI_LEGACY_VALUES[prefix]?.[legacyKey] || prefixed;
+    return UI_CLASS_VALUES[prefix]?.includes(compatible) ? compatible : fallback;
+  }
+  function normalizeUiSettings(settings = getUiSettings()) {
+    return {
+      ...settings,
+      fontSize: normalizeUiClass(settings.fontSize, "font", "font-normal"),
+      uiScale: normalizeUiClass(settings.uiScale, "ui", "ui-normal"),
+      buttonSize: normalizeUiClass(settings.buttonSize, "buttons", "buttons-normal"),
+      iconSize: normalizeUiClass(settings.iconSize, "icons", "icons-normal"),
+      layoutWidth: normalizeUiClass(settings.layoutWidth, "layout", "layout-normal"),
+      tileLayout: normalizeUiClass(settings.tileLayout, "tiles", "tiles-auto")
+    };
+  }
+  function saveUiSettingsPatch(patch, manual = true) {
+    setUiSettings({ ...normalizeUiSettings(), ...patch, uiTouched: manual || !!normalizeUiSettings().uiTouched });
+  }
+  function applyUiPreset(preset) {
+    saveUiSettingsPatch(preset, true);
+    applyUiSettings();
+    renderUserPanel();
+  }
+  function getLayoutBreakpoint() {
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    if (width <= 395) return "tight";
+    if (width <= 430) return "narrow";
+    if (width >= 760) return "wide";
+    return "standard";
+  }
+
+  function updateViewportLayoutClasses() {
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    const narrow = width <= 430;
+    const tight = width <= 395;
+    document.documentElement.classList.toggle("viewport-narrow", narrow);
+    document.documentElement.classList.toggle("viewport-tight", tight);
+    return { narrow, tight };
+  }
+
   function applyUiSettings() {
-    const settings = getUiSettings();
-    const size = settings.fontSize || "normal";
-    const uiScale = settings.uiScale || "normal";
-    const iconSize = settings.iconSize || "normal";
-    document.documentElement.classList.remove("font-small", "font-normal", "font-large", "font-xlarge", "ui-compact", "ui-normal", "ui-large", "icons-small", "icons-normal", "icons-large");
-    document.documentElement.classList.add(`font-${size}`);
-    document.documentElement.classList.add(`ui-${uiScale}`);
-    document.documentElement.classList.add(`icons-${iconSize}`);
+    updateViewportLayoutClasses();
+    const settings = normalizeUiSettings();
+    document.documentElement.classList.remove(
+      "font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge",
+      "ui-minimal", "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large",
+      "buttons-minimal", "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge",
+      "icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large",
+      "layout-full", "layout-normal", "layout-narrow", "layout-xnarrow", "layout-minimal",
+      "tiles-auto", "tiles-two", "tiles-one", "tiles-compact"
+    );
+    document.documentElement.classList.add(settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize, settings.layoutWidth, settings.tileLayout);
     document.body?.classList.toggle("field-mode", !!settings.fieldMode);
     const select = document.querySelector("#ui-font-size");
-    if (select) select.value = size;
+    if (select) select.value = settings.fontSize;
     const scaleSelect = document.querySelector("#ui-scale");
-    if (scaleSelect) scaleSelect.value = uiScale;
+    if (scaleSelect) scaleSelect.value = settings.uiScale;
+    const buttonSelect = document.querySelector("#ui-button-size");
+    if (buttonSelect) buttonSelect.value = settings.buttonSize;
     const iconSelect = document.querySelector("#ui-icon-size");
-    if (iconSelect) iconSelect.value = iconSize;
+    if (iconSelect) iconSelect.value = settings.iconSize;
+    const layoutSelect = document.querySelector("#ui-layout-width");
+    if (layoutSelect) layoutSelect.value = settings.layoutWidth;
+    const tileSelect = document.querySelector("#ui-tile-layout");
+    if (tileSelect) tileSelect.value = settings.tileLayout;
     const fieldMode = document.querySelector("#field-mode-toggle");
     if (fieldMode) fieldMode.checked = !!settings.fieldMode;
+  }
+
+
+  function describeOverflowElement(el) {
+    const rect = el.getBoundingClientRect();
+    return {
+      tagName: el.tagName.toLowerCase(),
+      id: el.id || "",
+      className: typeof el.className === "string" ? el.className : "",
+      width: Math.round(rect.width * 10) / 10,
+      right: Math.round(rect.right * 10) / 10,
+      left: Math.round(rect.left * 10) / 10,
+      windowInnerWidth: window.innerWidth || 0
+    };
+  }
+
+  function detectHorizontalOverflow({ outline = false } = {}) {
+    $$(".overflow-debug-outline").forEach((el) => el.classList.remove("overflow-debug-outline"));
+    const viewport = window.innerWidth || document.documentElement.clientWidth || 0;
+    const overflowing = $$('body *').filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && (rect.right > viewport + 1 || rect.left < -1);
+    }).map(describeOverflowElement).sort((a, b) => (b.right - b.windowInnerWidth) - (a.right - a.windowInnerWidth));
+    if (outline) {
+      $$('body *').forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && (rect.right > viewport + 1 || rect.left < -1)) el.classList.add("overflow-debug-outline");
+      });
+    }
+    return overflowing;
+  }
+
+  function getHorizontalOverflowDiagnostics() {
+    const innerWidth = window.innerWidth || 0;
+    const doc = document.documentElement;
+    const body = document.body;
+    const scrollWidth = doc?.scrollWidth || 0;
+    const bodyScrollWidth = body?.scrollWidth || 0;
+    const overflowItems = detectHorizontalOverflow();
+    return {
+      innerWidth,
+      clientWidth: doc?.clientWidth || 0,
+      scrollWidth,
+      bodyScrollWidth,
+      scrollDelta: Math.max(scrollWidth, bodyScrollWidth) - innerWidth,
+      overflowItems,
+      biggest: overflowItems[0] || null
+    };
   }
 
   function isStandaloneApp() {
@@ -289,7 +408,47 @@
     });
     const diagnostics = $("#ui-diagnostics");
     if (diagnostics) {
-      diagnostics.textContent = `Szerokość ekranu: ${window.innerWidth}px, devicePixelRatio: ${window.devicePixelRatio || 1}, standalone: ${isStandaloneApp() ? "tak" : "nie"}, wersja: ${APP_VERSION}.`;
+      const settings = normalizeUiSettings();
+      const styles = getComputedStyle(document.documentElement);
+      const cssVar = (name) => styles.getPropertyValue(name).trim() || "—";
+      const userAgent = navigator.userAgent || "—";
+      const shortUserAgent = userAgent.length > 150 ? `${userAgent.slice(0, 147)}…` : userAgent;
+      const overflowDiagnostics = getHorizontalOverflowDiagnostics();
+      diagnostics.innerHTML = [
+        `window.innerWidth: <strong>${window.innerWidth}px</strong>`,
+        `window.innerHeight: <strong>${window.innerHeight}px</strong>`,
+        `document.documentElement.clientWidth: <strong>${overflowDiagnostics.clientWidth}px</strong>`,
+        `document.documentElement.scrollWidth: <strong>${overflowDiagnostics.scrollWidth}px</strong>`,
+        `document.body.scrollWidth: <strong>${overflowDiagnostics.bodyScrollWidth}px</strong>`,
+        `różnica scrollWidth - innerWidth: <strong>${overflowDiagnostics.scrollDelta}px</strong>`,
+        `elementy overflow: <strong>${overflowDiagnostics.overflowItems.length}</strong>`,
+        `największy overflow: <span>${escapeHtml(overflowDiagnostics.biggest ? `${overflowDiagnostics.biggest.tagName}${overflowDiagnostics.biggest.id ? "#" + overflowDiagnostics.biggest.id : ""}${overflowDiagnostics.biggest.className ? "." + overflowDiagnostics.biggest.className.replace(/\s+/g, ".") : ""} width=${overflowDiagnostics.biggest.width} right=${overflowDiagnostics.biggest.right}` : "—")}</span>`,
+        overflowDiagnostics.scrollDelta > 1 ? `<strong class="warning-text">Wykryto poziome przewijanie. Użyj trybu minimalnego albo zgłoś diagnostykę administratorowi.</strong>` : `poziome przewijanie: <strong>nie wykryto</strong>`,
+        `devicePixelRatio: <strong>${window.devicePixelRatio || 1}</strong>`,
+        `PWA standalone: <strong>${isStandaloneApp() ? "tak" : "nie"}</strong>`,
+        `APP_VERSION: <strong>${escapeHtml(APP_VERSION)}</strong>`,
+        `aktywny preset: <strong>${escapeHtml(settings.activePreset || "ręczne / brak")}</strong>`,
+        `viewport-narrow: <strong>${document.documentElement.classList.contains("viewport-narrow") ? "tak" : "nie"}</strong>`,
+        `viewport-tight: <strong>${document.documentElement.classList.contains("viewport-tight") ? "tak" : "nie"}</strong>`,
+        `layout breakpoint: <strong>${escapeHtml(getLayoutBreakpoint())}</strong>`,
+        `Aktualne ustawienia UI: <strong>${escapeHtml([settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize, settings.layoutWidth, settings.tileLayout].join(" / "))}</strong>`,
+        `Szerokość układu: <strong>${escapeHtml(settings.layoutWidth)}</strong>`,
+        `Układ kafelków: <strong>${escapeHtml(settings.tileLayout)}</strong>`,
+        `Klasy HTML: <span>${escapeHtml(Array.from(document.documentElement.classList).join(" ") || "—")}</span>`,
+        `--ui-scale: <strong>${escapeHtml(cssVar("--ui-scale"))}</strong>`,
+        `--space-scale: <strong>${escapeHtml(cssVar("--space-scale"))}</strong>`,
+        `--card-padding: <strong>${escapeHtml(cssVar("--card-padding"))}</strong>`,
+        `--button-min-height: <strong>${escapeHtml(cssVar("--button-min-height"))}</strong>`,
+        `--button-font-size: <strong>${escapeHtml(cssVar("--button-font-size"))}</strong>`,
+        `--tile-padding: <strong>${escapeHtml(cssVar("--tile-padding"))}</strong>`,
+        `--app-max-width: <strong>${escapeHtml(cssVar("--app-max-width"))}</strong>`,
+        `--card-max-width: <strong>${escapeHtml(cssVar("--card-max-width"))}</strong>`,
+        `--menu-width: <strong>${escapeHtml(cssVar("--menu-width"))}</strong>`,
+        `--menu-button-height: <strong>${escapeHtml(cssVar("--menu-button-height"))}</strong>`,
+        `--icon-size: <strong>${escapeHtml(cssVar("--icon-size"))}</strong>`,
+        `--tile-icon-size: <strong>${escapeHtml(cssVar("--tile-icon-size"))}</strong>`,
+        `UserAgent: <span>${escapeHtml(shortUserAgent)}</span>`
+      ].join("<br>");
     }
     updateInstallStatus();
   }
@@ -403,7 +562,7 @@
           </select>`}
           <button type="button" data-admin-action="reset" data-user-id="${escapeHtml(user.id)}">Reset hasła</button>
           <button type="button" data-admin-action="invite" data-user-id="${escapeHtml(user.id)}">Wyślij zaproszenie</button>
-          ${user.id === currentUserId ? "" : `<button type="button" data-admin-action="${user.is_active ? "deactivate" : "activate"}" data-user-id="${escapeHtml(user.id)}">${user.is_active ? "Dezaktywuj" : "Aktywuj"}</button>`}
+          ${user.id === currentUserId ? "" : `<button type="button" class="${user.is_active ? "danger" : ""}" data-admin-action="${user.is_active ? "deactivate" : "activate"}" data-user-id="${escapeHtml(user.id)}">${user.is_active ? "Dezaktywuj" : "Aktywuj"}</button>`}
         </div>
       </article>
     `).join("") || `<p class="muted">Brak użytkowników.</p>`;
@@ -593,22 +752,60 @@
       }
     });
     $("#ui-font-size")?.addEventListener("change", () => {
-      setUiSettings({ ...getUiSettings(), fontSize: value("#ui-font-size", "normal") });
+      saveUiSettingsPatch({ fontSize: value("#ui-font-size", "font-normal"), activePreset: "" });
       applyUiSettings();
       renderUserPanel();
     });
     $("#ui-scale")?.addEventListener("change", () => {
-      setUiSettings({ ...getUiSettings(), uiScale: value("#ui-scale", "normal") });
+      saveUiSettingsPatch({ uiScale: value("#ui-scale", "ui-normal"), activePreset: "" });
+      applyUiSettings();
+      renderUserPanel();
+    });
+    $("#ui-button-size")?.addEventListener("change", () => {
+      saveUiSettingsPatch({ buttonSize: value("#ui-button-size", "buttons-normal"), activePreset: "" });
       applyUiSettings();
       renderUserPanel();
     });
     $("#ui-icon-size")?.addEventListener("change", () => {
-      setUiSettings({ ...getUiSettings(), iconSize: value("#ui-icon-size", "normal") });
+      saveUiSettingsPatch({ iconSize: value("#ui-icon-size", "icons-normal"), activePreset: "" });
       applyUiSettings();
       renderUserPanel();
     });
+    $("#ui-layout-width")?.addEventListener("change", () => {
+      saveUiSettingsPatch({ layoutWidth: value("#ui-layout-width", "layout-normal"), activePreset: "" });
+      applyUiSettings();
+      renderUserPanel();
+    });
+    $("#ui-tile-layout")?.addEventListener("change", () => {
+      saveUiSettingsPatch({ tileLayout: value("#ui-tile-layout", "tiles-auto"), activePreset: "" });
+      applyUiSettings();
+      renderUserPanel();
+    });
+    $("#check-horizontal-overflow")?.addEventListener("click", () => {
+      const items = detectHorizontalOverflow({ outline: true });
+      const list = items.slice(0, 10).map((item, index) => `${index + 1}. ${item.tagName}${item.id ? "#" + item.id : ""}${item.className ? "." + item.className.replace(/\s+/g, ".") : ""} — width ${item.width}px, right ${item.right}px / viewport ${item.windowInnerWidth}px`).join("\n");
+      const output = $("#horizontal-overflow-results");
+      if (output) output.textContent = items.length ? `Znaleziono ${items.length} elementów:
+${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
+      renderUserPanel();
+    });
+    $("#preset-small-screen")?.addEventListener("click", () => {
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
+    });
+    $("#preset-smallest-view")?.addEventListener("click", () => {
+      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-minimal", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
+    });
+    $("#preset-iphone-narrow")?.addEventListener("click", () => {
+      applyUiPreset({ activePreset: "iPhone / wąski ekran", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
+    });
+    $("#preset-standard-view")?.addEventListener("click", () => {
+      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "layout-normal", tileLayout: "tiles-auto" });
+    });
+    $("#preset-comfort-view")?.addEventListener("click", () => {
+      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "layout-normal", tileLayout: "tiles-auto" });
+    });
     $("#field-mode-toggle")?.addEventListener("change", () => {
-      setUiSettings({ ...getUiSettings(), fieldMode: !!$("#field-mode-toggle")?.checked });
+      saveUiSettingsPatch({ fieldMode: !!$("#field-mode-toggle")?.checked });
       applyUiSettings();
     });
   }
@@ -2535,7 +2732,7 @@
       const m = L.marker(p.pos,{icon}).addTo(mapMarkersLayer);
       if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(LABELS.species[p.entry.species] || p.entry.species || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
-      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
+      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
     });
     if (focusUid) {
@@ -3347,6 +3544,32 @@
     applyUiSettings();
   }
 
+  function maybeShowCompactSuggestion() {
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    const rawSettings = getUiSettings();
+    const settings = normalizeUiSettings(rawSettings);
+    const hasManualUiSettings = ["fontSize", "uiScale", "buttonSize", "iconSize"].some((key) => rawSettings[key] != null);
+    if (width > 430 || settings.uiTouched || hasManualUiSettings || localStorage.getItem(UI_COMPACT_SUGGESTION_KEY) === "1") return;
+    localStorage.setItem(UI_COMPACT_SUGGESTION_KEY, "1");
+    const modal = document.createElement("div");
+    modal.className = "ui-compact-suggestion";
+    modal.innerHTML = `
+      <div class="ui-compact-suggestion-panel" role="dialog" aria-modal="true" aria-label="Sugestia widoku kompaktowego">
+        <p><strong>Ten telefon ma wąski ekran.</strong> Możesz włączyć widok kompaktowy, aby zmieścić więcej treści.</p>
+        <div class="row-actions">
+          <button type="button" data-compact-enable>Włącz kompaktowy</button>
+          <button type="button" class="ghost-light" data-compact-dismiss>Nie teraz</button>
+        </div>
+      </div>`;
+    const close = () => modal.remove();
+    modal.querySelector("[data-compact-enable]")?.addEventListener("click", () => {
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
+      close();
+    });
+    modal.querySelector("[data-compact-dismiss]")?.addEventListener("click", close);
+    document.body.append(modal);
+  }
+
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
@@ -3369,6 +3592,21 @@
       refreshing = true;
       window.location.reload();
     });
+  }
+
+  function setupViewportLayoutWatcher() {
+    let frame = 0;
+    const refresh = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        updateViewportLayoutClasses();
+        renderUserPanel();
+      });
+    };
+    updateViewportLayoutClasses();
+    window.addEventListener("resize", refresh, { passive: true });
+    window.addEventListener("orientationchange", refresh, { passive: true });
   }
 
   function setupPwaInstall() {
@@ -3396,6 +3634,7 @@
 
   function init() {
     migrateLegacyEntries();
+    setupViewportLayoutWatcher();
     applyUiSettings();
     setupPercentGroups();
     setupTiles();
@@ -3419,6 +3658,7 @@
     updateDraftResumeButton();
     renderUserPanel();
     showView(getCurrentUser() ? (mustChangePassword() ? "change-password" : "home") : "login");
+    maybeShowCompactSuggestion();
     showStep(1);
     setupPwaInstall();
     registerServiceWorker();
