@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-responsive-ui-4";
+  const APP_VERSION = "2026.05.07-responsive-ui-5";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -51,13 +51,17 @@
     font: ["font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge"],
     ui: ["ui-minimal", "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large"],
     buttons: ["buttons-minimal", "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge"],
-    icons: ["icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large"]
+    icons: ["icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large"],
+    layout: ["layout-full", "layout-normal", "layout-narrow", "layout-xnarrow", "layout-minimal"],
+    tiles: ["tiles-auto", "tiles-two", "tiles-one", "tiles-compact"]
   };
   const UI_LEGACY_VALUES = {
     font: { tiny: "font-minimal", xsmall: "font-xsmall", small: "font-small", normal: "font-normal", large: "font-large", xlarge: "font-xlarge" },
     ui: { minimal: "ui-minimal", tiny: "ui-minimal", xcompact: "ui-xcompact", compact: "ui-compact", normal: "ui-normal", comfortable: "ui-comfortable", large: "ui-large" },
     buttons: { minimal: "buttons-minimal", tiny: "buttons-minimal", xsmall: "buttons-xsmall", small: "buttons-small", normal: "buttons-normal", large: "buttons-large", xlarge: "buttons-xlarge" },
-    icons: { minimal: "icons-minimal", tiny: "icons-minimal", xsmall: "icons-xsmall", small: "icons-small", normal: "icons-normal", large: "icons-large" }
+    icons: { minimal: "icons-minimal", tiny: "icons-minimal", xsmall: "icons-xsmall", small: "icons-small", normal: "icons-normal", large: "icons-large" },
+    layout: { full: "layout-full", normal: "layout-normal", narrow: "layout-narrow", xnarrow: "layout-xnarrow", minimal: "layout-minimal" },
+    tiles: { auto: "tiles-auto", two: "tiles-two", one: "tiles-one", compact: "tiles-compact" }
   };
 
   function normalizeUiClass(value, prefix, fallback) {
@@ -74,7 +78,9 @@
       fontSize: normalizeUiClass(settings.fontSize, "font", "font-normal"),
       uiScale: normalizeUiClass(settings.uiScale, "ui", "ui-normal"),
       buttonSize: normalizeUiClass(settings.buttonSize, "buttons", "buttons-normal"),
-      iconSize: normalizeUiClass(settings.iconSize, "icons", "icons-normal")
+      iconSize: normalizeUiClass(settings.iconSize, "icons", "icons-normal"),
+      layoutWidth: normalizeUiClass(settings.layoutWidth, "layout", "layout-normal"),
+      tileLayout: normalizeUiClass(settings.tileLayout, "tiles", "tiles-auto")
     };
   }
   function saveUiSettingsPatch(patch, manual = true) {
@@ -109,9 +115,11 @@
       "font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge",
       "ui-minimal", "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large",
       "buttons-minimal", "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge",
-      "icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large"
+      "icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large",
+      "layout-full", "layout-normal", "layout-narrow", "layout-xnarrow", "layout-minimal",
+      "tiles-auto", "tiles-two", "tiles-one", "tiles-compact"
     );
-    document.documentElement.classList.add(settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize);
+    document.documentElement.classList.add(settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize, settings.layoutWidth, settings.tileLayout);
     document.body?.classList.toggle("field-mode", !!settings.fieldMode);
     const select = document.querySelector("#ui-font-size");
     if (select) select.value = settings.fontSize;
@@ -121,8 +129,60 @@
     if (buttonSelect) buttonSelect.value = settings.buttonSize;
     const iconSelect = document.querySelector("#ui-icon-size");
     if (iconSelect) iconSelect.value = settings.iconSize;
+    const layoutSelect = document.querySelector("#ui-layout-width");
+    if (layoutSelect) layoutSelect.value = settings.layoutWidth;
+    const tileSelect = document.querySelector("#ui-tile-layout");
+    if (tileSelect) tileSelect.value = settings.tileLayout;
     const fieldMode = document.querySelector("#field-mode-toggle");
     if (fieldMode) fieldMode.checked = !!settings.fieldMode;
+  }
+
+
+  function describeOverflowElement(el) {
+    const rect = el.getBoundingClientRect();
+    return {
+      tagName: el.tagName.toLowerCase(),
+      id: el.id || "",
+      className: typeof el.className === "string" ? el.className : "",
+      width: Math.round(rect.width * 10) / 10,
+      right: Math.round(rect.right * 10) / 10,
+      left: Math.round(rect.left * 10) / 10,
+      windowInnerWidth: window.innerWidth || 0
+    };
+  }
+
+  function detectHorizontalOverflow({ outline = false } = {}) {
+    $$(".overflow-debug-outline").forEach((el) => el.classList.remove("overflow-debug-outline"));
+    const viewport = window.innerWidth || document.documentElement.clientWidth || 0;
+    const overflowing = $$('body *').filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && (rect.right > viewport + 1 || rect.left < -1);
+    }).map(describeOverflowElement).sort((a, b) => (b.right - b.windowInnerWidth) - (a.right - a.windowInnerWidth));
+    if (outline) {
+      $$('body *').forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && (rect.right > viewport + 1 || rect.left < -1)) el.classList.add("overflow-debug-outline");
+      });
+    }
+    return overflowing;
+  }
+
+  function getHorizontalOverflowDiagnostics() {
+    const innerWidth = window.innerWidth || 0;
+    const doc = document.documentElement;
+    const body = document.body;
+    const scrollWidth = doc?.scrollWidth || 0;
+    const bodyScrollWidth = body?.scrollWidth || 0;
+    const overflowItems = detectHorizontalOverflow();
+    return {
+      innerWidth,
+      clientWidth: doc?.clientWidth || 0,
+      scrollWidth,
+      bodyScrollWidth,
+      scrollDelta: Math.max(scrollWidth, bodyScrollWidth) - innerWidth,
+      overflowItems,
+      biggest: overflowItems[0] || null
+    };
   }
 
   function isStandaloneApp() {
@@ -353,9 +413,17 @@
       const cssVar = (name) => styles.getPropertyValue(name).trim() || "—";
       const userAgent = navigator.userAgent || "—";
       const shortUserAgent = userAgent.length > 150 ? `${userAgent.slice(0, 147)}…` : userAgent;
+      const overflowDiagnostics = getHorizontalOverflowDiagnostics();
       diagnostics.innerHTML = [
         `window.innerWidth: <strong>${window.innerWidth}px</strong>`,
         `window.innerHeight: <strong>${window.innerHeight}px</strong>`,
+        `document.documentElement.clientWidth: <strong>${overflowDiagnostics.clientWidth}px</strong>`,
+        `document.documentElement.scrollWidth: <strong>${overflowDiagnostics.scrollWidth}px</strong>`,
+        `document.body.scrollWidth: <strong>${overflowDiagnostics.bodyScrollWidth}px</strong>`,
+        `różnica scrollWidth - innerWidth: <strong>${overflowDiagnostics.scrollDelta}px</strong>`,
+        `elementy overflow: <strong>${overflowDiagnostics.overflowItems.length}</strong>`,
+        `największy overflow: <span>${escapeHtml(overflowDiagnostics.biggest ? `${overflowDiagnostics.biggest.tagName}${overflowDiagnostics.biggest.id ? "#" + overflowDiagnostics.biggest.id : ""}${overflowDiagnostics.biggest.className ? "." + overflowDiagnostics.biggest.className.replace(/\s+/g, ".") : ""} width=${overflowDiagnostics.biggest.width} right=${overflowDiagnostics.biggest.right}` : "—")}</span>`,
+        overflowDiagnostics.scrollDelta > 1 ? `<strong class="warning-text">Wykryto poziome przewijanie. Użyj trybu minimalnego albo zgłoś diagnostykę administratorowi.</strong>` : `poziome przewijanie: <strong>nie wykryto</strong>`,
         `devicePixelRatio: <strong>${window.devicePixelRatio || 1}</strong>`,
         `PWA standalone: <strong>${isStandaloneApp() ? "tak" : "nie"}</strong>`,
         `APP_VERSION: <strong>${escapeHtml(APP_VERSION)}</strong>`,
@@ -363,7 +431,9 @@
         `viewport-narrow: <strong>${document.documentElement.classList.contains("viewport-narrow") ? "tak" : "nie"}</strong>`,
         `viewport-tight: <strong>${document.documentElement.classList.contains("viewport-tight") ? "tak" : "nie"}</strong>`,
         `layout breakpoint: <strong>${escapeHtml(getLayoutBreakpoint())}</strong>`,
-        `Aktualne ustawienia UI: <strong>${escapeHtml([settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize].join(" / "))}</strong>`,
+        `Aktualne ustawienia UI: <strong>${escapeHtml([settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize, settings.layoutWidth, settings.tileLayout].join(" / "))}</strong>`,
+        `Szerokość układu: <strong>${escapeHtml(settings.layoutWidth)}</strong>`,
+        `Układ kafelków: <strong>${escapeHtml(settings.tileLayout)}</strong>`,
         `Klasy HTML: <span>${escapeHtml(Array.from(document.documentElement.classList).join(" ") || "—")}</span>`,
         `--ui-scale: <strong>${escapeHtml(cssVar("--ui-scale"))}</strong>`,
         `--space-scale: <strong>${escapeHtml(cssVar("--space-scale"))}</strong>`,
@@ -371,6 +441,8 @@
         `--button-min-height: <strong>${escapeHtml(cssVar("--button-min-height"))}</strong>`,
         `--button-font-size: <strong>${escapeHtml(cssVar("--button-font-size"))}</strong>`,
         `--tile-padding: <strong>${escapeHtml(cssVar("--tile-padding"))}</strong>`,
+        `--app-max-width: <strong>${escapeHtml(cssVar("--app-max-width"))}</strong>`,
+        `--card-max-width: <strong>${escapeHtml(cssVar("--card-max-width"))}</strong>`,
         `--menu-width: <strong>${escapeHtml(cssVar("--menu-width"))}</strong>`,
         `--menu-button-height: <strong>${escapeHtml(cssVar("--menu-button-height"))}</strong>`,
         `--icon-size: <strong>${escapeHtml(cssVar("--icon-size"))}</strong>`,
@@ -699,17 +771,38 @@
       applyUiSettings();
       renderUserPanel();
     });
+    $("#ui-layout-width")?.addEventListener("change", () => {
+      saveUiSettingsPatch({ layoutWidth: value("#ui-layout-width", "layout-normal"), activePreset: "" });
+      applyUiSettings();
+      renderUserPanel();
+    });
+    $("#ui-tile-layout")?.addEventListener("change", () => {
+      saveUiSettingsPatch({ tileLayout: value("#ui-tile-layout", "tiles-auto"), activePreset: "" });
+      applyUiSettings();
+      renderUserPanel();
+    });
+    $("#check-horizontal-overflow")?.addEventListener("click", () => {
+      const items = detectHorizontalOverflow({ outline: true });
+      const list = items.slice(0, 10).map((item, index) => `${index + 1}. ${item.tagName}${item.id ? "#" + item.id : ""}${item.className ? "." + item.className.replace(/\s+/g, ".") : ""} — width ${item.width}px, right ${item.right}px / viewport ${item.windowInnerWidth}px`).join("\n");
+      const output = $("#horizontal-overflow-results");
+      if (output) output.textContent = items.length ? `Znaleziono ${items.length} elementów:
+${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
+      renderUserPanel();
+    });
     $("#preset-small-screen")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
     });
     $("#preset-smallest-view")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-minimal" });
+      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-minimal", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
+    });
+    $("#preset-iphone-narrow")?.addEventListener("click", () => {
+      applyUiPreset({ activePreset: "iPhone / wąski ekran", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
     });
     $("#preset-standard-view")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal" });
+      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "layout-normal", tileLayout: "tiles-auto" });
     });
     $("#preset-comfort-view")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal" });
+      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "layout-normal", tileLayout: "tiles-auto" });
     });
     $("#field-mode-toggle")?.addEventListener("change", () => {
       saveUiSettingsPatch({ fieldMode: !!$("#field-mode-toggle")?.checked });
@@ -3470,7 +3563,7 @@
       </div>`;
     const close = () => modal.remove();
     modal.querySelector("[data-compact-enable]")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
       close();
     });
     modal.querySelector("[data-compact-dismiss]")?.addEventListener("click", close);

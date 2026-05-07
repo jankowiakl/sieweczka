@@ -131,12 +131,30 @@
           <option value="icons-large">Duże</option>
         </select>
       </label>
+      <label>Szerokość układu
+        <select id="ui-layout-width">
+          <option value="layout-full">Pełna</option>
+          <option value="layout-normal">Normalna</option>
+          <option value="layout-narrow">Zwężona</option>
+          <option value="layout-xnarrow">Bardzo zwężona</option>
+          <option value="layout-minimal">Minimalna</option>
+        </select>
+      </label>
+      <label>Układ kafelków
+        <select id="ui-tile-layout">
+          <option value="tiles-auto">Automatyczny</option>
+          <option value="tiles-two">Dwie kolumny</option>
+          <option value="tiles-one">Jedna kolumna</option>
+          <option value="tiles-compact">Kompaktowa siatka</option>
+        </select>
+      </label>
       <div class="ui-presets row-actions">
         <button id="preset-small-screen" type="button">Dopasuj do małego ekranu</button>
         <button id="preset-smallest-view" type="button">Najmniejszy widok</button>
+        <button id="preset-iphone-narrow" type="button">iPhone / wąski ekran</button>
         <button id="preset-standard-view" type="button" class="ghost-light">Widok standardowy</button>
       </div>
-      <p class="muted">Użyj, jeśli na iPhonie albo małym ekranie menu, formularz, karty i kafelki są zbyt duże. „Rozmiar tekstu” zmienia litery, a „Skala interfejsu” zmienia odstępy, karty i panele.</p>
+      <p class="muted">Użyj, jeśli na iPhonie albo małym ekranie menu, formularz, karty i kafelki są zbyt duże. Preset „iPhone / wąski ekran” pomaga, gdy ekran jest za szeroki albo aplikację da się przesuwać w lewo/prawo. „Rozmiar tekstu” zmienia litery, „Skala interfejsu” zmienia odstępy, a „Szerokość układu” kontroluje kontenery i paddingi.</p>
       <p class="record-preview">Przykładowy tekst</p>
       <label class="inline-check user-setting-toggle">
         <input id="field-mode-toggle" type="checkbox" />
@@ -161,6 +179,10 @@
       <details class="advanced-panel">
         <summary>Diagnostyka interfejsu</summary>
         <p id="ui-diagnostics" class="muted"></p>
+        <div class="row-actions">
+          <button id="check-horizontal-overflow" type="button">Sprawdź poziomy overflow</button>
+        </div>
+        <pre id="horizontal-overflow-results" class="diagnostics-output muted"></pre>
       </details>
       <p class="muted">Odświeżenie wersji aplikacji nie usuwa rekordów ani zdjęć zapisanych lokalnie.</p>
       <p id="app-update-status" class="muted"></p>
@@ -315,7 +337,7 @@
         <div class="step-header-row">
           <p id="step-title">Krok 1 z 8 — Identyfikacja</p>
           <div class="step-jump-actions" aria-label="Szybka nawigacja formularza">
-            <button id="step-first" type="button" class="small" title="Przejdź do początku formularza" aria-label="Przejdź do początku formularza">Początek</button>
+            <button id="step-first" type="button" class="small" title="Przejdź do początku formularza" aria-label="Przejdź do początku formularza">Start</button>
             <button id="step-last" type="button" class="small" title="Przejdź do końca formularza" aria-label="Przejdź do końca formularza">Koniec</button>
           </div>
         </div>
