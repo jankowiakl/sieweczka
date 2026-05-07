@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-07-folded-map-ui-v2";
+const CACHE_NAME = "sieweczka-app-v2026-05-07-folded-map-ui-v3";
 const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
 const GEOPORTAL_ORTO_WMS_HOST = "mapy.geoportal.gov.pl";
 const GEOPORTAL_ORTO_WMS_PATH = "/wss/service/PZGIK/ORTO/WMS/StandardResolution";
