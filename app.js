@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-map-ui-folded-options-brysna-smieck-points";
+  const APP_VERSION = "2026.05.07-fix-points-brysna-smieck-geojson";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -1128,19 +1128,27 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   async function loadBrysnaSmieckPoints() {
     if (brysnaSmieckPointsGeojson) return brysnaSmieckPointsGeojson;
     if (!brysnaSmieckPointsPromise) {
-      brysnaSmieckPointsPromise = fetch("data/points_brysna_smieck.geojson", { cache: "no-cache" })
+      const url = `data/points_brysna_smieck.geojson?v=${encodeURIComponent(APP_VERSION)}`;
+      brysnaSmieckPointsPromise = fetch(url, { cache: "no-cache" })
         .then((response) => {
-          if (!response.ok) throw new Error(`Nie udało się załadować punktów Brysna/Śmieck: ${response.status}`);
+          if (response.status === 404) throw new Error("Brak pliku data/points_brysna_smieck.geojson. Uruchom konwersję z data/points_brysna_smieck.gpkg.");
+          if (!response.ok) throw new Error(`Nie udało się załadować punktów Brysna/Śmieck. HTTP ${response.status}`);
           return response.json();
         })
         .then((json) => {
+          if (json?.type !== "FeatureCollection" || !Array.isArray(json.features)) {
+            throw new Error("Plik points_brysna_smieck.geojson nie jest poprawnym GeoJSON FeatureCollection.");
+          }
+          if (json.features.length === 0) {
+            throw new Error("Plik points_brysna_smieck.geojson istnieje, ale nie zawiera punktów.");
+          }
           brysnaSmieckPointsGeojson = json;
           return json;
         })
         .catch((error) => {
           console.error(error);
           brysnaSmieckPointsPromise = null;
-          alert("Nie udało się załadować punktów Brysna/Śmieck. Jeśli plik GeoJSON nie istnieje, uruchom konwersję z data/points_brysna_smieck.gpkg.");
+          alert(error.message || "Nie udało się załadować punktów Brysna/Śmieck.");
           return null;
         });
     }
@@ -1149,7 +1157,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   function getBrysnaSmieckPointLabel(feature) {
     const props = feature?.properties || {};
-    return props.name || props.Name || props.nazwa || props.Nazwa || props.label || props.Label || props.id || props.ID || "punkt";
+    return props.name || props.Name || props.nazwa || props.Nazwa || props.label || props.Label || props.id_names || props.id || props.ID || "punkt";
   }
 
   function buildBrysnaSmieckPopup(feature) {
