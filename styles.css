@@ -2477,3 +2477,97 @@ body {
     width: 100%;
   }
 }
+
+.egg-measurements-panel {
+  margin: .75rem 0;
+  padding: .75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .88);
+}
+
+.egg-measurements-panel summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--text);
+  min-height: 2.4rem;
+  display: flex;
+  align-items: center;
+}
+
+.egg-measurements-grid {
+  display: grid;
+  gap: .65rem;
+  margin-top: .6rem;
+}
+
+.egg-measurement-row {
+  display: grid;
+  grid-template-columns: minmax(4.8rem, .35fr) minmax(0, 1fr);
+  align-items: end;
+  gap: .6rem;
+  padding: .6rem;
+  border: 1px solid rgba(148, 163, 184, .55);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.egg-measurement-label {
+  font-weight: 800;
+  color: var(--primary-dark);
+  padding-bottom: .7rem;
+}
+
+.egg-measurement-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .55rem;
+}
+
+.egg-measurement-inputs label {
+  margin: 0;
+  font-size: .9rem;
+  font-weight: 700;
+}
+
+.egg-measurement-inputs input {
+  margin-top: .2rem;
+  width: 100%;
+  min-height: 2.7rem;
+  font-size: 1rem;
+}
+
+.egg-measurement-warning {
+  margin: .55rem 0 0;
+  padding: .55rem .65rem;
+  border: 1px solid var(--warning-border);
+  border-radius: 10px;
+  background: var(--warning-bg);
+  color: #7c2d12;
+  font-weight: 700;
+}
+
+#egg-measurement-add {
+  margin-top: .65rem;
+}
+
+@media (max-width: 430px) {
+  .egg-measurements-panel {
+    padding: .65rem;
+  }
+
+  .egg-measurement-row {
+    grid-template-columns: 1fr;
+    gap: .4rem;
+  }
+
+  .egg-measurement-label {
+    padding-bottom: 0;
+  }
+}
+
+@media (max-width: 340px) {
+  .egg-measurement-inputs {
+    grid-template-columns: 1fr;
+  }
+}
