@@ -497,7 +497,8 @@ button:disabled {
   cursor: not-allowed;
 }
 
-.draft-exit-modal {
+.draft-exit-modal,
+.working-point-modal {
   position: fixed;
   inset: 0;
   z-index: 1200;
@@ -507,7 +508,12 @@ button:disabled {
   background: rgba(15, 23, 42, .48);
 }
 
-.draft-exit-dialog {
+.working-point-modal {
+  z-index: 1500;
+}
+
+.draft-exit-dialog,
+.working-point-dialog {
   width: min(100%, 520px);
   background: #fff;
   color: var(--text);
@@ -515,6 +521,16 @@ button:disabled {
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   padding: 1rem;
+}
+
+.working-point-dialog {
+  display: grid;
+  gap: .65rem;
+}
+
+.working-point-dialog h3,
+.working-point-dialog p {
+  margin: 0;
 }
 
 .draft-exit-dialog p {
@@ -1713,18 +1729,30 @@ summary {
   max-width:none;
   height:100dvh;
   margin:0;
-  padding:calc(.6rem + var(--safe-top)) calc(.65rem + var(--safe-right)) calc(.8rem + var(--safe-bottom)) calc(.65rem + var(--safe-left));
+  padding:0;
   border-radius:0;
-  overflow:auto;
+  overflow:hidden;
 }
-.map-fullscreen-screen .screen-head{
-  padding-right:3.2rem;
+.map-fullscreen-screen .screen-head,
+.map-fullscreen-screen .map-primary-actions,
+.map-fullscreen-screen .map-options-panel,
+.map-fullscreen-screen .map-legend-panel,
+.map-fullscreen-screen .map-records-legend,
+.map-fullscreen-screen .map-measure-panel,
+.map-fullscreen-screen .map-offline-status,
+.map-fullscreen-screen #working-edit-panel,
+.map-fullscreen-screen #working-list-panel{
+  display:none !important;
+}
+.map-fullscreen-screen .map-panel-with-overlay{
+  height:100%;
 }
 .map-fullscreen-screen .map-canvas,
 .map-fullscreen-screen #working-map.map-canvas{
-  height:calc(100dvh - 12rem);
-  min-height:520px;
+  height:100dvh;
+  min-height:100dvh;
   max-height:none;
+  border-radius:0;
 }
 .map-fullscreen-close{
   position:fixed;
@@ -1750,7 +1778,8 @@ summary {
   }
   .map-fullscreen-screen .map-canvas,
   .map-fullscreen-screen #working-map.map-canvas{
-    height:calc(100vh - 12rem);
+    height:100vh;
+    min-height:100vh;
   }
 }
 .map-offline-status{

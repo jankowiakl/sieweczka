@@ -4425,35 +4425,56 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     else workingMap?.setView([52, 19], 7);
   }
   function askWorkingGpsPointDetails() {
-    if (!confirm("Dodać punkt roboczy w miejscu Twojej aktualnej pozycji GPS?")) return null;
-    const choice = prompt(
-      "Wybierz rodzaj punktu:\n1 - do sprawdzenia\n2 - prawdopodobne\n3 - potwierdzone\n4 - odrzucone",
-      "1"
-    );
-    if (choice == null) return null;
-    const normalizedChoice = String(choice).trim().toLowerCase();
-    const statusByChoice = {
-      "1": "do_sprawdzenia",
-      "2": "prawdopodobne",
-      "3": "potwierdzone",
-      "4": "odrzucone",
-      "do sprawdzenia": "do_sprawdzenia",
-      "do_sprawdzenia": "do_sprawdzenia",
-      "prawdopodobne": "prawdopodobne",
-      "potwierdzone": "potwierdzone",
-      "odrzucone": "odrzucone"
-    };
-    const status = statusByChoice[normalizedChoice];
-    if (!status) {
-      alert("Nie rozpoznano rodzaju punktu. Punkt nie został dodany.");
-      return null;
-    }
-    const note = prompt("Notatka do punktu (opcjonalnie, możesz zostawić puste):", "");
-    if (note == null) return null;
-    return { status, note: String(note).trim() };
+    return new Promise((resolve) => {
+      const modal = document.createElement("div");
+      modal.className = "working-point-modal";
+      modal.innerHTML = `
+        <div class="working-point-dialog" role="dialog" aria-modal="true" aria-label="Dodaj punkt roboczy GPS">
+          <h3>Dodaj punkt roboczy z mojego GPS</h3>
+          <p class="muted">Wybierz rodzaj punktu z listy. Punkt zostanie dodany w miejscu Twojej aktualnej pozycji GPS.</p>
+          <label>Rodzaj punktu
+            <select id="working-point-status-choice">
+              <option value="do_sprawdzenia">Do sprawdzenia</option>
+              <option value="prawdopodobne">Prawdopodobne</option>
+              <option value="potwierdzone">Potwierdzone</option>
+              <option value="odrzucone">Odrzucone</option>
+            </select>
+          </label>
+          <label>Notatka (opcjonalnie)
+            <textarea id="working-point-note-choice" rows="2"></textarea>
+          </label>
+          <div class="row-actions">
+            <button type="button" class="primary" data-working-point-choice="add">Dodaj punkt</button>
+            <button type="button" class="ghost" data-working-point-choice="cancel">Anuluj</button>
+          </div>
+        </div>
+      `;
+      const close = (details) => {
+        document.removeEventListener("keydown", onKey);
+        modal.remove();
+        resolve(details);
+      };
+      const onKey = (event) => {
+        if (event.key === "Escape") close(null);
+      };
+      document.addEventListener("keydown", onKey);
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) return close(null);
+        const choice = event.target.closest("[data-working-point-choice]")?.dataset.workingPointChoice;
+        if (choice === "cancel") return close(null);
+        if (choice === "add") {
+          close({
+            status: $("#working-point-status-choice")?.value || "do_sprawdzenia",
+            note: String($("#working-point-note-choice")?.value || "").trim()
+          });
+        }
+      });
+      document.body.appendChild(modal);
+      modal.querySelector("#working-point-status-choice")?.focus();
+    });
   }
-  function addWorkingNestFromGps() {
-    const details = askWorkingGpsPointDetails();
+  async function addWorkingNestFromGps() {
+    const details = await askWorkingGpsPointDetails();
     if (!details) return;
     if (!navigator.geolocation) return alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji.");
     navigator.geolocation.getCurrentPosition(({ coords }) => {
