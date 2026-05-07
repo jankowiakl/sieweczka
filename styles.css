@@ -653,7 +653,7 @@ button svg,
 }
 
 #app {
-  max-width: min(840px, 100vw);
+  max-width: min(840px, 100%);
   margin: 0 auto;
   padding: clamp(.45rem, 2.3vw, .75rem);
   padding-bottom: 6rem;
@@ -1898,14 +1898,16 @@ body {
   overflow-x: hidden;
 }
 
+html.width-loose,
 html.layout-full {
-  --app-max-width: 100vw;
+  --app-max-width: 100%;
   --app-inline-padding: clamp(.35rem, 1.8vw, .7rem);
   --card-max-width: 980px;
   --menu-width: min(88vw, 400px);
   --content-width-scale: 1;
 }
 
+html.width-normal,
 html.layout-normal {
   --app-max-width: 840px;
   --app-inline-padding: clamp(.45rem, 2.3vw, .75rem);
@@ -1914,6 +1916,7 @@ html.layout-normal {
   --content-width-scale: .96;
 }
 
+html.width-compact,
 html.layout-narrow {
   --app-max-width: 760px;
   --app-inline-padding: clamp(.36rem, 1.8vw, .62rem);
@@ -1922,6 +1925,7 @@ html.layout-narrow {
   --content-width-scale: .9;
 }
 
+html.width-xcompact,
 html.layout-xnarrow {
   --app-max-width: 680px;
   --app-inline-padding: clamp(.28rem, 1.4vw, .52rem);
@@ -1930,6 +1934,7 @@ html.layout-xnarrow {
   --content-width-scale: .84;
 }
 
+html.width-minimal,
 html.layout-minimal {
   --app-max-width: 600px;
   --app-inline-padding: clamp(.2rem, 1vw, .42rem);
@@ -1938,6 +1943,7 @@ html.layout-minimal {
   --content-width-scale: .78;
 }
 
+html.viewport-tight.width-minimal,
 html.viewport-tight.layout-minimal,
 html.viewport-tight.ui-minimal {
   --app-inline-padding: .2rem;
@@ -2062,8 +2068,8 @@ button,
 }
 
 .app-menu-panel {
-  width: min(var(--menu-width), calc(100vw - 1rem));
-  max-width: min(var(--menu-width), calc(100vw - 1rem));
+  width: min(var(--menu-width), calc(100% - 1rem));
+  max-width: min(var(--menu-width), calc(100% - 1rem));
   overflow-x: hidden;
 }
 
@@ -2133,16 +2139,19 @@ html.viewport-tight.tiles-auto {
   --home-columns: repeat(2, minmax(0, 1fr));
 }
 
+html.viewport-tight.width-minimal .sticky-actions,
 html.viewport-tight.layout-minimal .sticky-actions,
 html.viewport-tight.ui-minimal .sticky-actions {
   grid-template-columns: 1fr;
 }
 
+html.viewport-tight.width-minimal #save-final,
 html.viewport-tight.layout-minimal #save-final,
 html.viewport-tight.ui-minimal #save-final {
   grid-column: auto;
 }
 
+html.viewport-tight.width-minimal .pct-row,
 html.viewport-tight.layout-minimal .pct-row,
 html.viewport-tight.ui-minimal .pct-row {
   grid-template-columns: minmax(44px, 52px) minmax(0, 1fr) minmax(44px, 52px);
@@ -2207,4 +2216,319 @@ textarea {
     flex: 1 1 0;
     padding-inline: .35rem;
   }
+}
+
+
+/* Global responsive UI hardening for iPhone and small CSS viewports. */
+:root {
+  --button-block-padding: var(--control-padding-y);
+  --button-gap: .4rem;
+  --grid-gap: var(--section-gap);
+  --tile-min-height: clamp(70px, calc(20vw * var(--ui-scale)), 96px);
+  --stat-padding: var(--panel-padding);
+  --modal-padding: var(--panel-padding);
+  --modal-width: min(100%, 420px);
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+@supports not (overflow-x: clip) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+}
+
+#app {
+  width: 100%;
+  max-width: min(var(--app-max-width), 100%);
+  min-width: 0;
+  overflow-x: clip;
+  box-sizing: border-box;
+}
+
+@supports not (overflow-x: clip) {
+  #app { overflow-x: hidden; }
+}
+
+.app-header,
+.header-inner,
+.screen,
+.card,
+.home-hero,
+.home-primary-actions,
+.home-secondary-actions,
+.home-status-grid,
+.home-status-grid > div,
+.home-tile,
+.entry-card,
+.entry-main,
+.entry-actions,
+.record-preview,
+.admin-panel,
+.admin-section,
+.user-card,
+.hidden-record-card,
+.export-panel,
+.sync-panel,
+.progress-wrap,
+.step-header-row,
+.step-jump-actions,
+.step-strip,
+.step-chip,
+.sticky-actions,
+.gps-panel,
+.percent-group,
+.pct-row,
+.photo-input,
+.photo-preview,
+.photo-tile,
+.field-help-card,
+.draft-exit-dialog,
+.app-menu-panel,
+.inline-field,
+.btn-inline,
+.map-toggle,
+.compass-panel,
+.validation-list,
+.validation-error,
+.validation-warning,
+.advanced-panel,
+.row-actions,
+.row-2,
+.entries-list,
+.tile-group,
+.stats-grid,
+.readonly-section,
+.readonly-carousel,
+.leaflet-container,
+.leaflet-control-container {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.home-primary-actions,
+.home-secondary-actions,
+.home-status-grid,
+.entry-actions,
+.sticky-actions,
+.row-actions,
+.row-2,
+.entries-list,
+.tile-group,
+.stats-grid {
+  gap: var(--grid-gap);
+}
+
+.card,
+.stat,
+.home-status-grid > div,
+.home-tile,
+.entry-card,
+.record-preview,
+.gps-panel,
+.percent-group,
+.edit-banner,
+.validation-list,
+.validation-error,
+.validation-warning,
+.photo-input,
+.photo-tile,
+.progress-wrap,
+.advanced-panel,
+.field-help-card,
+.draft-exit-dialog,
+.app-menu-panel,
+.admin-panel,
+.admin-section,
+.user-card,
+.hidden-record-card,
+.export-panel,
+.sync-panel {
+  padding: var(--panel-padding);
+  border-radius: var(--card-radius);
+  overflow-wrap: anywhere;
+}
+
+.card,
+.screen.card {
+  padding: var(--card-padding);
+}
+
+button,
+.button-like {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+  padding-inline: var(--button-inline-padding);
+  padding-block: var(--button-block-padding);
+  gap: var(--button-gap);
+}
+
+.home-primary-actions button,
+.home-secondary-actions button,
+.home-secondary-actions .button-like,
+.entry-actions button,
+.sticky-actions button,
+.step-jump-actions button,
+.row-actions button,
+.row-actions .button-like,
+.app-menu-panel button,
+.app-menu-panel .button-like,
+.tile-group button,
+.btn-inline {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.btn-inline,
+.back-home,
+.step-jump-actions button,
+.entry-actions button,
+.sticky-actions button,
+.app-menu-panel button {
+  white-space: normal;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  font-size: max(16px, 1em);
+}
+
+.icon,
+[class*="icon"],
+button svg,
+.button-like svg,
+.home-tile svg,
+.app-menu-panel svg,
+.help-icon,
+.install-icon,
+.settings-icon,
+.map-toggle svg,
+.compass-panel svg {
+  max-width: var(--icon-size);
+  max-height: var(--icon-size);
+  flex: 0 0 auto;
+}
+
+.icon,
+.help-icon,
+.install-icon,
+.settings-icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  font-size: var(--icon-size);
+}
+
+.home-tile .icon,
+.tile-icon,
+.home-tile svg {
+  width: var(--tile-icon-size);
+  height: var(--tile-icon-size);
+  max-width: var(--tile-icon-size);
+  max-height: var(--tile-icon-size);
+  font-size: var(--tile-icon-size);
+}
+
+.help-icon { width: var(--help-icon-size); height: var(--help-icon-size); font-size: var(--help-icon-size); }
+.compass-panel { --local-compass-size: var(--compass-size); }
+.map-toggle { min-height: var(--map-control-size); }
+
+.step-strip {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.step-header-row,
+.step-jump-actions,
+.inline-field {
+  flex-wrap: wrap;
+}
+
+.pct-row {
+  grid-template-columns: minmax(42px, calc(56px * var(--ui-scale))) minmax(0, 1fr) minmax(42px, calc(56px * var(--ui-scale)));
+}
+
+html.ui-minimal,
+html.width-minimal,
+html.viewport-tight {
+  --app-inline-padding: clamp(.16rem, .8vw, .28rem);
+  --card-padding: clamp(.36rem, 1.2vw, .5rem);
+  --panel-padding: clamp(.32rem, 1vw, .46rem);
+  --section-gap: clamp(.28rem, 1vw, .42rem);
+  --button-inline-padding: clamp(.24rem, 1vw, .38rem);
+  --menu-width: min(70vw, 280px);
+  --grid-gap: clamp(.24rem, 1vw, .38rem);
+}
+
+html.viewport-tight .sticky-actions,
+html.viewport-tight .entry-actions,
+html.viewport-tight .inline-field {
+  grid-template-columns: 1fr;
+}
+
+html.viewport-tight .inline-field {
+  display: grid;
+}
+
+html.viewport-tight .pct-row {
+  grid-template-columns: minmax(42px, 48px) minmax(0, 1fr) minmax(42px, 48px);
+}
+
+html.viewport-tight .step-header-row {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+html.viewport-tight .step-jump-actions {
+  justify-content: stretch;
+}
+
+html.viewport-tight .app-header .header-inner {
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+  gap: var(--grid-gap);
+}
+
+html.tiles-auto .home-primary-actions,
+html.tiles-auto .home-secondary-actions,
+html.tiles-auto .home-status-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr));
+}
+
+html.tiles-two .home-primary-actions,
+html.tiles-two .home-secondary-actions,
+html.tiles-two .home-status-grid,
+html.tiles-compact .home-primary-actions,
+html.tiles-compact .home-secondary-actions,
+html.tiles-compact .home-status-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+html.tiles-one .home-primary-actions,
+html.tiles-one .home-secondary-actions,
+html.tiles-one .home-status-grid {
+  grid-template-columns: 1fr;
+}
+
+html.viewport-tight.tiles-auto .home-primary-actions,
+html.viewport-tight.tiles-auto .home-secondary-actions,
+html.viewport-tight.tiles-auto .home-status-grid,
+html.viewport-tight.tiles-compact .home-primary-actions,
+html.viewport-tight.tiles-compact .home-secondary-actions,
+html.viewport-tight.tiles-compact .home-status-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
