@@ -1624,6 +1624,19 @@ summary {
 .map-options-panel .map-toolbar{
   margin:.2rem 0 .35rem;
 }
+.map-toolbar .map-base-layer-field{
+  flex:0 1 auto;
+  width:auto;
+  max-width:100%;
+  gap:.35rem;
+  font-weight:800;
+}
+.map-toolbar .map-base-layer-field select{
+  flex:0 1 auto;
+  width:auto;
+  min-width:10.5rem;
+  max-width:min(64vw, 16rem);
+}
 .map-legend-panel .map-legend{
   margin:.1rem 0 .35rem;
 }
@@ -2501,6 +2514,17 @@ body {
   #working-user-status,
   #map-user-status {
     flex: 1 1 100%;
+  }
+
+  .map-toolbar .map-base-layer-field {
+    flex: 0 1 auto;
+    width: auto;
+  }
+
+  .map-toolbar .map-base-layer-field select {
+    width: auto;
+    min-width: 10rem;
+    max-width: 62vw;
   }
 
   .measure-toolbar {
