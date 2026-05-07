@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-geoportal-orto-default";
+  const APP_VERSION = "2026.05.07-viewed-orto-cache";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -20,6 +20,13 @@
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
   const PHOTO_SYNC_KEY = "sieweczka-photo-sync-v1";
   const AUTH_STATE_KEY = "sieweczka-auth-v1";
+  const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
+  const GEOPORTAL_ORTO_WMS_URL = "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution";
+  const ORTO_TILE_SIZE = 256;
+  const ORTO_MAX_NEW_TILES_PER_VIEW = 200;
+  const ORTO_MAX_NEW_TILES_PER_SESSION = 3000;
+  const ORTO_CACHE_CONCURRENCY = 4;
+  const ORTO_CACHE_DEBOUNCE_MS = 700;
   let deferredInstallPrompt = null;
 
   function getClientId() {
@@ -238,7 +245,7 @@
   async function clearAppCaches() {
     if (!("caches" in window)) return [];
     const keys = await caches.keys();
-    const appKeys = keys.filter((key) => key.startsWith("sieweczka-"));
+    const appKeys = keys.filter((key) => key.startsWith("sieweczka-") && key !== ORTO_OFFLINE_CACHE);
     await Promise.all(appKeys.map((key) => caches.delete(key)));
     return appKeys;
   }
@@ -987,6 +994,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
+  const ortoCacheState = {
+    records: { enabled: false, running: false, pending: false, timer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, offlineLayer: null },
+    working: { enabled: false, running: false, pending: false, timer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, offlineLayer: null }
+  };
 
   function getCachedPhotoUrl(ref) {
     const cached = photoUrlCache.get(String(ref || ""));
@@ -2586,16 +2597,285 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return [a, b];
   }
 
+  function tileToMercatorBbox(x, y, z) {
+    const originShift = 20037508.342789244;
+    const tileCount = 2 ** z;
+    const tileSpan = (originShift * 2) / tileCount;
+    const minx = -originShift + x * tileSpan;
+    const maxx = -originShift + (x + 1) * tileSpan;
+    const maxy = originShift - y * tileSpan;
+    const miny = originShift - (y + 1) * tileSpan;
+    return [minx, miny, maxx, maxy];
+  }
+
+  function createGeoportalWmsTileUrl(x, y, z) {
+    const bbox = tileToMercatorBbox(x, y, z).map((value) => value.toFixed(6)).join(",");
+    const params = new URLSearchParams({
+      service: "WMS",
+      request: "GetMap",
+      version: "1.3.0",
+      layers: "Raster",
+      styles: "",
+      format: "image/jpeg",
+      transparent: "false",
+      crs: "EPSG:3857",
+      width: String(ORTO_TILE_SIZE),
+      height: String(ORTO_TILE_SIZE),
+      bbox
+    });
+    return `${GEOPORTAL_ORTO_WMS_URL}?${params.toString()}`;
+  }
+
+  function createGeoportalOfflineTileLayer() {
+    const OfflineOrtoLayer = L.TileLayer.extend({
+      getTileUrl(coords) {
+        return createGeoportalWmsTileUrl(coords.x, coords.y, coords.z);
+      }
+    });
+    return new OfflineOrtoLayer("", {
+      tileSize: ORTO_TILE_SIZE,
+      maxZoom: 21,
+      attribution: "Ortofotomapa offline: Geoportal / GUGiK"
+    });
+  }
+
+  function getOrtoCacheStatusEl(mapId) {
+    return $(`#${mapId}-orto-cache-status`);
+  }
+
+  function setOrtoCacheStatus(mapId, message) {
+    const el = getOrtoCacheStatusEl(mapId);
+    if (el) el.textContent = message;
+  }
+
+  async function ensureOrtoStoragePersistence(mapId) {
+    if (!navigator.storage?.persist) return;
+    try {
+      await navigator.storage.persist();
+      setOrtoCacheStatus(mapId, "Zapisane kafle są przechowywane lokalnie w telefonie. System może je usunąć, gdy zabraknie miejsca, ale aplikacja nie usuwa ich sama.");
+    } catch (error) {
+      console.warn(error);
+    }
+  }
+
+  function getVisibleTilePlan(map) {
+    const z = Math.round(map.getZoom());
+    const bounds = map.getBounds();
+    const northWest = map.project(bounds.getNorthWest(), z);
+    const southEast = map.project(bounds.getSouthEast(), z);
+    const min = northWest.divideBy(ORTO_TILE_SIZE).floor();
+    const max = southEast.divideBy(ORTO_TILE_SIZE).floor();
+    const tileCount = 2 ** z;
+    const tiles = [];
+    for (let x = min.x - 1; x <= max.x + 1; x++) {
+      const wrappedX = ((x % tileCount) + tileCount) % tileCount;
+      for (let y = Math.max(0, min.y - 1); y <= Math.min(tileCount - 1, max.y + 1); y++) {
+        tiles.push({ x: wrappedX, y, z, url: createGeoportalWmsTileUrl(wrappedX, y, z) });
+      }
+    }
+    return { z, tiles };
+  }
+
+  async function hasCachedTile(url) {
+    if (!("caches" in window)) return false;
+    const cache = await caches.open(ORTO_OFFLINE_CACHE);
+    return !!(await cache.match(url));
+  }
+
+  async function cacheTileUrl(url) {
+    const cache = await caches.open(ORTO_OFFLINE_CACHE);
+    const cached = await cache.match(url);
+    if (cached) return "skipped";
+    let response;
+    try {
+      response = await fetch(url);
+      if (!response || !response.ok) throw new Error(`HTTP ${response?.status || 0}`);
+    } catch {
+      response = await fetch(url, { mode: "no-cors" });
+      if (!response || (response.type !== "opaque" && !response.ok)) throw new Error(`HTTP ${response?.status || 0}`);
+    }
+    await cache.put(url, response.clone());
+    return "saved";
+  }
+
+  async function runOrtoQueue(tasks, worker) {
+    let index = 0;
+    const workers = Array.from({ length: Math.min(ORTO_CACHE_CONCURRENCY, tasks.length) }, async () => {
+      while (index < tasks.length) {
+        const task = tasks[index++];
+        await worker(task);
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  async function cacheCurrentMapView(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state || !map || !("caches" in window)) return;
+    if (state.running) {
+      state.pending = true;
+      return;
+    }
+    state.running = true;
+    state.pending = false;
+    state.lastError = "";
+    let saved = 0;
+    let skipped = 0;
+    try {
+      const plan = getVisibleTilePlan(map);
+      state.lastZoom = plan.z;
+      setOrtoCacheStatus(mapId, "Zapisuję widoczne kafle ortofoto...");
+      const cache = await caches.open(ORTO_OFFLINE_CACHE);
+      const missing = [];
+      for (const tile of plan.tiles) {
+        if (await cache.match(tile.url)) {
+          skipped++;
+        } else {
+          missing.push(tile);
+        }
+      }
+      if (!missing.length) {
+        state.skippedSession += skipped;
+        await updateViewedOrtoCacheDiagnostics(mapId, `Ten widok jest dostępny offline. Pominięto ${skipped} kafli, bo już były zapisane.`);
+        return;
+      }
+      if (missing.length > ORTO_MAX_NEW_TILES_PER_VIEW || state.savedSession >= ORTO_MAX_NEW_TILES_PER_SESSION) {
+        await updateViewedOrtoCacheDiagnostics(mapId, "Limit zapisu ortofoto osiągnięty. Zmień zoom albo wyłącz i włącz ponownie.");
+        return;
+      }
+      const allowed = Math.min(missing.length, ORTO_MAX_NEW_TILES_PER_VIEW, ORTO_MAX_NEW_TILES_PER_SESSION - state.savedSession);
+      const queue = missing.slice(0, allowed);
+      await runOrtoQueue(queue, async (tile) => {
+        try {
+          const result = await cacheTileUrl(tile.url);
+          if (result === "saved") saved++;
+          else skipped++;
+          state.savedSession += result === "saved" ? 1 : 0;
+          state.skippedSession += result === "skipped" ? 1 : 0;
+          setOrtoCacheStatus(mapId, `Zapisuję widoczne kafle ortofoto... zapisano ${saved}, pominięto ${skipped}.`);
+        } catch (error) {
+          state.lastError = error.message || String(error);
+        }
+      });
+      state.skippedSession += skipped;
+      await updateViewedOrtoCacheDiagnostics(mapId, `Zapisano ${saved} nowych kafli. Pominięto ${skipped} kafli, bo już były zapisane. Ten widok powinien działać offline.`);
+    } catch (error) {
+      state.lastError = error.message || String(error);
+      await updateViewedOrtoCacheDiagnostics(mapId, `Błąd zapisu ortofoto: ${state.lastError}`);
+    } finally {
+      state.running = false;
+      if (state.pending && state.enabled) {
+        state.pending = false;
+        cacheCurrentMapView(map, mapId);
+      }
+    }
+  }
+
+  function scheduleViewedOrtoCache(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state?.enabled) return;
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => cacheCurrentMapView(map, mapId), ORTO_CACHE_DEBOUNCE_MS);
+  }
+
+  function enableViewedOrtoCaching(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state) return;
+    state.enabled = true;
+    ensureOrtoStoragePersistence(mapId);
+    setOrtoCacheStatus(mapId, "Zapis oglądanej ortofotomapy włączony. Przesuwaj mapę — widoczne miejsca zostaną zapisane offline.");
+    scheduleViewedOrtoCache(map, mapId);
+  }
+
+  function disableViewedOrtoCaching(mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state) return;
+    state.enabled = false;
+    clearTimeout(state.timer);
+    setOrtoCacheStatus(mapId, "Offline ortofoto: wyłączone");
+  }
+
+  async function clearViewedOrtoCache() {
+    if (!("caches" in window)) return false;
+    return caches.delete(ORTO_OFFLINE_CACHE);
+  }
+
+  async function getViewedOrtoCacheSummary() {
+    if (!("caches" in window)) return { count: 0 };
+    const cache = await caches.open(ORTO_OFFLINE_CACHE);
+    const keys = await cache.keys();
+    return { count: keys.length };
+  }
+
+  async function updateViewedOrtoCacheDiagnostics(mapId, prefix = "") {
+    const state = ortoCacheState[mapId];
+    const summary = await getViewedOrtoCacheSummary();
+    const message = [
+      prefix,
+      `Kafle offline: ${summary.count}.`,
+      `Sesja: zapisano ${state?.savedSession || 0}, pominięto ${state?.skippedSession || 0}.`,
+      `Zoom cache: ${state?.lastZoom ?? "—"}.`,
+      `Status: ${navigator.onLine ? "online" : "offline"}.`,
+      state?.lastError ? `Ostatni błąd: ${state.lastError}.` : ""
+    ].filter(Boolean).join(" ");
+    setOrtoCacheStatus(mapId, message);
+  }
+
+  async function switchToOfflineOrtoIfNeeded(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!map || navigator.onLine || !state?.offlineLayer) return;
+    const summary = await getViewedOrtoCacheSummary();
+    if (summary.count > 0) {
+      state.offlineLayer.addTo(map);
+      setOrtoCacheStatus(mapId, "Brak internetu. Pokazuję zapisane kafle offline.");
+    } else {
+      setOrtoCacheStatus(mapId, "Brak kafli offline dla tego widoku.");
+    }
+  }
+
+  function initViewedOrtoCacheTools(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state || state.bound) return;
+    state.bound = true;
+    const toggle = $(`#${mapId}-orto-cache-toggle`);
+    const clearBtn = $(`#${mapId}-orto-cache-clear`);
+    toggle?.addEventListener("change", () => {
+      if (toggle.checked) enableViewedOrtoCaching(map, mapId);
+      else disableViewedOrtoCaching(mapId);
+    });
+    clearBtn?.addEventListener("click", async () => {
+      await clearViewedOrtoCache();
+      for (const item of Object.values(ortoCacheState)) {
+        item.savedSession = 0;
+        item.skippedSession = 0;
+        item.lastError = "";
+      }
+      await updateViewedOrtoCacheDiagnostics(mapId, "Usunięto ortofotomapę offline.");
+      const otherMapId = mapId === "records" ? "working" : "records";
+      await updateViewedOrtoCacheDiagnostics(otherMapId, "Usunięto ortofotomapę offline.");
+    });
+    map.on("moveend zoomend", () => scheduleViewedOrtoCache(map, mapId));
+    window.addEventListener("online", () => updateViewedOrtoCacheDiagnostics(mapId));
+    window.addEventListener("offline", () => {
+      switchToOfflineOrtoIfNeeded(map, mapId);
+      updateViewedOrtoCacheDiagnostics(mapId, "Brak internetu. Pokazuję zapisane kafle offline.");
+    });
+    updateViewedOrtoCacheDiagnostics(mapId, "Offline ortofoto: wyłączone.");
+  }
+
 
   function createBaseLayers() {
     const geoportalOrto = createGeoportalOrtoLayer();
+    const geoportalOffline = createGeoportalOfflineTileLayer();
     const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
     const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
     const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
     return {
       defaultLayer: geoportalOrto,
+      offlineLayer: geoportalOffline,
       layers: {
         "Ortofotomapa Geoportal": geoportalOrto,
+        "Ortofotomapa offline": geoportalOffline,
         "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }),
         "Esri Imagery + Labels": esriImgLbl,
         "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
@@ -2611,7 +2891,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   function createGeoportalOrtoLayer() {
     return L.tileLayer.wms(
-      "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution",
+      GEOPORTAL_ORTO_WMS_URL,
       {
         layers: "Raster",
         styles: "",
@@ -2732,7 +3012,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       recordsMap = L.map(mapEl, { layers: [base.defaultLayer] });
       recordsMap.attributionControl.setPrefix("");
       L.control.layers(base.layers).addTo(recordsMap);
+      ortoCacheState.records.offlineLayer = base.offlineLayer;
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
+      initViewedOrtoCacheTools(recordsMap, "records");
+      switchToOfflineOrtoIfNeeded(recordsMap, "records");
     }
     if ($("#records-grid-toggle")?.checked) {
       if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
@@ -3533,7 +3816,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       workingMap = L.map(mapEl, { layers: [base.defaultLayer] });
       workingMap.attributionControl.setPrefix("");
       L.control.layers(base.layers).addTo(workingMap);
+      ortoCacheState.working.offlineLayer = base.offlineLayer;
       workingLayer = L.layerGroup().addTo(workingMap);
+      initViewedOrtoCacheTools(workingMap, "working");
+      switchToOfflineOrtoIfNeeded(workingMap, "working");
     }
     if ($("#working-grid-toggle")?.checked) {
       if (!workingGridLayer) void addGridToMap(workingMap, "working");

@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=2026.05.07-geoportal-orto-default" />
+  <link rel="stylesheet" href="styles.css?v=2026.05.07-viewed-orto-cache" />
 </head>
 <body>
   <noscript>
@@ -272,6 +272,9 @@
         <button id="map-enable-heading" type="button" aria-pressed="false">Kierunek: wyłączony</button>
         <label class="inline-check map-toggle"><input id="records-grid-toggle" type="checkbox" checked /> Pokaż grid</label>
         <label class="inline-check map-toggle"><input id="records-species-labels-toggle" type="checkbox" checked /> Pokaż gatunki</label>
+        <label class="inline-check map-toggle"><input id="records-orto-cache-toggle" type="checkbox" /> Zapisuj oglądaną ortofoto offline</label>
+        <button id="records-orto-cache-clear" type="button">Usuń ortofoto offline</button>
+        <span id="records-orto-cache-status" class="muted">Offline ortofoto: wyłączone</span>
         <span id="map-user-status" class="muted">Twoja pozycja: oczekiwanie…</span>
       </div>
       <div class="map-legend muted"><span class="legend-dot g">G</span> — gniazdo • <span class="legend-dot k">K</span> — kontrola / punkt losowy</div>
@@ -287,6 +290,9 @@
         <button id="working-fit" type="button">Dopasuj widok</button><button id="working-nearest" type="button">Najbliższe robocze</button>
         <label class="inline-check map-toggle"><input id="working-grid-toggle" type="checkbox" checked /> Pokaż grid</label>
         <label class="inline-check map-toggle"><input id="working-notes-toggle" type="checkbox" checked /> Pokaż notatki</label>
+        <label class="inline-check map-toggle"><input id="working-orto-cache-toggle" type="checkbox" /> Zapisuj oglądaną ortofoto offline</label>
+        <button id="working-orto-cache-clear" type="button">Usuń ortofoto offline</button>
+        <span id="working-orto-cache-status" class="muted">Offline ortofoto: wyłączone</span>
         <span id="working-user-status" class="muted">Twoja pozycja: oczekiwanie…</span><button id="working-show-map" type="button">Mapa</button><button id="working-show-list" type="button">Lista</button>
       </div>
       <div class="map-legend working-legend muted">
@@ -839,8 +845,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="app.js?v=2026.05.07-geoportal-orto-default"></script>
-  <script src="field-help.js?v=2026.05.07-geoportal-orto-default"></script>
+  <script src="app.js?v=2026.05.07-viewed-orto-cache"></script>
+  <script src="field-help.js?v=2026.05.07-viewed-orto-cache"></script>
   <script>
   (() => {
     "use strict";
