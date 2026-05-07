@@ -44,9 +44,13 @@ html.font-xlarge {
 }
 
 html.ui-compact {
-  --ui-scale: .88;
-  --tile-padding: clamp(0.65rem, 2.4vw, 0.95rem);
-  --space-scale: .85;
+  --ui-scale: .82;
+  --tile-padding: clamp(0.52rem, 1.8vw, 0.78rem);
+  --button-font-size: clamp(0.9rem, 2.8vw, 1rem);
+  --button-min-height: clamp(2.2rem, 6.5vw, 2.65rem);
+  --control-padding-y: clamp(0.42rem, 1.4vw, 0.62rem);
+  --control-padding-x: clamp(0.52rem, 1.8vw, 0.78rem);
+  --space-scale: .72;
 }
 
 html.ui-normal {
@@ -60,8 +64,8 @@ html.ui-large {
 }
 
 html.icons-small {
-  --icon-size: clamp(1.05rem, 4vw, 1.35rem);
-  --tile-icon-size: clamp(1.2rem, 4.5vw, 1.55rem);
+  --icon-size: clamp(0.95rem, 3vw, 1.2rem);
+  --tile-icon-size: clamp(1.05rem, 3.5vw, 1.35rem);
 }
 
 html.icons-normal {
@@ -91,6 +95,45 @@ html.buttons-large {
   --button-min-height: clamp(2.7rem, 8.4vw, 3.5rem);
   --control-padding-y: clamp(0.7rem, 2.2vw, 1rem);
   --control-padding-x: clamp(0.8rem, 2.8vw, 1.1rem);
+}
+
+html.viewport-narrow {
+  --ui-scale: .84;
+  --tile-padding: clamp(0.5rem, 1.9vw, 0.78rem);
+  --button-font-size: clamp(0.9rem, 2.9vw, 1rem);
+  --button-min-height: clamp(2.25rem, 6.8vw, 2.75rem);
+  --control-padding-y: clamp(0.42rem, 1.5vw, 0.64rem);
+  --control-padding-x: clamp(0.52rem, 1.9vw, 0.82rem);
+  --space-scale: .75;
+}
+
+html.viewport-narrow.ui-large {
+  --ui-scale: .94;
+  --tile-padding: clamp(0.62rem, 2.2vw, 0.9rem);
+  --button-font-size: clamp(0.96rem, 3.1vw, 1.06rem);
+  --button-min-height: clamp(2.4rem, 7.2vw, 2.95rem);
+  --control-padding-y: clamp(0.5rem, 1.7vw, 0.72rem);
+  --control-padding-x: clamp(0.62rem, 2.1vw, 0.9rem);
+  --space-scale: .86;
+}
+
+html.ui-compact.buttons-normal,
+html.ui-compact.buttons-large,
+html.ui-compact.buttons-small {
+  --button-font-size: clamp(0.9rem, 2.8vw, 1rem);
+  --button-min-height: clamp(2.2rem, 6.5vw, 2.65rem);
+  --control-padding-y: clamp(0.42rem, 1.4vw, 0.62rem);
+  --control-padding-x: clamp(0.52rem, 1.8vw, 0.78rem);
+}
+
+html.viewport-narrow.ui-compact {
+  --ui-scale: .78;
+  --tile-padding: clamp(0.46rem, 1.6vw, 0.68rem);
+  --button-font-size: clamp(0.88rem, 2.7vw, .98rem);
+  --button-min-height: clamp(2.15rem, 6.4vw, 2.55rem);
+  --control-padding-y: clamp(0.38rem, 1.3vw, 0.58rem);
+  --control-padding-x: clamp(0.48rem, 1.7vw, 0.74rem);
+  --space-scale: .66;
 }
 
 * {
@@ -215,9 +258,10 @@ button:disabled {
 
 .app-menu-panel {
   box-sizing: border-box;
-  width: min(92vw, 420px);
-  max-width: 420px;
-  max-height: min(88vh, 760px);
+  width: min(88vw, 400px);
+  max-width: 400px;
+  max-height: min(82vh, 720px);
+  max-height: min(82svh, 720px);
   overflow-y: auto;
   overscroll-behavior: contain;
   display: grid;
@@ -247,23 +291,35 @@ button:disabled {
   font-size: clamp(1.1rem, 4vw, 1.35rem);
 }
 
-@media (max-width: 420px) {
+@media (max-width: 430px) {
   .app-menu-modal {
-    place-items: start center;
-    padding: calc(max(env(safe-area-inset-top, 0px), 0px) + .5rem) max(.5rem, env(safe-area-inset-right, 0px)) .5rem max(.5rem, env(safe-area-inset-left, 0px));
+    place-items: start end;
+    padding: calc(max(env(safe-area-inset-top, 0px), 0px) + .5rem) max(.65rem, env(safe-area-inset-right, 0px)) .5rem max(.5rem, env(safe-area-inset-left, 0px));
   }
 
   .app-menu-panel {
-    width: min(94vw, 420px);
-    max-height: min(86vh, 720px);
+    width: min(84vw, 360px);
+    max-height: min(78vh, 680px);
+    max-height: min(78svh, 680px);
+    gap: .35rem;
     border-radius: 13px;
+    padding: clamp(0.58rem, 2vw, 0.85rem);
   }
 
   .app-menu-panel button,
   .app-menu-panel .button-like {
-    min-height: clamp(2.35rem, 9vw, 3rem);
-    padding: clamp(0.5rem, 2vw, 0.75rem);
-    font-size: clamp(0.92rem, 3.8vw, 1.05rem);
+    min-height: clamp(2.45rem, 10vw, 2.75rem);
+    padding: clamp(0.42rem, 1.7vw, 0.62rem);
+    gap: .35rem;
+    font-size: clamp(0.94rem, 3vw, 1rem);
+  }
+}
+
+@media (max-width: 390px) {
+  .app-menu-panel {
+    width: min(82vw, 340px);
+    max-height: min(76vh, 650px);
+    max-height: min(76svh, 650px);
   }
 }
 
@@ -600,10 +656,69 @@ label span,
   }
   .home-hero {
     display: grid;
+    gap: .45rem;
+    margin-bottom: clamp(.5rem, calc(2vw * var(--space-scale)), .8rem);
+  }
+  .home-hero h2 {
+    font-size: clamp(1.35rem, 4.2vw, 1.8rem);
   }
   .home-user-summary {
     text-align: left;
   }
+  .home-primary-actions,
+  .home-secondary-actions,
+  .home-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .home-primary-actions {
+    gap: clamp(.42rem, calc(1.7vw * var(--space-scale)), .6rem);
+  }
+  .home-secondary-actions,
+  .home-status-grid {
+    gap: clamp(.38rem, calc(1.5vw * var(--space-scale)), .55rem);
+  }
+  .home-status-grid > div {
+    padding: clamp(.45rem, 1.8vw, .65rem);
+  }
+  .home-tile {
+    min-height: clamp(64px, calc(18vw * var(--ui-scale)), 86px);
+  }
+  .home-tile strong {
+    font-size: clamp(.94rem, 3vw, 1.03rem);
+  }
+  .home-tile span {
+    font-size: clamp(.76rem, 2.6vw, .86rem);
+    line-height: 1.25;
+  }
+}
+
+@media (min-width: 380px) and (max-width: 430px) {
+  #home-screen.card {
+    padding: clamp(.7rem, 2.4vw, .95rem);
+  }
+  .home-hero h2 {
+    font-size: clamp(1.35rem, 4vw, 1.65rem);
+  }
+  .home-primary-actions,
+  .home-secondary-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .42rem;
+  }
+  .home-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .4rem;
+  }
+  .home-tile {
+    min-height: clamp(62px, calc(16vw * var(--ui-scale)), 78px);
+    padding: clamp(.48rem, 1.7vw, .68rem);
+  }
+  .home-tile span {
+    font-size: .76rem;
+    line-height: 1.2;
+  }
+}
+
+@media (max-width: 370px) {
   .home-primary-actions,
   .home-secondary-actions,
   .home-status-grid {
@@ -1289,10 +1404,10 @@ summary {
 
   .home-primary-actions,
   .home-secondary-actions {
-    gap: .5rem;
+    gap: .42rem;
   }
 
   .home-tile {
-    min-height: clamp(68px, calc(22vw * var(--ui-scale)), 88px);
+    min-height: clamp(62px, calc(16vw * var(--ui-scale)), 78px);
   }
 }

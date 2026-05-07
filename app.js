@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-responsive-ui-1";
+  const APP_VERSION = "2026.05.07-responsive-ui-2";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
 
@@ -46,7 +46,21 @@
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
   function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
   function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
+  function getLayoutBreakpoint() {
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    if (width <= 430) return "narrow";
+    if (width >= 760) return "wide";
+    return "standard";
+  }
+
+  function updateViewportLayoutClasses() {
+    const narrow = (window.innerWidth || document.documentElement.clientWidth || 0) <= 430;
+    document.documentElement.classList.toggle("viewport-narrow", narrow);
+    return narrow;
+  }
+
   function applyUiSettings() {
+    updateViewportLayoutClasses();
     const settings = getUiSettings();
     const size = settings.fontSize || "normal";
     const uiScale = settings.uiScale || "normal";
@@ -302,10 +316,13 @@
         `devicePixelRatio: <strong>${window.devicePixelRatio || 1}</strong>`,
         `PWA standalone: <strong>${isStandaloneApp() ? "tak" : "nie"}</strong>`,
         `APP_VERSION: <strong>${escapeHtml(APP_VERSION)}</strong>`,
+        `viewport-narrow: <strong>${document.documentElement.classList.contains("viewport-narrow") ? "tak" : "nie"}</strong>`,
+        `layout breakpoint: <strong>${escapeHtml(getLayoutBreakpoint())}</strong>`,
         `Rozmiar tekstu: <strong>${escapeHtml(settings.fontSize || "normal")}</strong>`,
         `Skala interfejsu: <strong>${escapeHtml(settings.uiScale || "normal")}</strong>`,
         `Rozmiar przycisków: <strong>${escapeHtml(settings.buttonSize || "normal")}</strong>`,
         `Rozmiar ikon: <strong>${escapeHtml(settings.iconSize || "normal")}</strong>`,
+        `Klasy UI: <span>${escapeHtml(Array.from(document.documentElement.classList).filter((name) => /^(font|ui|buttons|icons)-/.test(name) || name === "viewport-narrow").join(" ") || "—")}</span>`,
         `UserAgent: <span>${escapeHtml(shortUserAgent)}</span>`
       ].join("<br>");
     }
@@ -3394,6 +3411,21 @@
     });
   }
 
+  function setupViewportLayoutWatcher() {
+    let frame = 0;
+    const refresh = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        updateViewportLayoutClasses();
+        renderUserPanel();
+      });
+    };
+    updateViewportLayoutClasses();
+    window.addEventListener("resize", refresh, { passive: true });
+    window.addEventListener("orientationchange", refresh, { passive: true });
+  }
+
   function setupPwaInstall() {
     window.addEventListener("beforeinstallprompt", (event) => {
       event.preventDefault();
@@ -3419,6 +3451,7 @@
 
   function init() {
     migrateLegacyEntries();
+    setupViewportLayoutWatcher();
     applyUiSettings();
     setupPercentGroups();
     setupTiles();
