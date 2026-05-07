@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=2026.05.07-menu-overlay-map-polish-v1" />
+  <link rel="stylesheet" href="styles.css?v=2026.05.07-menu-export-screen-v1" />
 </head>
 <body>
   <noscript>
@@ -83,16 +83,19 @@
         <button id="open-admin" type="button" hidden>Administrator</button>
       </div>
 
-      <section id="home-export-panel" class="advanced-panel" hidden>
-        <div class="row-actions">
-          <button id="export-csv" type="button">Eksport CSV</button>
-          <button id="export-json" type="button">Eksport JSON</button>
-          <button id="export-zip" type="button">Eksport bez zdjęć</button>
-          <button id="export-zip-photos" type="button">Eksport ze zdjęciami</button>
-          <button id="export-kml" type="button">Eksport KML</button>
-        </div>
-      </section>
+    </section>
 
+    <section id="export-screen" class="screen card" hidden>
+      <div class="screen-head"><button type="button" id="export-back">← Menu</button><h2>Eksport danych</h2></div>
+      <p class="muted">Wybierz format eksportu. Eksport nie usuwa rekordów, zdjęć ani danych lokalnych.</p>
+      <div class="row-actions export-actions">
+        <button id="export-csv" type="button">Eksport CSV</button>
+        <button id="export-json" type="button">Eksport JSON</button>
+        <button id="export-zip" type="button">Eksport bez zdjęć</button>
+        <button id="export-zip-photos" type="button">Eksport ze zdjęciami</button>
+        <button id="export-kml" type="button">Eksport KML</button>
+      </div>
+      <p id="export-screen-status" class="muted"></p>
     </section>
 
     <section id="user-screen" class="screen card" hidden>
@@ -947,8 +950,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="app.js?v=2026.05.07-menu-overlay-map-polish-v1"></script>
-  <script src="field-help.js?v=2026.05.07-menu-overlay-map-polish-v1"></script>
+  <script src="app.js?v=2026.05.07-menu-export-screen-v1"></script>
+  <script src="field-help.js?v=2026.05.07-menu-export-screen-v1"></script>
   <script>
   (() => {
     "use strict";

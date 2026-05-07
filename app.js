@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-menu-overlay-map-polish-v1";
+  const APP_VERSION = "2026.05.07-menu-export-screen-v1";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -512,6 +512,10 @@
       }
     };
     document.addEventListener("keydown", onKey);
+    const closeForNavigation = () => {
+      document.removeEventListener("keydown", onKey);
+      closeAppMenu();
+    };
     modal.addEventListener("click", async (event) => {
       if (event.target === modal) return;
       if (event.target.closest("a")) return;
@@ -519,14 +523,14 @@
       const action = actionButton?.dataset.menuAction;
       if (!action) return;
       if (action === "close") { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
-      const needsFormExit = ["home", "settings", "admin", "install"].includes(action);
+      const needsFormExit = ["home", "settings", "admin", "export", "install"].includes(action);
       if (needsFormExit && !$("#form-screen")?.hidden) {
         const leftForm = await goHomeFromMaybeForm();
         if (!leftForm) return;
       }
-      if (action === "home") showView("home");
-      if (action === "settings") { userPanelReturnToMenu = true; renderUserPanel(); showView("user"); }
-      if (action === "admin") { showView("admin"); await loadAdminUsers({ force: true }).catch((error) => { $("#admin-users-status").textContent = `Błąd: ${error.message}`; }); }
+      if (action === "home") { closeForNavigation(); showView("home"); }
+      if (action === "settings") { closeForNavigation(); userPanelReturnToMenu = true; renderUserPanel(); showView("user"); }
+      if (action === "admin") { closeForNavigation(); showView("admin"); await loadAdminUsers({ force: true }).catch((error) => { $("#admin-users-status").textContent = `Błąd: ${error.message}`; }); }
       if (action === "sync") {
         const previousText = actionButton.textContent;
         actionButton.textContent = "Synchronizuję...";
@@ -547,11 +551,13 @@
         }
       }
       if (action === "export") {
-        await exportZip({ includePhotos: false }).catch((error) => alert(`Eksport nie powiódł się: ${error.message || error}`));
+        closeForNavigation();
+        exportPanelReturnToMenu = true;
+        showView("export");
       }
-      if (action === "install") { userPanelReturnToMenu = true; renderUserPanel(); showView("user"); await installApp(); }
+      if (action === "install") { closeForNavigation(); userPanelReturnToMenu = true; renderUserPanel(); showView("user"); await installApp(); }
       if (action === "refresh") $("#refresh-app-version")?.click();
-      if (action === "logout") $("#logout")?.click();
+      if (action === "logout") { closeForNavigation(); $("#logout")?.click(); }
     });
     document.body.appendChild(modal);
     modal.querySelector("[data-menu-action='close']")?.focus();
@@ -986,6 +992,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let readonlyUid = null;
   let editReturnToReadonly = false;
   let userPanelReturnToMenu = false;
+  let exportPanelReturnToMenu = false;
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
@@ -1820,6 +1827,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-map-screen").hidden = name !== "working-map";
     $("#form-screen").hidden = name !== "form";
     $("#user-screen").hidden = name !== "user";
+    $("#export-screen").hidden = name !== "export";
     $("#admin-screen").hidden = name !== "admin";
     if (name === "map") setTimeout(() => renderRecordsMap(mapFocusUid), 0);
     if (name === "working-map") setTimeout(() => renderWorkingMap(), 0);
@@ -3763,6 +3771,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         setTimeout(openAppMenu, 0);
       }
     });
+    $("#export-back")?.addEventListener("click", () => {
+      showView("home");
+      if (exportPanelReturnToMenu) {
+        exportPanelReturnToMenu = false;
+        setTimeout(openAppMenu, 0);
+      }
+    });
     $("#resume-draft")?.addEventListener("click", () => {
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
     });
@@ -4154,7 +4169,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function setExportStatus(message) {
-    const status = $("#sync-status");
+    const status = $("#export-screen-status") || $("#sync-status");
     if (status) status.textContent = message;
   }
 
