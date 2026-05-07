@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=2026.05.07-viewed-orto-cache" />
+  <link rel="stylesheet" href="styles.css?v=2026.05.07-map-measure-shared-orto-cache" />
 </head>
 <body>
   <noscript>
@@ -273,12 +273,28 @@
         <label class="inline-check map-toggle"><input id="records-grid-toggle" type="checkbox" checked /> Pokaż grid</label>
         <label class="inline-check map-toggle"><input id="records-species-labels-toggle" type="checkbox" checked /> Pokaż gatunki</label>
         <label class="inline-check map-toggle"><input id="records-orto-cache-toggle" type="checkbox" /> Zapisuj oglądaną ortofoto offline</label>
-        <button id="records-orto-cache-clear" type="button">Usuń ortofoto offline</button>
         <span id="records-orto-cache-status" class="muted">Offline ortofoto: wyłączone</span>
         <span id="map-user-status" class="muted">Twoja pozycja: oczekiwanie…</span>
       </div>
+      <details class="offline-cache-danger-zone">
+        <summary>Zaawansowane / pamięć offline</summary>
+        <button id="records-orto-cache-clear" class="danger" type="button">Usuń ortofoto offline</button>
+      </details>
       <div class="map-legend muted"><span class="legend-dot g">G</span> — gniazdo • <span class="legend-dot k">K</span> — kontrola / punkt losowy</div>
       <div id="records-map" class="map-canvas"></div>
+      <div id="records-measure-toolbar" class="measure-toolbar" aria-label="Narzędzia pomiarowe mapy rekordów">
+        <label>Pomiar
+          <select id="records-measure-mode">
+            <option value="off">Wyłączony</option>
+            <option value="line">Linijka</option>
+            <option value="polygon">Poligon</option>
+          </select>
+        </label>
+        <button id="records-measure-undo" type="button">Cofnij punkt</button>
+        <button id="records-measure-clear" type="button">Wyczyść</button>
+        <button id="records-measure-finish" type="button">Zakończ</button>
+        <strong id="records-measure-result" class="measure-result">Pomiar wyłączony</strong>
+      </div>
     </section>
     <section id="working-map-screen" class="screen card" hidden>
       <div class="screen-head"><button type="button" id="working-map-back">← Wróć</button><h2>Mapa gniazd roboczych</h2></div>
@@ -330,6 +346,19 @@
         </form>
       </section>
       <div id="working-map-panel"><div id="working-map" class="map-canvas"></div></div>
+      <div id="working-measure-toolbar" class="measure-toolbar" aria-label="Narzędzia pomiarowe mapy gniazd roboczych">
+        <label>Pomiar
+          <select id="working-measure-mode">
+            <option value="off">Wyłączony</option>
+            <option value="line">Linijka</option>
+            <option value="polygon">Poligon</option>
+          </select>
+        </label>
+        <button id="working-measure-undo" type="button">Cofnij punkt</button>
+        <button id="working-measure-clear" type="button">Wyczyść</button>
+        <button id="working-measure-finish" type="button">Zakończ</button>
+        <strong id="working-measure-result" class="measure-result">Pomiar wyłączony</strong>
+      </div>
       <div id="working-list-panel" hidden><div id="working-nearest-list" class="muted"></div><div id="working-list" class="entries-list"></div></div>
     </section>
 
@@ -845,8 +874,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="app.js?v=2026.05.07-viewed-orto-cache"></script>
-  <script src="field-help.js?v=2026.05.07-viewed-orto-cache"></script>
+  <script src="app.js?v=2026.05.07-map-measure-shared-orto-cache"></script>
+  <script src="field-help.js?v=2026.05.07-map-measure-shared-orto-cache"></script>
   <script>
   (() => {
     "use strict";

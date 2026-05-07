@@ -1571,6 +1571,65 @@ summary {
   .map-canvas{height:55vh}
   #working-map.map-canvas{height:50vh}
 }
+.measure-toolbar{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:.45rem;
+  margin:.55rem 0 0;
+  padding:.55rem;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:rgba(255,255,255,.94);
+  box-shadow:0 8px 22px rgba(15,23,42,.12);
+}
+.measure-toolbar label{
+  display:flex;
+  align-items:center;
+  gap:.4rem;
+  margin:0;
+  font-weight:800;
+}
+.measure-toolbar select{
+  min-height:38px;
+  width:auto;
+  min-width:135px;
+}
+.measure-toolbar button{
+  min-height:38px;
+  padding:.4rem .65rem;
+  font-size:.92rem;
+}
+.measure-result{
+  flex:1 1 220px;
+  color:var(--primary-dark);
+  line-height:1.25;
+}
+.measure-point-marker{
+  stroke:#ffffff;
+  stroke-width:2;
+  fill:#0f766e;
+  fill-opacity:.95;
+}
+.measure-active-hint{
+  color:var(--muted);
+  font-weight:800;
+}
+.offline-cache-danger-zone{
+  margin:.35rem 0 .5rem;
+  padding:.45rem .55rem;
+  border:1px dashed var(--border);
+  border-radius:12px;
+  background:#fff;
+}
+.offline-cache-danger-zone summary{
+  cursor:pointer;
+  font-weight:800;
+  color:var(--muted);
+}
+.offline-cache-danger-zone button{
+  margin-top:.5rem;
+}
 .map-legend{margin:.2rem 0 .5rem}
 .working-legend{display:flex;gap:.45rem .8rem;flex-wrap:wrap;align-items:center}
 .legend-dot{display:inline-flex;width:var(--icon-size);height:var(--icon-size);max-width:1.7rem;max-height:1.7rem;border-radius:999px;align-items:center;justify-content:center;color:#fff;font-weight:700;line-height:1}
@@ -2328,6 +2387,19 @@ body {
   .row-actions,
   .map-toolbar {
     flex-wrap: wrap;
+  }
+
+  .measure-toolbar {
+    align-items: stretch;
+    gap: .4rem;
+  }
+
+  .measure-toolbar label,
+  .measure-toolbar select,
+  .measure-toolbar button,
+  .measure-result {
+    flex: 1 1 44%;
+    width: 100%;
   }
 
   .inline-field {
