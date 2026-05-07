@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-responsive-ui-5";
+  const APP_VERSION = "2026.05.07-map-ui-folded-options-brysna-smieck-points";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -20,6 +20,14 @@
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
   const PHOTO_SYNC_KEY = "sieweczka-photo-sync-v1";
   const AUTH_STATE_KEY = "sieweczka-auth-v1";
+  const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
+  const GEOPORTAL_ORTO_WMS_URL = "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution";
+  const ORTO_TILE_SIZE = 256;
+  const ORTO_MAX_NEW_TILES_PER_VIEW = 200;
+  const ORTO_MAX_NEW_TILES_PER_SESSION = 3000;
+  const ORTO_CACHE_CONCURRENCY = 4;
+  const ORTO_CACHE_DEBOUNCE_MS = 700;
+  const ORTO_CACHE_META_KEY = "sieweczka-orto-view-cache-meta-v1";
   let deferredInstallPrompt = null;
 
   function getClientId() {
@@ -73,13 +81,17 @@
     return UI_CLASS_VALUES[prefix]?.includes(compatible) ? compatible : fallback;
   }
   function normalizeUiSettings(settings = getUiSettings()) {
+    const uiScale = normalizeUiClass(settings.uiScale, "ui", "ui-normal");
+    const buttonSize = normalizeUiClass(settings.buttonSize, "buttons", "buttons-normal");
+    const iconSize = normalizeUiClass(settings.iconSize, "icons", "icons-normal");
+    const layoutWidth = normalizeUiClass(settings.layoutWidth, "layout", "layout-normal");
     return {
       ...settings,
       fontSize: normalizeUiClass(settings.fontSize, "font", "font-normal"),
-      uiScale: normalizeUiClass(settings.uiScale, "ui", "ui-normal"),
-      buttonSize: normalizeUiClass(settings.buttonSize, "buttons", "buttons-normal"),
-      iconSize: normalizeUiClass(settings.iconSize, "icons", "icons-normal"),
-      layoutWidth: normalizeUiClass(settings.layoutWidth, "layout", "layout-normal"),
+      uiScale: uiScale === "ui-minimal" ? "ui-normal" : uiScale,
+      buttonSize: buttonSize === "buttons-minimal" ? "buttons-normal" : buttonSize,
+      iconSize: iconSize === "icons-minimal" ? "icons-normal" : iconSize,
+      layoutWidth: layoutWidth === "layout-minimal" ? "layout-normal" : layoutWidth,
       tileLayout: normalizeUiClass(settings.tileLayout, "tiles", "tiles-auto")
     };
   }
@@ -93,7 +105,7 @@
   }
   function getLayoutBreakpoint() {
     const width = window.innerWidth || document.documentElement.clientWidth || 0;
-    if (width <= 395) return "tight";
+    if (width <= 375) return "tight";
     if (width <= 430) return "narrow";
     if (width >= 760) return "wide";
     return "standard";
@@ -102,7 +114,7 @@
   function updateViewportLayoutClasses() {
     const width = window.innerWidth || document.documentElement.clientWidth || 0;
     const narrow = width <= 430;
-    const tight = width <= 395;
+    const tight = width <= 375;
     document.documentElement.classList.toggle("viewport-narrow", narrow);
     document.documentElement.classList.toggle("viewport-tight", tight);
     return { narrow, tight };
@@ -234,7 +246,7 @@
   async function clearAppCaches() {
     if (!("caches" in window)) return [];
     const keys = await caches.keys();
-    const appKeys = keys.filter((key) => key.startsWith("sieweczka-"));
+    const appKeys = keys.filter((key) => key.startsWith("sieweczka-") && key !== ORTO_OFFLINE_CACHE);
     await Promise.all(appKeys.map((key) => caches.delete(key)));
     return appKeys;
   }
@@ -790,13 +802,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       renderUserPanel();
     });
     $("#preset-small-screen")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-compact", buttonSize: "buttons-small", iconSize: "icons-small", fontSize: "font-small", layoutWidth: "layout-narrow", tileLayout: "tiles-auto" });
     });
     $("#preset-smallest-view")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-minimal", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
+      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-xcompact", buttonSize: "buttons-xsmall", iconSize: "icons-xsmall", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-one" });
     });
     $("#preset-iphone-narrow")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "iPhone / wąski ekran", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
+      applyUiPreset({ activePreset: "iPhone / wąski ekran", uiScale: "ui-compact", buttonSize: "buttons-small", iconSize: "icons-small", fontSize: "font-small", layoutWidth: "layout-normal", tileLayout: "tiles-one" });
     });
     $("#preset-standard-view")?.addEventListener("click", () => {
       applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "layout-normal", tileLayout: "tiles-auto" });
@@ -976,6 +988,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let gridGeoJsonData = null;
   let gridGeoJsonPromise = null;
   const gridStatus = { records: "", working: "" };
+  let brysnaSmieckPointsGeojson = null;
+  let brysnaSmieckPointsPromise = null;
+  const brysnaSmieckLayerStates = {
+    records: { layer: null, visible: false, map: null },
+    working: { layer: null, visible: false, map: null }
+  };
   let workingViewMode = "map";
   let workingFocusId = null;
   let editingWorkingId = null;
@@ -983,6 +1001,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let currentNestPhotos = [];
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
+  const ortoCacheState = {
+    records: { enabled: false, running: false, pending: false, timer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, map: null, onlineLayer: null, offlineLayer: null },
+    working: { enabled: false, running: false, pending: false, timer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, map: null, onlineLayer: null, offlineLayer: null }
+  };
+  const measureStates = {
+    records: { mode: "off", points: [], markers: [], line: null, polygon: null, finished: false, map: null, bound: false },
+    working: { mode: "off", points: [], markers: [], line: null, polygon: null, finished: false, map: null, bound: false }
+  };
 
   function getCachedPhotoUrl(ref) {
     const cached = photoUrlCache.get(String(ref || ""));
@@ -1097,6 +1123,84 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setGridStatus(target, `załadowano ${count} pól`);
     console.info(`Grid loaded: ${count} features (${target})`);
     return gridLayer;
+  }
+
+  async function loadBrysnaSmieckPoints() {
+    if (brysnaSmieckPointsGeojson) return brysnaSmieckPointsGeojson;
+    if (!brysnaSmieckPointsPromise) {
+      brysnaSmieckPointsPromise = fetch("data/points_brysna_smieck.geojson", { cache: "no-cache" })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Nie udało się załadować punktów Brysna/Śmieck: ${response.status}`);
+          return response.json();
+        })
+        .then((json) => {
+          brysnaSmieckPointsGeojson = json;
+          return json;
+        })
+        .catch((error) => {
+          console.error(error);
+          brysnaSmieckPointsPromise = null;
+          alert("Nie udało się załadować punktów Brysna/Śmieck. Jeśli plik GeoJSON nie istnieje, uruchom konwersję z data/points_brysna_smieck.gpkg.");
+          return null;
+        });
+    }
+    return brysnaSmieckPointsPromise;
+  }
+
+  function getBrysnaSmieckPointLabel(feature) {
+    const props = feature?.properties || {};
+    return props.name || props.Name || props.nazwa || props.Nazwa || props.label || props.Label || props.id || props.ID || "punkt";
+  }
+
+  function buildBrysnaSmieckPopup(feature) {
+    const props = feature?.properties || {};
+    const rows = Object.entries(props).map(([key, value]) => `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value ?? "")}</td></tr>`).join("");
+    return `<strong>${escapeHtml(getBrysnaSmieckPointLabel(feature))}</strong>${rows ? `<table class="mini-table">${rows}</table>` : ""}`;
+  }
+
+  function initBrysnaSmieckLayer(map, mapId) {
+    const state = brysnaSmieckLayerStates[mapId];
+    if (!state) return;
+    state.map = map;
+  }
+
+  async function setBrysnaSmieckLayerVisible(mapId, visible) {
+    const state = brysnaSmieckLayerStates[mapId];
+    if (!state?.map) return;
+    state.visible = !!visible;
+    if (visible) await renderBrysnaSmieckPoints(mapId);
+    else if (state.layer && state.map.hasLayer(state.layer)) state.map.removeLayer(state.layer);
+  }
+
+  async function renderBrysnaSmieckPoints(mapId) {
+    const state = brysnaSmieckLayerStates[mapId];
+    if (!state?.map || !state.visible) return;
+    const data = await loadBrysnaSmieckPoints();
+    if (!data) return;
+    if (!state.layer) {
+      state.layer = L.geoJSON(data, {
+        pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+          radius: 5,
+          color: "#ffffff",
+          weight: 2,
+          fillColor: "#e11d48",
+          fillOpacity: 0.9,
+          className: "brysna-smieck-point-marker"
+        }),
+        onEachFeature: (feature, layer) => {
+          const label = String(getBrysnaSmieckPointLabel(feature));
+          layer.bindTooltip(escapeHtml(label), {
+            permanent: true,
+            direction: "right",
+            offset: [8, 0],
+            className: "brysna-smieck-point-label"
+          });
+          layer.bindPopup(buildBrysnaSmieckPopup(feature));
+        }
+      });
+    }
+    if (!state.map.hasLayer(state.layer)) state.layer.addTo(state.map);
+    bringMeasureToFront(mapId);
   }
 
   function pointInRing(lon, lat, ring) {
@@ -2582,14 +2686,497 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return [a, b];
   }
 
+  function initMeasureTools(map, mapId) {
+    const state = measureStates[mapId];
+    if (!state || state.bound) return;
+    state.map = map;
+    state.bound = true;
+    const toolbar = $(`#${mapId}-measure-toolbar`);
+    if (toolbar && typeof L !== "undefined") {
+      L.DomEvent.disableClickPropagation(toolbar);
+      L.DomEvent.disableScrollPropagation(toolbar);
+    }
+    $(`#${mapId}-measure-mode`)?.addEventListener("change", (event) => setMeasureMode(mapId, event.target.value));
+    $(`#${mapId}-measure-undo`)?.addEventListener("click", () => undoMeasurePoint(mapId));
+    $(`#${mapId}-measure-clear`)?.addEventListener("click", () => clearMeasure(mapId));
+    $(`#${mapId}-measure-finish`)?.addEventListener("click", () => finishMeasure(mapId));
+    map.on("click", (event) => addMeasurePoint(mapId, event.latlng));
+    updateMeasureResult(mapId);
+  }
+
+  function setMeasureMode(mapId, mode) {
+    const state = measureStates[mapId];
+    if (!state) return;
+    const nextMode = ["off", "line", "polygon"].includes(mode) ? mode : "off";
+    const shouldStartFresh = nextMode !== "off" && (state.finished || (state.mode !== "off" && state.mode !== nextMode));
+    state.mode = nextMode;
+    state.finished = false;
+    if (shouldStartFresh) clearMeasure(mapId, { keepMode: true });
+    updateMeasureGeometry(mapId);
+    updateMeasureResult(mapId);
+  }
+
+  function addMeasurePoint(mapId, latlng) {
+    const state = measureStates[mapId];
+    if (!state || state.mode === "off" || state.finished || !state.map) return;
+    state.points.push(L.latLng(latlng));
+    const marker = L.circleMarker(latlng, {
+      radius: 6,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: "#0f766e",
+      fillOpacity: 0.95,
+      className: "measure-point-marker",
+      interactive: false
+    }).addTo(state.map);
+    state.markers.push(marker);
+    updateMeasureGeometry(mapId);
+    updateMeasureResult(mapId);
+  }
+
+  function undoMeasurePoint(mapId) {
+    const state = measureStates[mapId];
+    if (!state || !state.points.length) return;
+    state.points.pop();
+    const marker = state.markers.pop();
+    if (marker && state.map) state.map.removeLayer(marker);
+    state.finished = false;
+    updateMeasureGeometry(mapId);
+    updateMeasureResult(mapId);
+  }
+
+  function clearMeasure(mapId, options = {}) {
+    const state = measureStates[mapId];
+    if (!state || !state.map) return;
+    state.points = [];
+    state.finished = false;
+    state.markers.forEach((marker) => state.map.removeLayer(marker));
+    state.markers = [];
+    if (state.line) state.map.removeLayer(state.line);
+    if (state.polygon) state.map.removeLayer(state.polygon);
+    state.line = null;
+    state.polygon = null;
+    if (!options.keepMode) {
+      state.mode = "off";
+      const select = $(`#${mapId}-measure-mode`);
+      if (select) select.value = "off";
+    }
+    updateMeasureResult(mapId, "Pomiar wyczyszczony");
+  }
+
+  function finishMeasure(mapId) {
+    const state = measureStates[mapId];
+    if (!state) return;
+    state.finished = true;
+    updateMeasureResult(mapId, "Pomiar zakończony");
+  }
+
+  function updateMeasureGeometry(mapId) {
+    const state = measureStates[mapId];
+    if (!state?.map) return;
+    if (state.mode !== "line" && state.line) {
+      state.map.removeLayer(state.line);
+      state.line = null;
+    }
+    if (state.mode !== "polygon" && state.polygon) {
+      state.map.removeLayer(state.polygon);
+      state.polygon = null;
+    }
+    if (state.mode === "line") {
+      if (!state.line) {
+        state.line = L.polyline(state.points, { color: "#0f766e", weight: 4, opacity: 0.9 }).addTo(state.map);
+      } else {
+        state.line.setLatLngs(state.points);
+      }
+      state.line.bringToFront();
+    }
+    if (state.mode === "polygon") {
+      if (!state.polygon) {
+        state.polygon = L.polygon(state.points, { color: "#0f766e", weight: 3, fillColor: "#14b8a6", fillOpacity: 0.22 }).addTo(state.map);
+      } else {
+        state.polygon.setLatLngs(state.points);
+      }
+      state.polygon.bringToFront();
+    }
+    state.markers.forEach((marker) => marker.bringToFront());
+  }
+
+  function updateMeasureResult(mapId, prefix = "") {
+    const state = measureStates[mapId];
+    const el = $(`#${mapId}-measure-result`);
+    if (!state || !el) return;
+    let message = prefix;
+    if (!message) {
+      if (state.mode === "off") message = "Pomiar wyłączony";
+      else if (!state.points.length) message = "Kliknij mapę, aby dodać pierwszy punkt";
+      else if (state.mode === "line") {
+        const meters = state.points.slice(1).reduce((sum, point, index) => sum + state.map.distance(state.points[index], point), 0);
+        message = meters > 0 ? `Odległość: ${formatDistanceMeters(meters)}` : "Dodaj kolejny punkt";
+      } else if (state.mode === "polygon") {
+        message = state.points.length < 3
+          ? "Dodaj co najmniej 3 punkty, aby policzyć powierzchnię"
+          : `Powierzchnia: ${formatAreaMeters(geodesicArea(state.points))}`;
+      }
+      if (state.finished && state.mode !== "off") message = `${message}. Pomiar zakończony`;
+    }
+    el.textContent = message;
+  }
+
+  function formatDistanceMeters(meters) {
+    const roundedMeters = Math.round(Number(meters) || 0);
+    const km = (roundedMeters / 1000).toFixed(2).replace(".", ",");
+    return `${roundedMeters} m (${km} km)`;
+  }
+
+  function formatAreaMeters(areaM2) {
+    const rounded = Math.round(Number(areaM2) || 0);
+    const ha = (rounded / 10000).toFixed(2).replace(".", ",");
+    return `${rounded} m² (${ha} ha)`;
+  }
+
+  function geodesicArea(latLngs) {
+    const pointsCount = latLngs.length;
+    if (pointsCount < 3) return 0;
+    const d2r = Math.PI / 180;
+    const earthRadius = 6378137;
+    let area = 0;
+    for (let i = 0; i < pointsCount; i += 1) {
+      const p1 = latLngs[i];
+      const p2 = latLngs[(i + 1) % pointsCount];
+      area += ((p2.lng - p1.lng) * d2r) * (2 + Math.sin(p1.lat * d2r) + Math.sin(p2.lat * d2r));
+    }
+    return Math.abs(area * earthRadius * earthRadius / 2);
+  }
+
+  function bringMeasureToFront(mapId) {
+    const state = measureStates[mapId];
+    if (!state) return;
+    state.line?.bringToFront();
+    state.polygon?.bringToFront();
+    state.markers.forEach((marker) => marker.bringToFront());
+  }
+
+  function tileToMercatorBbox(x, y, z) {
+    const originShift = 20037508.342789244;
+    const tileCount = 2 ** z;
+    const tileSpan = (originShift * 2) / tileCount;
+    const minx = -originShift + x * tileSpan;
+    const maxx = -originShift + (x + 1) * tileSpan;
+    const maxy = originShift - y * tileSpan;
+    const miny = originShift - (y + 1) * tileSpan;
+    return [minx, miny, maxx, maxy];
+  }
+
+  function createGeoportalWmsTileUrl(x, y, z) {
+    const bbox = tileToMercatorBbox(x, y, z).map((value) => value.toFixed(6)).join(",");
+    const params = new URLSearchParams({
+      service: "WMS",
+      request: "GetMap",
+      version: "1.3.0",
+      layers: "Raster",
+      styles: "",
+      format: "image/jpeg",
+      transparent: "false",
+      crs: "EPSG:3857",
+      width: String(ORTO_TILE_SIZE),
+      height: String(ORTO_TILE_SIZE),
+      bbox
+    });
+    return `${GEOPORTAL_ORTO_WMS_URL}?${params.toString()}`;
+  }
+
+  function createGeoportalOfflineTileLayer() {
+    const OfflineOrtoLayer = L.TileLayer.extend({
+      getTileUrl(coords) {
+        return createGeoportalWmsTileUrl(coords.x, coords.y, coords.z);
+      }
+    });
+    return new OfflineOrtoLayer("", {
+      tileSize: ORTO_TILE_SIZE,
+      maxZoom: 21,
+      attribution: "Ortofotomapa offline: Geoportal / GUGiK"
+    });
+  }
+
+  function getOrtoCacheStatusEl(mapId) {
+    return $(`#${mapId}-orto-cache-status`);
+  }
+
+  function showMapOfflineStatus(mapId, message, options = {}) {
+    const el = getOrtoCacheStatusEl(mapId);
+    if (!el) return;
+    const type = options.type || "info";
+    el.textContent = message;
+    el.hidden = false;
+    el.className = `map-offline-status ${type}`;
+    clearTimeout(el._hideTimer);
+    if (options.autoHide) {
+      el._hideTimer = setTimeout(() => hideMapOfflineStatus(mapId), options.timeoutMs || 8000);
+    }
+  }
+
+  function hideMapOfflineStatus(mapId) {
+    const el = getOrtoCacheStatusEl(mapId);
+    if (!el) return;
+    clearTimeout(el._hideTimer);
+    el.hidden = true;
+  }
+
+  function setOrtoCacheStatus(mapId, message, options = {}) {
+    showMapOfflineStatus(mapId, message, options);
+  }
+
+  async function ensureOrtoStoragePersistence(mapId) {
+    if (!navigator.storage?.persist) return;
+    try {
+      await navigator.storage.persist();
+      showMapOfflineStatus(mapId, "Zapisane kafle są przechowywane lokalnie w telefonie. System może je usunąć, gdy zabraknie miejsca, ale aplikacja nie usuwa ich sama.", { type: "info", autoHide: true, timeoutMs: 8000 });
+    } catch (error) {
+      console.warn(error);
+    }
+  }
+
+  function getVisibleTilePlan(map) {
+    const z = Math.round(map.getZoom());
+    const bounds = map.getBounds();
+    const northWest = map.project(bounds.getNorthWest(), z);
+    const southEast = map.project(bounds.getSouthEast(), z);
+    const min = northWest.divideBy(ORTO_TILE_SIZE).floor();
+    const max = southEast.divideBy(ORTO_TILE_SIZE).floor();
+    const tileCount = 2 ** z;
+    const tiles = [];
+    for (let x = min.x - 1; x <= max.x + 1; x++) {
+      const wrappedX = ((x % tileCount) + tileCount) % tileCount;
+      for (let y = Math.max(0, min.y - 1); y <= Math.min(tileCount - 1, max.y + 1); y++) {
+        tiles.push({ x: wrappedX, y, z, url: createGeoportalWmsTileUrl(wrappedX, y, z) });
+      }
+    }
+    return { z, tiles };
+  }
+
+  async function hasCachedTile(url) {
+    if (!("caches" in window)) return false;
+    const cache = await caches.open(ORTO_OFFLINE_CACHE);
+    return !!(await cache.match(url));
+  }
+
+  async function cacheTileUrl(url) {
+    const cache = await caches.open(ORTO_OFFLINE_CACHE);
+    const cached = await cache.match(url);
+    if (cached) return "skipped";
+    let response;
+    try {
+      response = await fetch(url);
+      if (!response || !response.ok) throw new Error(`HTTP ${response?.status || 0}`);
+    } catch {
+      response = await fetch(url, { mode: "no-cors" });
+      if (!response || (response.type !== "opaque" && !response.ok)) throw new Error(`HTTP ${response?.status || 0}`);
+    }
+    await cache.put(url, response.clone());
+    return "saved";
+  }
+
+  async function runOrtoQueue(tasks, worker) {
+    let index = 0;
+    const workers = Array.from({ length: Math.min(ORTO_CACHE_CONCURRENCY, tasks.length) }, async () => {
+      while (index < tasks.length) {
+        const task = tasks[index++];
+        await worker(task);
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  async function cacheCurrentMapView(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state || !map || !("caches" in window)) return;
+    if (state.running) {
+      state.pending = true;
+      return;
+    }
+    state.running = true;
+    state.pending = false;
+    state.lastError = "";
+    let saved = 0;
+    let skipped = 0;
+    try {
+      const plan = getVisibleTilePlan(map);
+      state.lastZoom = plan.z;
+      showMapOfflineStatus(mapId, "Zapisuję widoczne kafle ortofoto...", { type: "info" });
+      const cache = await caches.open(ORTO_OFFLINE_CACHE);
+      const missing = [];
+      for (const tile of plan.tiles) {
+        if (await cache.match(tile.url)) {
+          skipped++;
+        } else {
+          missing.push(tile);
+        }
+      }
+      if (!missing.length) {
+        state.skippedSession += skipped;
+        await updateViewedOrtoCacheDiagnostics(mapId, `Ten widok jest dostępny offline. Pominięto ${skipped} kafli, bo już były zapisane.`);
+        return;
+      }
+      if (missing.length > ORTO_MAX_NEW_TILES_PER_VIEW || state.savedSession >= ORTO_MAX_NEW_TILES_PER_SESSION) {
+        await updateViewedOrtoCacheDiagnostics(mapId, "Limit zapisu ortofoto osiągnięty. Zmień zoom albo wyłącz i włącz ponownie.");
+        return;
+      }
+      const allowed = Math.min(missing.length, ORTO_MAX_NEW_TILES_PER_VIEW, ORTO_MAX_NEW_TILES_PER_SESSION - state.savedSession);
+      const queue = missing.slice(0, allowed);
+      await runOrtoQueue(queue, async (tile) => {
+        try {
+          const result = await cacheTileUrl(tile.url);
+          if (result === "saved") saved++;
+          else skipped++;
+          if (result === "saved") {
+            state.savedSession += 1;
+            localStorage.setItem(ORTO_CACHE_META_KEY, JSON.stringify({ lastSavedAt: new Date().toISOString() }));
+          }
+          state.skippedSession += result === "skipped" ? 1 : 0;
+          showMapOfflineStatus(mapId, `Zapisuję widoczne kafle ortofoto... zapisano ${saved}, pominięto ${skipped}.`, { type: "info" });
+        } catch (error) {
+          state.lastError = error.message || String(error);
+        }
+      });
+      state.skippedSession += skipped;
+      await updateViewedOrtoCacheDiagnostics(mapId, `Zapisano ${saved} nowych kafli. Pominięto ${skipped} kafli, bo już były zapisane. Ten widok powinien działać offline.`);
+    } catch (error) {
+      state.lastError = error.message || String(error);
+      await updateViewedOrtoCacheDiagnostics(mapId, `Błąd zapisu ortofoto: ${state.lastError}`);
+    } finally {
+      state.running = false;
+      if (state.pending && state.enabled) {
+        state.pending = false;
+        cacheCurrentMapView(map, mapId);
+      }
+    }
+  }
+
+  function scheduleViewedOrtoCache(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state?.enabled) return;
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => cacheCurrentMapView(map, mapId), ORTO_CACHE_DEBOUNCE_MS);
+  }
+
+  function enableViewedOrtoCaching(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state) return;
+    state.enabled = true;
+    ensureOrtoStoragePersistence(mapId);
+    showMapOfflineStatus(mapId, "Zapis oglądanej ortofotomapy włączony. Przesuwaj mapę — widoczne miejsca zostaną zapisane offline.", { type: "info", autoHide: true, timeoutMs: 8000 });
+    scheduleViewedOrtoCache(map, mapId);
+  }
+
+  function disableViewedOrtoCaching(mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state) return;
+    state.enabled = false;
+    clearTimeout(state.timer);
+    showMapOfflineStatus(mapId, "Offline ortofoto: wyłączone", { type: "info", autoHide: true, timeoutMs: 6000 });
+  }
+
+  async function clearViewedOrtoCache() {
+    if (!("caches" in window)) return false;
+    localStorage.removeItem(ORTO_CACHE_META_KEY);
+    return caches.delete(ORTO_OFFLINE_CACHE);
+  }
+
+  async function getViewedOrtoCacheSummary() {
+    if (!("caches" in window)) return { count: 0 };
+    const cache = await caches.open(ORTO_OFFLINE_CACHE);
+    const keys = await cache.keys();
+    let lastSavedAt = "";
+    try {
+      lastSavedAt = JSON.parse(localStorage.getItem(ORTO_CACHE_META_KEY) || "{}").lastSavedAt || "";
+    } catch {
+      lastSavedAt = "";
+    }
+    return { count: keys.length, lastSavedAt };
+  }
+
+  async function updateViewedOrtoCacheDiagnostics(mapId, prefix = "") {
+    const state = ortoCacheState[mapId];
+    const summary = await getViewedOrtoCacheSummary();
+    const lastSaved = summary.lastSavedAt ? new Date(summary.lastSavedAt).toLocaleString("pl-PL") : "—";
+    const message = [
+      prefix,
+      "Ortofotomapa offline: wspólna dla obu map.",
+      `Kafle offline: ${summary.count}.`,
+      `Ostatni zapis: ${lastSaved}.`,
+      "Cache działa na mapie rekordów i mapie gniazd roboczych.",
+      `Sesja: zapisano ${state?.savedSession || 0}, pominięto ${state?.skippedSession || 0}.`,
+      `Zoom cache: ${state?.lastZoom ?? "—"}.`,
+      `Status: ${navigator.onLine ? "online" : "offline"}.`,
+      state?.lastError ? `Ostatni błąd: ${state.lastError}.` : ""
+    ].filter(Boolean).join(" ");
+    const type = /błąd|brak kafli|limit/i.test(message) ? "warning" : /usunięto|zapisano|dostępny/i.test(message) ? "success" : "info";
+    showMapOfflineStatus(mapId, message, { type, autoHide: !state?.running, timeoutMs: 9000 });
+  }
+
+  async function switchToOfflineOrtoIfNeeded(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!map || navigator.onLine || !state?.offlineLayer) return;
+    const summary = await getViewedOrtoCacheSummary();
+    if (summary.count > 0) {
+      state.offlineLayer.addTo(map);
+      showMapOfflineStatus(mapId, "Brak internetu. Pokazuję zapisane kafle offline.", { type: "warning" });
+    } else {
+      showMapOfflineStatus(mapId, "Brak kafli offline dla tego widoku.", { type: "warning", autoHide: true, timeoutMs: 8000 });
+    }
+  }
+
+  function initViewedOrtoCacheTools(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state || state.bound) return;
+    state.bound = true;
+    const toggle = $(`#${mapId}-orto-cache-toggle`);
+    const clearBtn = $(`#${mapId}-orto-cache-clear`);
+    toggle?.addEventListener("change", () => {
+      if (toggle.checked) enableViewedOrtoCaching(map, mapId);
+      else disableViewedOrtoCaching(mapId);
+    });
+    clearBtn?.addEventListener("click", async () => {
+      const confirmed = confirm("Usunąć zapisaną ortofotomapę offline z telefonu? Ta operacja usunie kafle offline używane przez mapę rekordów i mapę gniazd roboczych. Rekordy, zdjęcia i gniazda robocze nie zostaną usunięte.");
+      if (!confirmed) {
+        await updateViewedOrtoCacheDiagnostics(mapId, "Usuwanie ortofotomapy offline anulowane.");
+        return;
+      }
+      await clearViewedOrtoCache();
+      for (const item of Object.values(ortoCacheState)) {
+        item.savedSession = 0;
+        item.skippedSession = 0;
+        item.lastError = "";
+        if (item.map && item.onlineLayer && navigator.onLine) item.onlineLayer.addTo(item.map);
+      }
+      await updateViewedOrtoCacheDiagnostics(mapId, "Usunięto ortofotomapę offline. Rekordy i gniazda robocze pozostały bez zmian.");
+      const otherMapId = mapId === "records" ? "working" : "records";
+      await updateViewedOrtoCacheDiagnostics(otherMapId, "Usunięto ortofotomapę offline. Rekordy i gniazda robocze pozostały bez zmian.");
+    });
+    map.on("moveend zoomend", () => scheduleViewedOrtoCache(map, mapId));
+    window.addEventListener("online", () => updateViewedOrtoCacheDiagnostics(mapId));
+    window.addEventListener("offline", () => {
+      switchToOfflineOrtoIfNeeded(map, mapId);
+      updateViewedOrtoCacheDiagnostics(mapId, "Brak internetu. Pokazuję zapisane kafle offline.");
+    });
+    hideMapOfflineStatus(mapId);
+  }
+
 
   function createBaseLayers() {
+    const geoportalOrto = createGeoportalOrtoLayer();
+    const geoportalOffline = createGeoportalOfflineTileLayer();
     const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
     const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
     const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
     return {
-      defaultLayer: esriImgLbl,
+      defaultLayer: geoportalOrto,
+      onlineLayer: geoportalOrto,
+      offlineLayer: geoportalOffline,
       layers: {
+        "Ortofotomapa Geoportal": geoportalOrto,
+        "Ortofotomapa offline": geoportalOffline,
+        "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }),
         "Esri Imagery + Labels": esriImgLbl,
         "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
         "Esri World Imagery": esriImg,
@@ -2600,6 +3187,22 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
       }
     };
+  }
+
+  function createGeoportalOrtoLayer() {
+    return L.tileLayer.wms(
+      GEOPORTAL_ORTO_WMS_URL,
+      {
+        layers: "Raster",
+        styles: "",
+        format: "image/jpeg",
+        transparent: false,
+        version: "1.3.0",
+        crs: L.CRS.EPSG3857,
+        attribution: "Ortofotomapa: Geoportal / GUGiK",
+        maxZoom: 21
+      }
+    );
   }
 
   async function showMyLocationOnMap(map, statusSelector) {
@@ -2709,7 +3312,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       recordsMap = L.map(mapEl, { layers: [base.defaultLayer] });
       recordsMap.attributionControl.setPrefix("");
       L.control.layers(base.layers).addTo(recordsMap);
+      ortoCacheState.records.map = recordsMap;
+      ortoCacheState.records.onlineLayer = base.onlineLayer;
+      ortoCacheState.records.offlineLayer = base.offlineLayer;
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
+      initViewedOrtoCacheTools(recordsMap, "records");
+      initMeasureTools(recordsMap, "records");
+      initBrysnaSmieckLayer(recordsMap, "records");
+      switchToOfflineOrtoIfNeeded(recordsMap, "records");
     }
     if ($("#records-grid-toggle")?.checked) {
       if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
@@ -2747,7 +3357,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setMapInfo("records", `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`);
     if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
-    ensureUserLocationTracking(points, focusUid); syncUserLocationLayers("records");
+    renderBrysnaSmieckPoints("records");
+    ensureUserLocationTracking(points, focusUid); syncUserLocationLayers("records"); bringMeasureToFront("records");
   }
 
   function ensureUserLocationTracking(points, focusUid) {
@@ -2990,6 +3601,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       recordSpeciesLabelsVisible = !!$("#records-species-labels-toggle")?.checked;
       renderRecordsMap(mapFocusUid);
     });
+    $("#records-brysna-smieck-toggle")?.addEventListener("change", () => {
+      void setBrysnaSmieckLayerVisible("records", !!$("#records-brysna-smieck-toggle")?.checked);
+    });
 
     $("#nest-photos").addEventListener("change", () => {
       setValue("#nest-one-m-photo-done", "yes");
@@ -3029,6 +3643,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-notes-toggle")?.addEventListener("change", () => {
       workingNotesVisible = !!$("#working-notes-toggle")?.checked;
       renderWorkingMap();
+    });
+    $("#working-brysna-smieck-toggle")?.addEventListener("change", () => {
+      void setBrysnaSmieckLayerVisible("working", !!$("#working-brysna-smieck-toggle")?.checked);
     });
     $("#working-map-screen").addEventListener("click", onWorkingScreenClick);
     $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
@@ -3510,7 +4127,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       workingMap = L.map(mapEl, { layers: [base.defaultLayer] });
       workingMap.attributionControl.setPrefix("");
       L.control.layers(base.layers).addTo(workingMap);
+      ortoCacheState.working.map = workingMap;
+      ortoCacheState.working.onlineLayer = base.onlineLayer;
+      ortoCacheState.working.offlineLayer = base.offlineLayer;
       workingLayer = L.layerGroup().addTo(workingMap);
+      initViewedOrtoCacheTools(workingMap, "working");
+      initMeasureTools(workingMap, "working");
+      initBrysnaSmieckLayer(workingMap, "working");
+      switchToOfflineOrtoIfNeeded(workingMap, "working");
     }
     if ($("#working-grid-toggle")?.checked) {
       if (!workingGridLayer) void addGridToMap(workingMap, "working");
@@ -3532,7 +4156,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button>${canEditItem(w) ? `<button data-w-action="edit" data-working-id="${w.id}">Edytuj</button>` : ""}${canSoftDeleteItem(w) ? `<button class="danger" data-w-action="delete" data-working-id="${w.id}">Ukryj</button>` : ""}${canEditItem(w) ? `<select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}</div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
-    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); ensureUserLocationTracking([], null); syncUserLocationLayers("working");} 
+    renderBrysnaSmieckPoints("working");
+    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); ensureUserLocationTracking([], null); syncUserLocationLayers("working"); bringMeasureToFront("working");} 
   }
 
   function setupFieldMode() {
@@ -3563,7 +4188,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       </div>`;
     const close = () => modal.remove();
     modal.querySelector("[data-compact-enable]")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-compact", buttonSize: "buttons-small", iconSize: "icons-small", fontSize: "font-small", layoutWidth: "layout-narrow", tileLayout: "tiles-auto" });
       close();
     });
     modal.querySelector("[data-compact-dismiss]")?.addEventListener("click", close);
