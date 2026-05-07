@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-fix-points-brysna-smieck-geojson";
+  const APP_VERSION = "2026.05.07-folded-map-ui";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -1580,6 +1580,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       deleteReason: entry.deleteReason || entry.delete_reason || "",
       season: entry.season || "",
       observer: entry.observer || "",
+      eggMeasurements: normalizeEggMeasurements(entry.eggMeasurements || []),
       docPhotoDone: entry.docPhotoDone || "unknown",
       nestOneMPhotoDone: entry.nestOneMPhotoDone || "unknown",
       randomPointDone: entry.randomPointDone || "unknown",
@@ -1974,6 +1975,135 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return Object.values(coverage || {}).reduce((sum, n) => sum + (Number(n) || 0), 0);
   }
 
+  function parseOptionalMm(value) {
+    const raw = String(value ?? "").trim().replace(",", ".");
+    if (!raw) return null;
+    const number = Number(raw);
+    return Number.isFinite(number) ? Math.round(number * 10) / 10 : null;
+  }
+
+  function formatEggInputValue(value) {
+    return value == null || Number.isNaN(Number(value)) ? "" : String(Number(value));
+  }
+
+  function formatMm(value) {
+    return value == null || Number.isNaN(Number(value)) ? "" : String(Number(value).toFixed(1)).replace(".", ",");
+  }
+
+  function normalizeEggMeasurements(measurements = []) {
+    if (!Array.isArray(measurements)) return [];
+    return measurements
+      .map((item, index) => {
+        const eggNo = Number(item?.eggNo ?? index + 1);
+        if (!Number.isFinite(eggNo) || eggNo < 1) return null;
+        return {
+          eggNo: Math.floor(eggNo),
+          widthMm: parseOptionalMm(item?.widthMm),
+          lengthMm: parseOptionalMm(item?.lengthMm),
+          note: String(item?.note ?? "")
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.eggNo - b.eggNo);
+  }
+
+  function getEggCountForMeasurements() {
+    const count = Number(value("#egg-count", ""));
+    return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  }
+
+  function currentEggMeasurementRowCount() {
+    return $$(".egg-measurement-row", $("#egg-measurements-grid")).length;
+  }
+
+  function readEggMeasurementsFromForm() {
+    const rows = $$(".egg-measurement-row", $("#egg-measurements-grid"));
+    return normalizeEggMeasurements(rows.map((row, index) => ({
+      eggNo: Number(row.dataset.eggNo || index + 1),
+      widthMm: row.querySelector("[data-field='widthMm']")?.value ?? "",
+      lengthMm: row.querySelector("[data-field='lengthMm']")?.value ?? "",
+      note: row.querySelector("[data-field='note']")?.value ?? ""
+    })));
+  }
+
+  function renderEggMeasurementRows(count, existingMeasurements = []) {
+    const grid = $("#egg-measurements-grid");
+    const addBtn = $("#egg-measurement-add");
+    if (!grid) return;
+    const normalized = normalizeEggMeasurements(existingMeasurements);
+    const byNo = new Map(normalized.map((item) => [Number(item.eggNo), item]));
+    const safeCount = Math.max(0, Math.floor(Number(count) || 0));
+    grid.innerHTML = Array.from({ length: safeCount }, (_, index) => {
+      const eggNo = index + 1;
+      const item = byNo.get(eggNo) || {};
+      return `
+        <div class="egg-measurement-row" data-egg-no="${eggNo}">
+          <div class="egg-measurement-label">Jajo ${eggNo}</div>
+          <div class="egg-measurement-inputs">
+            <label>Szerokość [mm]
+              <input type="number" step="0.1" inputmode="decimal" placeholder="24,8" data-field="widthMm" value="${escapeHtml(formatEggInputValue(item.widthMm))}" />
+            </label>
+            <label>Długość [mm]
+              <input type="number" step="0.1" inputmode="decimal" placeholder="34,2" data-field="lengthMm" value="${escapeHtml(formatEggInputValue(item.lengthMm))}" />
+            </label>
+          </div>
+        </div>
+      `;
+    }).join("");
+    if (addBtn) addBtn.hidden = getEggCountForMeasurements() < 5;
+    updateEggMeasurementWarnings();
+  }
+
+  function setEggMeasurementsInForm(measurements = []) {
+    const normalized = normalizeEggMeasurements(measurements);
+    const eggCount = getEggCountForMeasurements();
+    const maxExisting = normalized.reduce((max, item) => Math.max(max, Number(item.eggNo) || 0), 0);
+    const count = eggCount >= 5 ? Math.max(5, maxExisting) : Math.max(eggCount, maxExisting);
+    renderEggMeasurementRows(count, normalized);
+  }
+
+  function syncEggMeasurementsWithEggCount() {
+    const existing = readEggMeasurementsFromForm();
+    const eggCount = getEggCountForMeasurements();
+    const maxExisting = existing.reduce((max, item) => Math.max(max, Number(item.eggNo) || 0), 0);
+    const count = eggCount >= 5 ? Math.max(5, maxExisting, currentEggMeasurementRowCount()) : eggCount;
+    renderEggMeasurementRows(count, existing);
+  }
+
+  function eggMeasurementRangeWarnings(measurements = []) {
+    const warnings = [];
+    normalizeEggMeasurements(measurements).forEach((item) => {
+      [["widthMm", "szerokość"], ["lengthMm", "długość"]].forEach(([field, label]) => {
+        const value = item[field];
+        if (value != null && (value < 5 || value > 80)) warnings.push(`Jajo ${item.eggNo}: ${label} ${formatMm(value)} mm jest poza zakresem 5-80 mm.`);
+      });
+    });
+    return warnings;
+  }
+
+  function updateEggMeasurementWarnings() {
+    const warning = $("#egg-measurement-warning");
+    if (!warning) return;
+    const messages = eggMeasurementRangeWarnings(readEggMeasurementsFromForm());
+    warning.hidden = messages.length === 0;
+    warning.textContent = messages.join(" ");
+  }
+
+  function setupEggMeasurements() {
+    $("#egg-count")?.addEventListener("change", syncEggMeasurementsWithEggCount);
+    $("#egg-measurements-grid")?.addEventListener("input", (event) => {
+      if (event.target?.matches("input[data-field='widthMm'], input[data-field='lengthMm']") && String(event.target.value || "").includes(",")) {
+        event.target.value = String(event.target.value || "").replace(",", ".");
+      }
+      updateEggMeasurementWarnings();
+    });
+    $("#egg-measurement-add")?.addEventListener("click", () => {
+      const existing = readEggMeasurementsFromForm();
+      renderEggMeasurementRows(Math.max(1, currentEggMeasurementRowCount() + 1), existing);
+    });
+    syncEggMeasurementsWithEggCount();
+  }
+
   async function buildRecord(options = {}) {
     const persistPhotos = options.persistPhotos === true;
     const entries = getEntries();
@@ -2010,6 +2140,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       gpsAccuracyM: getNumber("#gps-accuracy", null),
       nestStatus: value("#nest-status", "unknown"),
       eggCount: getNumber("#egg-count", null),
+      eggMeasurements: readEggMeasurementsFromForm(),
       possibleRenest: value("#possible-renest", "unknown"),
       docPhotoDone: value("#doc-photo-done", "unknown"),
       nestOneMPhotoDone: value("#nest-one-m-photo-done", "unknown"),
@@ -2103,6 +2234,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!record.observer) addWarn(1, "#observer", "Brakuje obserwatora.");
     if (record.species === "unknown") addErr(1, "#species", "Brak gatunku.");
     if (record.eggCount == null || Number.isNaN(record.eggCount)) addErr(1, "#egg-count", "Brak liczby jaj.");
+    eggMeasurementRangeWarnings(record.eggMeasurements).forEach((message) => addWarn(1, "#egg-measurements-panel", message));
 
     if (record.lat == null || record.lon == null) addErr(2, "#lat", "Brak GPS gniazda.");
     if (record.randomMicro.lat == null || record.randomMicro.lon == null) addErr(5, "#random-lat", "Brak GPS punktu losowego / kontroli.");
@@ -2297,6 +2429,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (value("#species", "unknown") !== "unknown") return true;
     const observerText = String($("#observer")?.value || "").trim();
     if (observerText && observerText !== currentUserDisplayName()) return true;
+    if (String($("#egg-count")?.value || "").trim()) return true;
+    if (readEggMeasurementsFromForm().some((item) => item.widthMm != null || item.lengthMm != null || String(item.note || "").trim())) return true;
     const meaningful = ["#nest-id", "#season", "#sector", "#lat", "#lon", "#notes-identification", "#notes-nest-micro", "#notes-random-micro", "#notes-meso", "#notes"];
     return meaningful.some((selector) => String($(selector)?.value || "").trim());
   }
@@ -2395,7 +2529,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }
     $("#edit-banner").hidden = true;
     $("#form-mode-title").textContent = "Nowe gniazdo";
+    const eggPanel = $("#egg-measurements-panel");
+    if (eggPanel) eggPanel.open = false;
     syncTilesFromInputs();
+    syncEggMeasurementsWithEggCount();
     updatePercentSummaries();
   }
 
@@ -2432,6 +2569,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setValue("#lon", record.lon);
     setValue("#gps-accuracy", record.gpsAccuracyM);
     setValue("#egg-count", record.eggCount);
+    setEggMeasurementsInForm(record.eggMeasurements || []);
     setValue("#nest-status", record.nestStatus || "unknown");
     setValue("#possible-renest", record.possibleRenest || "unknown");
     setValue("#doc-photo-done", record.docPhotoDone || "unknown");
@@ -2699,6 +2837,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!state || state.bound) return;
     state.map = map;
     state.bound = true;
+    disableMapPanelPropagation(mapId);
     const toolbar = $(`#${mapId}-measure-toolbar`);
     if (toolbar && typeof L !== "undefined") {
       L.DomEvent.disableClickPropagation(toolbar);
@@ -2712,6 +2851,21 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     updateMeasureResult(mapId);
   }
 
+  function disableMapPanelPropagation(mapId) {
+    if (typeof L === "undefined") return;
+    $$(
+      `#${mapId}-measure-panel, #${mapId}-options-panel, #${mapId}-legend-panel`
+    ).forEach((panel) => {
+      L.DomEvent.disableClickPropagation(panel);
+      L.DomEvent.disableScrollPropagation(panel);
+    });
+  }
+
+  function setMeasurePanelOpen(mapId, open) {
+    const panel = $(`#${mapId}-measure-panel`);
+    if (panel) panel.open = !!open;
+  }
+
   function setMeasureMode(mapId, mode) {
     const state = measureStates[mapId];
     if (!state) return;
@@ -2722,6 +2876,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (shouldStartFresh) clearMeasure(mapId, { keepMode: true });
     updateMeasureGeometry(mapId);
     updateMeasureResult(mapId);
+    setMeasurePanelOpen(mapId, nextMode !== "off");
   }
 
   function addMeasurePoint(mapId, latlng) {
@@ -2770,6 +2925,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (select) select.value = "off";
     }
     updateMeasureResult(mapId, "Pomiar wyczyszczony");
+    if (!options.keepMode) setMeasurePanelOpen(mapId, false);
   }
 
   function finishMeasure(mapId) {
@@ -3118,8 +3274,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       `Status: ${navigator.onLine ? "online" : "offline"}.`,
       state?.lastError ? `Ostatni błąd: ${state.lastError}.` : ""
     ].filter(Boolean).join(" ");
-    const type = /błąd|brak kafli|limit/i.test(message) ? "warning" : /usunięto|zapisano|dostępny/i.test(message) ? "success" : "info";
-    showMapOfflineStatus(mapId, message, { type, autoHide: !state?.running, timeoutMs: 9000 });
+    const type = /błąd/i.test(message) ? "error" : /brak kafli|limit/i.test(message) ? "warning" : /usunięto|zapisano|dostępny/i.test(message) ? "success" : "info";
+    showMapOfflineStatus(mapId, message, { type, autoHide: type !== "error" && !state?.running, timeoutMs: 9000 });
   }
 
   async function switchToOfflineOrtoIfNeeded(map, mapId) {
@@ -3127,7 +3283,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!map || navigator.onLine || !state?.offlineLayer) return;
     const summary = await getViewedOrtoCacheSummary();
     if (summary.count > 0) {
-      state.offlineLayer.addTo(map);
+      setMapBaseLayer(map, mapId, "Ortofotomapa offline");
       showMapOfflineStatus(mapId, "Brak internetu. Pokazuję zapisane kafle offline.", { type: "warning" });
     } else {
       showMapOfflineStatus(mapId, "Brak kafli offline dla tego widoku.", { type: "warning", autoHide: true, timeoutMs: 8000 });
@@ -3155,7 +3311,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         item.savedSession = 0;
         item.skippedSession = 0;
         item.lastError = "";
-        if (item.map && item.onlineLayer && navigator.onLine) item.onlineLayer.addTo(item.map);
+        if (item.map && item.onlineLayer && navigator.onLine) {
+          const clearedMapId = item === ortoCacheState.records ? "records" : "working";
+          setMapBaseLayer(item.map, clearedMapId, "Ortofotomapa Geoportal");
+        }
       }
       await updateViewedOrtoCacheDiagnostics(mapId, "Usunięto ortofotomapę offline. Rekordy i gniazda robocze pozostały bez zmian.");
       const otherMapId = mapId === "records" ? "working" : "records";
@@ -3195,6 +3354,32 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
       }
     };
+  }
+
+  function setMapBaseLayer(map, mapId, layerName) {
+    const state = ortoCacheState[mapId];
+    const layers = state?.baseLayers;
+    const nextLayer = layers?.[layerName];
+    if (!map || !nextLayer || !layers) return;
+    Object.values(layers).forEach((layer) => {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+    });
+    nextLayer.addTo(map);
+    state.currentBaseLayerName = layerName;
+    const select = $(`#${mapId}-base-layer`);
+    if (select) select.value = layerName;
+  }
+
+  function initMapBaseLayerSelect(map, mapId, base) {
+    const state = ortoCacheState[mapId];
+    const select = $(`#${mapId}-base-layer`);
+    if (!state || !select) return;
+    state.baseLayers = base.layers;
+    state.currentBaseLayerName = select.value || "Ortofotomapa Geoportal";
+    if (!state.baseLayerSelectBound) {
+      state.baseLayerSelectBound = true;
+      select.addEventListener("change", () => setMapBaseLayer(map, mapId, select.value));
+    }
   }
 
   function createGeoportalOrtoLayer() {
@@ -3294,12 +3479,37 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     showView("readonly");
   }
 
+  function renderEggMeasurementsReadonly(record) {
+    const measurements = normalizeEggMeasurements(record?.eggMeasurements || []);
+    const hasAnyMeasurement = measurements.some((item) => item.widthMm != null || item.lengthMm != null || String(item.note || "").trim());
+    if (!hasAnyMeasurement) return `<p class="muted">Pomiary jaj: brak</p>`;
+    const count = Number(record?.eggCount);
+    const maxNo = Math.max(
+      Number.isFinite(count) && count > 0 ? Math.floor(count) : 0,
+      measurements.reduce((max, item) => Math.max(max, Number(item.eggNo) || 0), 0)
+    );
+    const byNo = new Map(measurements.map((item) => [Number(item.eggNo), item]));
+    return Array.from({ length: maxNo }, (_, index) => {
+      const eggNo = index + 1;
+      const item = byNo.get(eggNo);
+      if (!item || (item.widthMm == null && item.lengthMm == null && !String(item.note || "").trim())) {
+        return `<div class="readonly-field"><div class="label">Jajo ${eggNo}</div><div class="value">brak pomiaru</div></div>`;
+      }
+      const parts = [];
+      parts.push(item.widthMm == null ? "szer. brak" : `szer. ${formatMm(item.widthMm)} mm`);
+      parts.push(item.lengthMm == null ? "dł. brak" : `dł. ${formatMm(item.lengthMm)} mm`);
+      if (String(item.note || "").trim()) parts.push(`uwaga: ${item.note}`);
+      return `<div class="readonly-field"><div class="label">Jajo ${eggNo}</div><div class="value">${escapeHtml(parts.join(", "))}</div></div>`;
+    }).join("");
+  }
+
   function buildReadonlySections(record) {
     const val = (v) => (v == null || String(v).trim() === "" ? "—" : String(v));
     const fld = (label, v) => `<div class="readonly-field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(val(v))}</div></div>`;
     const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>`<img src="" data-photo-ref="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="${alt}">`).join("") || "<p>—</p>"}</div>`;
     const sections = [
       ["Identyfikacja", `${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
+      ["Pomiary jaj", renderEggMeasurementsReadonly(record)],
       ["GPS i zdjęcia gniazda", `${fld("Lat", record.lat)}${fld("Lon", record.lon)}${fld("Dokładność [m]", record.gpsAccuracyM)}${photoGrid(record.nestMicro?.photos, "Zdjęcie gniazda")}`],
       ["Mikrohabitat gniazda", `${fld("Podłoże", LABELS.substrate[record.nestMicro?.substrate] || record.nestMicro?.substrate)}${fld("Piasek [%]", record.nestMicro?.coverage?.pctSand)}${fld("Drobny żwir [%]", record.nestMicro?.coverage?.pctFineGravel)}${fld("Gruby żwir/kamienie [%]", record.nestMicro?.coverage?.pctCoarse)}${fld("Muszle [%]", record.nestMicro?.coverage?.pctShells)}${fld("Roślinność żywa [%]", record.nestMicro?.coverage?.pctLiveVeg)}${fld("Roślinność sucha [%]", record.nestMicro?.coverage?.pctDryVeg)}${fld("Drewno/szczątki [%]", record.nestMicro?.coverage?.pctOrganic)}${fld("Antropogeniczne [%]", record.nestMicro?.coverage?.pctAnthro)}${fld("Suma pokrycia [%]", coverageSum(record.nestMicro?.coverage||{}))}${fld("Odległość do rośliny [cm]", record.nestMicro?.distPlantCm)}${fld("Wysokość rośliny [cm]", record.nestMicro?.heightPlantCm)}${fld("Odległość do obiektu [cm]", record.nestMicro?.distObjectCm)}${fld("Wysokość obiektu [cm]", record.nestMicro?.heightObjectCm)}${fld("Nachylenie", LABELS.slope[record.nestMicro?.slope] || record.nestMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.nestMicro?.microrelief] || record.nestMicro?.microrelief)}`],
       ["Mezohabitat", `${fld("Piasek [%]", record.meso?.pctSand)}${fld("Żwir [%]", record.meso?.pctFineGravel || 0)}${fld("Kamienie [%]", record.meso?.pctGravel)}${fld("Roślinność [%]", record.meso?.pctVegetation)}${fld("Woda / podmokłość [%]", record.meso?.pctWater)}${fld("Muszle [%]", record.meso?.pctOther)}${fld("Suma pokrycia [%]", (record.meso?.pctSand||0)+(record.meso?.pctFineGravel||0)+(record.meso?.pctGravel||0)+(record.meso?.pctVegetation||0)+(record.meso?.pctWater||0)+(record.meso?.pctOther||0))}${fld("Sposób oceny buforu", LABELS.assessmentMethod?.[record.meso?.assessmentMethod] || record.meso?.assessmentMethod)}${fld("Odległość do wody [m]", record.meso?.distWaterM)}${fld("Odległość do krawędzi roślinności [m]", record.meso?.distVegEdgeM)}${fld("Odległość do wysokiego obiektu [m]", record.meso?.distVerticalStructureM)}${fld("Duże obiekty w 15 m", LABELS.yesNoUnknown?.[record.meso?.bigObjects] || record.meso?.bigObjects)}${fld("Odległość do płatu drobnego żwiru [m]", record.meso?.distFineGravelPatchM)}${fld("Odległość do płatu kamieni [m]", record.meso?.distCoarseGravelPatchM)}${fld("Odległość do najbliższego gniazda obrożnej [m]", record.meso?.distNearestHiaticulaM)}${fld("Odległość do najbliższego gniazda rzecznej [m]", record.meso?.distNearestDubiusM)}${fld("Uwagi przestrzenne", record.meso?.spatialNotes)}`],
@@ -3319,7 +3529,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const base = createBaseLayers();
       recordsMap = L.map(mapEl, { layers: [base.defaultLayer] });
       recordsMap.attributionControl.setPrefix("");
-      L.control.layers(base.layers).addTo(recordsMap);
+      initMapBaseLayerSelect(recordsMap, "records", base);
       ortoCacheState.records.map = recordsMap;
       ortoCacheState.records.onlineLayer = base.onlineLayer;
       ortoCacheState.records.offlineLayer = base.offlineLayer;
@@ -3763,8 +3973,26 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#export-kml")?.addEventListener("click", exportKml);
   }
 
-  function flattenEntry(entry) {
-    return {
+  function getMaxEggMeasurementNo(entries = []) {
+    return Math.max(5, ...entries.flatMap((entry) => {
+      const count = Number(entry?.eggCount);
+      const measurementNos = normalizeEggMeasurements(entry?.eggMeasurements || []).map((item) => Number(item.eggNo) || 0);
+      return [Number.isFinite(count) ? count : 0, ...measurementNos];
+    }).map((number) => Math.max(0, Math.floor(number || 0))));
+  }
+
+  function addEggMeasurementColumns(row, entry, maxEggNo) {
+    const byNo = new Map(normalizeEggMeasurements(entry?.eggMeasurements || []).map((item) => [Number(item.eggNo), item]));
+    for (let eggNo = 1; eggNo <= maxEggNo; eggNo += 1) {
+      const item = byNo.get(eggNo) || {};
+      row[`egg_${eggNo}_width_mm`] = item.widthMm ?? "";
+      row[`egg_${eggNo}_length_mm`] = item.lengthMm ?? "";
+    }
+    return row;
+  }
+
+  function flattenEntry(entry, maxEggNo = 5) {
+    const row = {
       uid: entry.uid,
       protocolVersion: entry.protocolVersion,
       createdAt: entry.createdAt,
@@ -3855,10 +4083,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       notesMeso: entry.moduleNotes?.meso,
       notes: entry.notes,
     };
+    return addEggMeasurementColumns(row, entry, maxEggNo);
   }
 
   function buildCsv(entries) {
-    const rows = entries.map(flattenEntry);
+    const maxEggNo = getMaxEggMeasurementNo(entries);
+    const rows = entries.map((entry) => flattenEntry(entry, maxEggNo));
     const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
     const labels = {
       mesoPctSand: "Mezohabitat — piasek",
@@ -3873,6 +4103,24 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       return /[",\n;]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     };
     return [headers.map((header) => labels[header] || header).join(";"), ...rows.map((row) => headers.map((header) => escape(row[header])).join(";"))].join("\n");
+  }
+
+  function buildEggMeasurementsCsv(entries) {
+    const rows = [];
+    entries.forEach((entry) => {
+      normalizeEggMeasurements(entry?.eggMeasurements || []).forEach((item) => {
+        rows.push({
+          record_uid: entry.uid || "",
+          nest_id: entry.nestId || "",
+          species: entry.species || "",
+          egg_no: item.eggNo,
+          width_mm: item.widthMm ?? "",
+          length_mm: item.lengthMm ?? "",
+          note: item.note || ""
+        });
+      });
+    });
+    return csvFromRows(rows, ["record_uid", "nest_id", "species", "egg_no", "width_mm", "length_mm", "note"]);
   }
 
   function setExportStatus(message) {
@@ -3922,6 +4170,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!window.JSZip) {
       alert("Biblioteka ZIP nie jest dostępna. Eksportuję CSV i JSON osobno.");
       downloadText(`sieweczka-records-${dateStamp()}.csv`, buildCsv(entries), "text/csv;charset=utf-8");
+      downloadText(`egg-measurements-${dateStamp()}.csv`, buildEggMeasurementsCsv(entries), "text/csv;charset=utf-8");
       downloadText(`sieweczka-records-${dateStamp()}.json`, JSON.stringify(entries, null, 2), "application/json");
       return;
     }
@@ -3936,6 +4185,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setExportStatus(includePhotos ? "Przygotowuję eksport ze zdjęciami..." : "Tworzę archiwum...");
     const zip = new JSZip();
     zip.file("sieweczka-records.csv", buildCsv(entries));
+    zip.file("egg_measurements.csv", buildEggMeasurementsCsv(entries));
     zip.file("records.json", JSON.stringify(entries, null, 2));
     const manifest = [];
 
@@ -4134,7 +4384,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const base = createBaseLayers();
       workingMap = L.map(mapEl, { layers: [base.defaultLayer] });
       workingMap.attributionControl.setPrefix("");
-      L.control.layers(base.layers).addTo(workingMap);
+      initMapBaseLayerSelect(workingMap, "working", base);
       ortoCacheState.working.map = workingMap;
       ortoCacheState.working.onlineLayer = base.onlineLayer;
       ortoCacheState.working.offlineLayer = base.offlineLayer;
@@ -4271,6 +4521,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     applyUiSettings();
     setupPercentGroups();
     setupTiles();
+    setupEggMeasurements();
     setDefaultDateTime();
     setupNestIdAutofill();
     setupSmartLists();
