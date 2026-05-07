@@ -119,10 +119,17 @@ Jeśli aplikacja działa już w trybie standalone, panel pokaże informację „
 Panel „Użytkownik” zawiera ustawienia lokalne zapisane w `sieweczka-ui-settings-v1`:
 - rozmiar tekstu;
 - skala interfejsu: Kompaktowa, Normalna, Duża;
+- rozmiar przycisków: Małe, Normalne, Duże;
 - rozmiar ikon: Małe, Normalne, Duże;
 - tryb terenowy.
 
-Te ustawienia nie są wysyłane na serwer i nie zmieniają danych terenowych. Jeśli przyciski albo ikony są zbyt duże na telefonie, ustaw skalę interfejsu na „Kompaktowa” i rozmiar ikon na „Małe”.
+Te ustawienia nie są wysyłane na serwer i nie zmieniają danych terenowych. Jeśli menu albo przyciski są zbyt duże na telefonie, ustaw skalę interfejsu na „Kompaktowa” i rozmiar przycisków na „Małe”; jeśli problem dotyczy symboli, ustaw też rozmiar ikon na „Małe”.
+
+### Wygląd na różnych telefonach
+
+Android/iPhone oraz Brave, Safari, Chrome i tryb PWA mogą inaczej interpretować automatyczne skalowanie tekstu i elementów dotykowych. Widok główny, menu aplikacji, kafelki, przyciski i ikony korzystają z ograniczeń `clamp()`, aby nie rosły niekontrolowanie na iOS, ale nadal pozostały wygodne w terenie.
+
+Jeśli menu albo przyciski są zbyt duże, ustaw skalę interfejsu na „Kompaktowa” i rozmiar przycisków na „Małe”. W panelu „Użytkownik” można również zmienić rozmiar tekstu i ikon oraz otworzyć zwijaną sekcję „Diagnostyka interfejsu” z szerokością/wysokością okna, `devicePixelRatio`, user agentem, trybem PWA, wersją aplikacji i aktualnymi ustawieniami UI.
 
 ## Eksport zdjęć z serwera
 
