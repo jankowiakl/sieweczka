@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-menu-settings-return-v1";
+  const APP_VERSION = "2026.05.07-menu-overlay-map-polish-v1";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -513,22 +513,42 @@
     };
     document.addEventListener("keydown", onKey);
     modal.addEventListener("click", async (event) => {
-      if (event.target === modal) { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
-      if (event.target.closest("a")) { document.removeEventListener("keydown", onKey); setTimeout(closeAppMenu, 0); return; }
-      const action = event.target.closest("[data-menu-action]")?.dataset.menuAction;
+      if (event.target === modal) return;
+      if (event.target.closest("a")) return;
+      const actionButton = event.target.closest("[data-menu-action]");
+      const action = actionButton?.dataset.menuAction;
       if (!action) return;
       if (action === "close") { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
-      document.removeEventListener("keydown", onKey);
-      closeAppMenu();
-      if (!$("#form-screen")?.hidden) {
+      const needsFormExit = ["home", "settings", "admin", "install"].includes(action);
+      if (needsFormExit && !$("#form-screen")?.hidden) {
         const leftForm = await goHomeFromMaybeForm();
         if (!leftForm) return;
       }
       if (action === "home") showView("home");
       if (action === "settings") { userPanelReturnToMenu = true; renderUserPanel(); showView("user"); }
       if (action === "admin") { showView("admin"); await loadAdminUsers({ force: true }).catch((error) => { $("#admin-users-status").textContent = `Błąd: ${error.message}`; }); }
-      if (action === "sync") { showView("home"); $("#home-sync-now")?.click(); }
-      if (action === "export") { showView("home"); $("#home-export-panel").hidden = false; $("#export-zip")?.focus(); }
+      if (action === "sync") {
+        const previousText = actionButton.textContent;
+        actionButton.textContent = "Synchronizuję...";
+        actionButton.disabled = true;
+        try {
+          const result = await syncNow();
+          actionButton.textContent = `Synchronizacja OK. ${formatPhotoSyncStatus(result.photoSync)}`;
+          renderEntries();
+          updateCounts();
+          renderHomeSummary();
+        } catch (error) {
+          actionButton.textContent = `Błąd synchronizacji: ${error.message || error}`;
+        } finally {
+          setTimeout(() => {
+            actionButton.disabled = false;
+            actionButton.textContent = previousText;
+          }, 4500);
+        }
+      }
+      if (action === "export") {
+        await exportZip({ includePhotos: false }).catch((error) => alert(`Eksport nie powiódł się: ${error.message || error}`));
+      }
       if (action === "install") { userPanelReturnToMenu = true; renderUserPanel(); showView("user"); await installApp(); }
       if (action === "refresh") $("#refresh-app-version")?.click();
       if (action === "logout") $("#logout")?.click();

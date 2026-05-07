@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=2026.05.07-menu-settings-return-v1" />
+  <link rel="stylesheet" href="styles.css?v=2026.05.07-menu-overlay-map-polish-v1" />
 </head>
 <body>
   <noscript>
@@ -292,10 +292,7 @@
           <span id="map-info" class="muted"></span>
         </div>
       </details>
-      <details id="records-legend-panel" class="map-legend-panel">
-        <summary>Legenda</summary>
-        <div class="map-legend muted"><span class="legend-dot g">G</span> — gniazdo • <span class="legend-dot k">K</span> — kontrola / punkt losowy</div>
-      </details>
+      <div id="records-legend-panel" class="map-legend map-records-legend muted"><span class="legend-dot g">G</span> — gniazdo • <span class="legend-dot k">K</span> — kontrola / punkt losowy</div>
       <details id="records-options-panel" class="map-options-panel">
         <summary>Warstwy i opcje mapy</summary>
         <div class="map-toolbar">
@@ -950,8 +947,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="app.js?v=2026.05.07-menu-settings-return-v1"></script>
-  <script src="field-help.js?v=2026.05.07-menu-settings-return-v1"></script>
+  <script src="app.js?v=2026.05.07-menu-overlay-map-polish-v1"></script>
+  <script src="field-help.js?v=2026.05.07-menu-overlay-map-polish-v1"></script>
   <script>
   (() => {
     "use strict";
