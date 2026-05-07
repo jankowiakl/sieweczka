@@ -570,6 +570,15 @@ button:disabled {
   font-size: var(--menu-button-font-size);
 }
 
+.app-menu-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: .15rem;
+}
+
+.app-menu-actions button {
+  min-height: calc(var(--menu-button-height) * .85);
+}
 
 .app-menu-panel .screen-head {
   margin-bottom: .25rem;
@@ -1580,11 +1589,22 @@ summary {
 .map-primary-actions .primary{
   box-shadow:0 4px 12px rgba(15,118,110,.18);
 }
+.map-primary-actions .map-base-layer-field{
+  flex:1 1 13rem;
+  min-width:min(100%, 13rem);
+  max-width:100%;
+  gap:.35rem;
+  font-weight:850;
+}
+.map-primary-actions .map-base-layer-field select{
+  width:100%;
+  min-width:0;
+}
 .map-options-panel,
 .map-legend-panel,
 .map-measure-panel{
-  margin:.45rem 0;
-  padding:.35rem .45rem;
+  margin:.3rem 0;
+  padding:.18rem .32rem;
   border:1px solid var(--border);
   border-radius:8px;
   background:#fff;
@@ -1592,12 +1612,11 @@ summary {
 .map-options-panel summary,
 .map-legend-panel summary,
 .map-measure-panel summary{
-  min-height:44px;
+  min-height:34px;
   display:flex;
   align-items:center;
-  justify-content:space-between;
-  gap:.5rem;
-  padding:.15rem .25rem;
+  gap:.38rem;
+  padding:.05rem .18rem;
   cursor:pointer;
   font-weight:850;
   color:var(--primary-dark);
@@ -1607,22 +1626,43 @@ summary {
 .map-options-panel summary::after,
 .map-legend-panel summary::after,
 .map-measure-panel summary::after{
-  content:"v";
+  content:none;
+}
+.map-options-panel summary::before,
+.map-legend-panel summary::before,
+.map-measure-panel summary::before{
+  content:"›";
   flex:0 0 auto;
-  font-size:.85em;
+  width:.95rem;
+  height:.95rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:999px;
+  background:#e0f2f1;
+  color:var(--primary-dark);
+  font-size:1rem;
+  line-height:1;
+  transform:rotate(0deg);
+  transition:transform .15s ease;
 }
 .map-options-panel[open] summary::after,
 .map-legend-panel[open] summary::after,
 .map-measure-panel[open] summary::after{
-  transform:rotate(180deg);
+  content:none;
+}
+.map-options-panel[open] summary::before,
+.map-legend-panel[open] summary::before,
+.map-measure-panel[open] summary::before{
+  transform:rotate(90deg);
 }
 .map-options-panel[open] summary,
 .map-legend-panel[open] summary,
 .map-measure-panel[open] summary{
-  margin-bottom:.45rem;
+  margin-bottom:.28rem;
 }
 .map-options-panel .map-toolbar{
-  margin:.2rem 0 .35rem;
+  margin:.15rem 0 .25rem;
 }
 .map-toolbar .map-base-layer-field{
   flex:0 1 auto;
@@ -1640,6 +1680,28 @@ summary {
 .map-legend-panel .map-legend{
   margin:.1rem 0 .35rem;
 }
+.map-records-legend{
+  margin:.25rem 0 .35rem;
+  padding:.25rem .35rem;
+  border:1px solid rgba(148,163,184,.55);
+  border-radius:8px;
+  background:#fff;
+}
+.map-toolbar .muted{
+  flex:1 1 100%;
+}
+.map-panel-with-overlay{
+  position:relative;
+  min-width:0;
+  max-width:100%;
+}
+.map-overlay-action{
+  position:absolute;
+  z-index:500;
+  right:calc(.65rem + var(--safe-right));
+  top:calc(.65rem + var(--safe-top));
+  box-shadow:0 8px 22px rgba(15,23,42,.22);
+}
 .map-offline-status{
   margin:.45rem 0 0;
   padding:.5rem .65rem;
@@ -1653,11 +1715,11 @@ summary {
 .map-offline-status.success{background:var(--ok-bg);border-color:var(--ok-border);color:#065f46}
 .map-offline-status.warning{background:var(--warning-bg);border-color:var(--warning-border);color:#92400e}
 .map-offline-status.error{background:var(--bad-bg);border-color:var(--bad-border);color:#991b1b}
-.map-canvas{height:min(55dvh,520px);min-height:300px;border-radius:12px}
-#working-map.map-canvas{height:min(50dvh,480px)}
+.map-canvas{height:min(68dvh,680px);min-height:420px;border-radius:12px}
+#working-map.map-canvas{height:min(66dvh,660px);min-height:420px}
 @supports not (height: 1dvh){
-  .map-canvas{height:55vh}
-  #working-map.map-canvas{height:50vh}
+  .map-canvas{height:68vh}
+  #working-map.map-canvas{height:66vh}
 }
 .measure-toolbar{
   display:flex;
@@ -2525,6 +2587,22 @@ body {
     width: auto;
     min-width: 10rem;
     max-width: 62vw;
+  }
+
+  .map-canvas {
+    height: min(72dvh, 720px);
+    min-height: 460px;
+  }
+
+  #working-map.map-canvas {
+    height: min(70dvh, 700px);
+    min-height: 460px;
+  }
+
+  .map-overlay-action {
+    right: calc(.55rem + var(--safe-right));
+    top: calc(.55rem + var(--safe-top));
+    max-width: calc(100% - 1.1rem - var(--safe-left) - var(--safe-right));
   }
 
   .measure-toolbar {

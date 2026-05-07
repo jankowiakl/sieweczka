@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-folded-map-ui";
+  const APP_VERSION = "2026.05.07-menu-export-screen-v1";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -491,12 +491,10 @@
     modal.className = "app-menu-modal";
     modal.innerHTML = `
       <div class="app-menu-panel" role="dialog" aria-modal="true" aria-label="Menu aplikacji">
-        <div class="screen-head">
-          <h2>Menu</h2>
+        <div class="app-menu-actions">
           <button type="button" class="ghost-light small" data-menu-action="close">Zamknij</button>
         </div>
         <button type="button" data-menu-action="home">Menu główne</button>
-        <button type="button" data-menu-action="user">Użytkownik</button>
         <button type="button" data-menu-action="sync">Synchronizacja</button>
         ${canExport ? `<button type="button" data-menu-action="export">Eksport</button>` : ""}
         ${isAdmin() ? `<button type="button" data-menu-action="admin">Administrator</button>` : ""}
@@ -514,26 +512,52 @@
       }
     };
     document.addEventListener("keydown", onKey);
-    modal.addEventListener("click", async (event) => {
-      if (event.target === modal) { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
-      if (event.target.closest("a")) { document.removeEventListener("keydown", onKey); setTimeout(closeAppMenu, 0); return; }
-      const action = event.target.closest("[data-menu-action]")?.dataset.menuAction;
-      if (!action) return;
-      if (action === "close") { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
+    const closeForNavigation = () => {
       document.removeEventListener("keydown", onKey);
       closeAppMenu();
-      if (!$("#form-screen")?.hidden) {
+    };
+    modal.addEventListener("click", async (event) => {
+      if (event.target === modal) return;
+      if (event.target.closest("a")) return;
+      const actionButton = event.target.closest("[data-menu-action]");
+      const action = actionButton?.dataset.menuAction;
+      if (!action) return;
+      if (action === "close") { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
+      const needsFormExit = ["home", "settings", "admin", "export", "install"].includes(action);
+      if (needsFormExit && !$("#form-screen")?.hidden) {
         const leftForm = await goHomeFromMaybeForm();
         if (!leftForm) return;
       }
-      if (action === "home") showView("home");
-      if (action === "user" || action === "settings") { renderUserPanel(); showView("user"); }
-      if (action === "admin") { showView("admin"); await loadAdminUsers({ force: true }).catch((error) => { $("#admin-users-status").textContent = `Błąd: ${error.message}`; }); }
-      if (action === "sync") { showView("home"); $("#home-sync-now")?.click(); }
-      if (action === "export") { showView("home"); $("#home-export-panel").hidden = false; $("#export-zip")?.focus(); }
-      if (action === "install") { renderUserPanel(); showView("user"); await installApp(); }
+      if (action === "home") { closeForNavigation(); showView("home"); }
+      if (action === "settings") { closeForNavigation(); userPanelReturnToMenu = true; renderUserPanel(); showView("user"); }
+      if (action === "admin") { closeForNavigation(); showView("admin"); await loadAdminUsers({ force: true }).catch((error) => { $("#admin-users-status").textContent = `Błąd: ${error.message}`; }); }
+      if (action === "sync") {
+        const previousText = actionButton.textContent;
+        actionButton.textContent = "Synchronizuję...";
+        actionButton.disabled = true;
+        try {
+          const result = await syncNow();
+          actionButton.textContent = `Synchronizacja OK. ${formatPhotoSyncStatus(result.photoSync)}`;
+          renderEntries();
+          updateCounts();
+          renderHomeSummary();
+        } catch (error) {
+          actionButton.textContent = `Błąd synchronizacji: ${error.message || error}`;
+        } finally {
+          setTimeout(() => {
+            actionButton.disabled = false;
+            actionButton.textContent = previousText;
+          }, 4500);
+        }
+      }
+      if (action === "export") {
+        closeForNavigation();
+        exportPanelReturnToMenu = true;
+        showView("export");
+      }
+      if (action === "install") { closeForNavigation(); userPanelReturnToMenu = true; renderUserPanel(); showView("user"); await installApp(); }
       if (action === "refresh") $("#refresh-app-version")?.click();
-      if (action === "logout") $("#logout")?.click();
+      if (action === "logout") { closeForNavigation(); $("#logout")?.click(); }
     });
     document.body.appendChild(modal);
     modal.querySelector("[data-menu-action='close']")?.focus();
@@ -669,7 +693,7 @@
       renderUserPanel();
       showView("login");
     });
-    $("#open-user")?.addEventListener("click", () => { renderUserPanel(); showView("user"); });
+    $("#open-user")?.addEventListener("click", () => { userPanelReturnToMenu = false; renderUserPanel(); showView("user"); });
     $("#open-admin")?.addEventListener("click", async () => {
       showView("admin");
       try { await loadAdminUsers({ force: true }); } catch (e) { $("#admin-users-status").textContent = `Błąd: ${e.message}`; }
@@ -967,6 +991,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let editingUid = null;
   let readonlyUid = null;
   let editReturnToReadonly = false;
+  let userPanelReturnToMenu = false;
+  let exportPanelReturnToMenu = false;
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
@@ -1801,6 +1827,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-map-screen").hidden = name !== "working-map";
     $("#form-screen").hidden = name !== "form";
     $("#user-screen").hidden = name !== "user";
+    $("#export-screen").hidden = name !== "export";
     $("#admin-screen").hidden = name !== "admin";
     if (name === "map") setTimeout(() => renderRecordsMap(mapFocusUid), 0);
     if (name === "working-map") setTimeout(() => renderWorkingMap(), 0);
@@ -2873,6 +2900,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const shouldStartFresh = nextMode !== "off" && (state.finished || (state.mode !== "off" && state.mode !== nextMode));
     state.mode = nextMode;
     state.finished = false;
+    const panel = $(`#${mapId}-measure-panel`);
+    if (panel && nextMode !== "off") panel.open = true;
     if (shouldStartFresh) clearMeasure(mapId, { keepMode: true });
     updateMeasureGeometry(mapId);
     updateMeasureResult(mapId);
@@ -2923,6 +2952,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       state.mode = "off";
       const select = $(`#${mapId}-measure-mode`);
       if (select) select.value = "off";
+      const panel = $(`#${mapId}-measure-panel`);
+      if (panel) panel.open = false;
     }
     updateMeasureResult(mapId, "Pomiar wyczyszczony");
     if (!options.keepMode) setMeasurePanelOpen(mapId, false);
@@ -3733,6 +3764,20 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     $("#home-shortcut").addEventListener("click", openAppMenu);
     $$(".back-home").forEach((btn) => btn.addEventListener("click", handleHomeExit));
+    $("#user-back")?.addEventListener("click", () => {
+      showView("home");
+      if (userPanelReturnToMenu) {
+        userPanelReturnToMenu = false;
+        setTimeout(openAppMenu, 0);
+      }
+    });
+    $("#export-back")?.addEventListener("click", () => {
+      showView("home");
+      if (exportPanelReturnToMenu) {
+        exportPanelReturnToMenu = false;
+        setTimeout(openAppMenu, 0);
+      }
+    });
     $("#resume-draft")?.addEventListener("click", () => {
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
     });
@@ -4124,7 +4169,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function setExportStatus(message) {
-    const status = $("#sync-status");
+    const status = $("#export-screen-status") || $("#sync-status");
     if (status) status.textContent = message;
   }
 
