@@ -1879,3 +1879,332 @@ html.viewport-tight .field-help-card { max-height: min(76vh, 520px); }
 html.viewport-tight .app-menu-panel { max-height: min(74vh, 650px); max-height: min(74svh, 650px); }
 html.viewport-tight.ui-minimal label, html.viewport-tight.ui-minimal .field-block { margin: .4rem 0; }
 html.viewport-tight.ui-minimal .step-chip { line-height: 1.08; }
+
+/* Responsive width controls and horizontal-overflow hardening. */
+:root {
+  --app-max-width: 840px;
+  --app-inline-padding: clamp(.45rem, 2.3vw, .75rem);
+  --card-max-width: 840px;
+  --content-width-scale: 1;
+  --button-inline-padding: var(--control-padding-x);
+  --button-max-inline-size: 100%;
+  --button-letter-spacing: normal;
+  --home-columns: repeat(2, minmax(0, 1fr));
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+html.layout-full {
+  --app-max-width: 100vw;
+  --app-inline-padding: clamp(.35rem, 1.8vw, .7rem);
+  --card-max-width: 980px;
+  --menu-width: min(88vw, 400px);
+  --content-width-scale: 1;
+}
+
+html.layout-normal {
+  --app-max-width: 840px;
+  --app-inline-padding: clamp(.45rem, 2.3vw, .75rem);
+  --card-max-width: 840px;
+  --menu-width: min(88vw, 400px);
+  --content-width-scale: .96;
+}
+
+html.layout-narrow {
+  --app-max-width: 760px;
+  --app-inline-padding: clamp(.36rem, 1.8vw, .62rem);
+  --card-max-width: 760px;
+  --menu-width: min(82vw, 360px);
+  --content-width-scale: .9;
+}
+
+html.layout-xnarrow {
+  --app-max-width: 680px;
+  --app-inline-padding: clamp(.28rem, 1.4vw, .52rem);
+  --card-max-width: 680px;
+  --menu-width: min(78vw, 330px);
+  --content-width-scale: .84;
+}
+
+html.layout-minimal {
+  --app-max-width: 600px;
+  --app-inline-padding: clamp(.2rem, 1vw, .42rem);
+  --card-max-width: 600px;
+  --menu-width: min(74vw, 300px);
+  --content-width-scale: .78;
+}
+
+html.viewport-tight.layout-minimal,
+html.viewport-tight.ui-minimal {
+  --app-inline-padding: .2rem;
+  --control-padding-x: .24rem;
+  --button-inline-padding: .24rem;
+  --menu-width: min(70vw, 280px);
+}
+
+html.ui-minimal,
+html.ui-xcompact,
+html.buttons-minimal,
+html.buttons-xsmall {
+  --button-inline-padding: var(--control-padding-x);
+  --button-letter-spacing: -.01em;
+}
+
+#app {
+  width: 100%;
+  max-width: min(var(--app-max-width), 100%);
+  min-width: 0;
+  padding-inline: var(--app-inline-padding);
+}
+
+.app-header,
+.header-inner,
+.app-header h1,
+.screen,
+.card,
+.home-primary-actions,
+.home-secondary-actions,
+.home-status-grid,
+.home-tile,
+.entry-card,
+.entry-actions,
+.sticky-actions,
+.step-header-row,
+.step-jump-actions,
+.step-strip,
+.progress-wrap,
+.pct-row,
+.percent-group,
+.gps-panel,
+.photo-input,
+.record-preview,
+.advanced-panel,
+.field-help-card,
+.draft-exit-dialog,
+.app-menu-panel,
+.inline-field,
+.row-actions,
+.row-2,
+.tile-group,
+.entries-list,
+.validation-list,
+.edit-banner,
+.compass-panel,
+.stats-grid,
+#admin-screen,
+#admin-users-list,
+#admin-deleted-records-section,
+#working-edit-panel {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.card,
+.screen.card {
+  max-width: min(var(--card-max-width), 100%);
+}
+
+.header-inner {
+  max-width: min(var(--app-max-width), 100%);
+}
+
+.app-header h1,
+.screen-head h2,
+.home-tile strong,
+.home-tile span,
+.entry-main,
+.entry-main h3,
+.entry-main p,
+.record-preview,
+.home-status-grid > div,
+.percent-group,
+.gps-panel,
+.photo-input,
+.field-help-card,
+.draft-exit-dialog,
+.app-menu-panel,
+button,
+.button-like {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+button,
+.button-like,
+.btn-inline,
+.back-home,
+.step-jump-actions button,
+.app-menu-panel button,
+.home-tile,
+.entry-actions button,
+.sticky-actions button,
+.row-actions button,
+.tile {
+  max-width: var(--button-max-inline-size);
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.15;
+  letter-spacing: var(--button-letter-spacing);
+  padding-inline: var(--button-inline-padding);
+}
+
+@supports (text-wrap: balance) {
+  button,
+  .button-like,
+  .home-tile strong,
+  .home-tile span {
+    text-wrap: balance;
+  }
+}
+
+.app-menu-panel {
+  width: min(var(--menu-width), calc(100vw - 1rem));
+  max-width: min(var(--menu-width), calc(100vw - 1rem));
+  overflow-x: hidden;
+}
+
+.app-menu-panel button,
+.app-menu-panel .button-like {
+  width: 100%;
+}
+
+.step-strip {
+  width: 100%;
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+}
+
+.step-chip {
+  max-width: min(72vw, 18rem);
+  white-space: nowrap;
+}
+
+.step-jump-actions {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.inline-field {
+  flex-wrap: wrap;
+}
+
+.inline-field > * {
+  min-width: 0;
+  flex: 1 1 10rem;
+}
+
+.inline-field > button,
+.inline-field > .btn-inline {
+  flex: 0 1 auto;
+}
+
+.home-primary-actions,
+.home-secondary-actions,
+.home-status-grid {
+  grid-template-columns: var(--home-columns);
+}
+
+html.tiles-two {
+  --home-columns: repeat(2, minmax(0, 1fr));
+}
+
+html.tiles-one {
+  --home-columns: 1fr;
+}
+
+html.tiles-compact {
+  --home-columns: repeat(2, minmax(0, 1fr));
+  --tile-padding: clamp(.28rem, 1vw, .48rem);
+}
+
+html.tiles-one .home-tile {
+  min-height: clamp(46px, calc(12vw * var(--ui-scale)), 64px);
+}
+
+html.tiles-compact.viewport-tight .home-tile span {
+  display: none;
+}
+
+html.viewport-tight.tiles-auto {
+  --home-columns: repeat(2, minmax(0, 1fr));
+}
+
+html.viewport-tight.layout-minimal .sticky-actions,
+html.viewport-tight.ui-minimal .sticky-actions {
+  grid-template-columns: 1fr;
+}
+
+html.viewport-tight.layout-minimal #save-final,
+html.viewport-tight.ui-minimal #save-final {
+  grid-column: auto;
+}
+
+html.viewport-tight.layout-minimal .pct-row,
+html.viewport-tight.ui-minimal .pct-row {
+  grid-template-columns: minmax(44px, 52px) minmax(0, 1fr) minmax(44px, 52px);
+}
+
+html.viewport-tight .step-jump-actions button::first-letter {
+  text-transform: uppercase;
+}
+
+.photo-input input,
+input,
+select,
+textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.diagnostics-output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: .82rem;
+}
+
+.warning-text {
+  color: var(--danger);
+}
+
+.overflow-debug-outline {
+  outline: 3px solid #ef4444 !important;
+  outline-offset: -3px !important;
+}
+
+@media (max-width: 430px) {
+  .screen-head {
+    flex-wrap: wrap;
+  }
+
+  .back-home,
+  .btn-inline {
+    white-space: normal;
+  }
+
+  .entry-actions,
+  .row-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 395px) {
+  .entry-actions,
+  .row-actions,
+  html.tiles-one .home-primary-actions,
+  html.tiles-one .home-secondary-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .step-jump-actions {
+    justify-content: stretch;
+  }
+
+  .step-jump-actions button {
+    flex: 1 1 0;
+    padding-inline: .35rem;
+  }
+}
