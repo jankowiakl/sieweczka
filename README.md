@@ -58,29 +58,29 @@ Co dostajesz:
 
 
 
-## Wygląd na różnych telefonach
+## Wygląd aplikacji i iPhone
 
-Android, iPhone, Safari, Chrome, Brave oraz tryb PWA mogą inaczej skalować tekst, ikony, odstępy i przyciski. Aplikacja ogranicza automatyczne powiększanie tekstu na iOS, ale nadal pozwala użytkownikowi korzystać z zoomu przeglądarki.
+Android, iPhone, Safari, Chrome, Brave oraz tryb PWA mogą inaczej skalować tekst, ikony, odstępy i przyciski. Aplikacja ogranicza automatyczne powiększanie tekstu na iOS, ale nadal pozwala użytkownikowi korzystać z zoomu przeglądarki. iPhone może mieć mniejszy viewport CSS niż telefon z Androidem o podobnym fizycznym ekranie; jeśli ekran przesuwa się w lewo/prawo, przyczyną jest horizontal overflow elementu, a nie potrzeba skalowania całej aplikacji przez `transform`.
 
 ## Dopasowanie wyglądu
 
-W panelu **Użytkownik** można dostosować lokalny wygląd aplikacji bez zmiany danych terenowych. Dostępne są niezależne ustawienia tekstu, skali interfejsu, przycisków i ikon:
+W panelu **Użytkownik** można dostosować lokalny wygląd aplikacji bez zmiany danych terenowych. Ustawienia działają globalnie na tekst, skalę interfejsu, przyciski, ikony, szerokość, układ kafelków, karty, formularze, menu, listy, modale, mapy i panele eksportu/synchronizacji. Dostępne są niezależne ustawienia:
 
 - **Skala interfejsu**: Minimalna, Bardzo kompaktowa, Kompaktowa, Normalna, Wygodna albo Duża. Skala interfejsu zmienia przede wszystkim odstępy, wysokość kart, panele, chipy kroków, miniatury i gęstość formularzy.
 - **Rozmiar przycisków**: Minimalne, Bardzo małe, Małe, Normalne, Duże albo Bardzo duże.
 - **Rozmiar ikon**: Minimalne, Bardzo małe, Małe, Normalne albo Duże.
 - **Rozmiar tekstu**: Minimalny, Bardzo mały, Mały, Normalny, Duży albo Bardzo duży. Zmiana rozmiaru tekstu to nie to samo co skala interfejsu: tekst zmienia litery, a skala interfejsu zmienia układ, karty i odstępy.
-- **Szerokość układu**: Pełna, Normalna, Zwężona, Bardzo zwężona albo Minimalna.
+- **Zwartość szerokości**: Luźna, Normalna, Zwarta, Bardzo zwarta albo Minimalna. Zwartość szerokości działa globalnie na karty, przyciski, menu i gridy.
 - **Układ kafelków**: Automatyczny, Dwie kolumny, Jedna kolumna albo Kompaktowa siatka.
 
 Dostępne presety:
 
 - **Dopasuj do małego ekranu** — zagęszcza UI dla wąskich telefonów.
 - **Najmniejszy widok** — ustawia minimalny interfejs, przyciski, ikony i tekst dla sytuacji, gdy trzeba zmieścić jak najwięcej treści.
-- **iPhone / wąski ekran** — ustawia minimalną szerokość układu i jedną kolumnę kafelków, gdy aplikację da się przesuwać poziomo.
+- **iPhone bez poziomego przewijania** — ustawia minimalną szerokość układu i jedną kolumnę kafelków, gdy aplikację da się przesuwać poziomo.
 - **Widok standardowy** — przywraca normalny interfejs, przyciski, ikony i tekst.
 
-Na iPhone o szerokości około 393px warto użyć presetu **iPhone / wąski ekran**, **Najmniejszy widok** albo **Dopasuj do małego ekranu**. Aplikacja automatycznie rozpoznaje wąski widok (`viewport-narrow`) do 430px oraz ciaśniejszy widok (`viewport-tight`) do 395px, aby zmniejszyć menu, karty, formularze, panele pomocy i modale bez czyszczenia danych lokalnych.
+Na iPhone o szerokości około 393px warto użyć presetu **iPhone bez poziomego przewijania**, **Najmniejszy widok** albo **Dopasuj do małego ekranu**. Aplikacja automatycznie rozpoznaje wąski widok (`viewport-narrow`) do 430px oraz ciaśniejszy widok (`viewport-tight`) do 395px, aby zmniejszyć menu, karty, formularze, panele pomocy i modale bez czyszczenia danych lokalnych.
 
 W tej samej sekcji jest zwijana **Diagnostyka interfejsu**, która pokazuje wymiary ekranu, `devicePixelRatio`, tryb PWA, wersję aplikacji, aktywny preset, klasy HTML, breakpoint układu i wybrane zmienne CSS, szerokości `scrollWidth` oraz wykryte elementy powodujące poziomy overflow.
 
@@ -97,9 +97,9 @@ Na iPhonie aplikacja może mieć węższy viewport CSS niż na części telefon�
 
 Jeśli ekran wydaje się za szeroki albo można przesuwać aplikację poziomo:
 
-1. Otwórz **Użytkownik** i użyj presetu **iPhone / wąski ekran**.
-2. W razie potrzeby zmień **Szerokość układu** na **Minimalna** albo **Bardzo zwężona**.
+1. Otwórz **Użytkownik** i użyj presetu **iPhone bez poziomego przewijania**.
+2. W razie potrzeby zmień **Zwartość szerokości** na **Minimalna** albo **Bardzo zwężona**.
 3. Zmień **Układ kafelków** na **Jedna kolumna**, jeśli dwie kolumny są za ciasne dla długich etykiet.
-4. W sekcji **Diagnostyka interfejsu** kliknij **Sprawdź poziomy overflow**. Diagnostyka pokazuje szerokość okna, `scrollWidth`, różnicę względem viewportu i listę elementów, które wystają poza ekran.
+4. W sekcji **Diagnostyka interfejsu** kliknij **Pokaż elementy wychodzące poza ekran**. Diagnostyka pokazuje szerokość okna, `scrollWidth`, różnicę względem viewportu i listę elementów, które wystają poza ekran.
 
 Pasek kroków formularza może przewijać się poziomo wewnątrz własnego obszaru, ale nie powinien zwiększać szerokości całej strony.

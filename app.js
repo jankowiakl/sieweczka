@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-responsive-ui-5";
+  const APP_VERSION = "2026.05.07-global-responsive-ui-1";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -52,7 +52,8 @@
     ui: ["ui-minimal", "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large"],
     buttons: ["buttons-minimal", "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge"],
     icons: ["icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large"],
-    layout: ["layout-full", "layout-normal", "layout-narrow", "layout-xnarrow", "layout-minimal"],
+    layout: ["width-loose", "width-normal", "width-compact", "width-xcompact", "width-minimal"],
+    width: ["width-loose", "width-normal", "width-compact", "width-xcompact", "width-minimal"],
     tiles: ["tiles-auto", "tiles-two", "tiles-one", "tiles-compact"]
   };
   const UI_LEGACY_VALUES = {
@@ -60,7 +61,8 @@
     ui: { minimal: "ui-minimal", tiny: "ui-minimal", xcompact: "ui-xcompact", compact: "ui-compact", normal: "ui-normal", comfortable: "ui-comfortable", large: "ui-large" },
     buttons: { minimal: "buttons-minimal", tiny: "buttons-minimal", xsmall: "buttons-xsmall", small: "buttons-small", normal: "buttons-normal", large: "buttons-large", xlarge: "buttons-xlarge" },
     icons: { minimal: "icons-minimal", tiny: "icons-minimal", xsmall: "icons-xsmall", small: "icons-small", normal: "icons-normal", large: "icons-large" },
-    layout: { full: "layout-full", normal: "layout-normal", narrow: "layout-narrow", xnarrow: "layout-xnarrow", minimal: "layout-minimal" },
+    layout: { full: "width-loose", loose: "width-loose", normal: "width-normal", narrow: "width-compact", compact: "width-compact", xnarrow: "width-xcompact", xcompact: "width-xcompact", minimal: "width-minimal" },
+    width: { full: "width-loose", loose: "width-loose", normal: "width-normal", narrow: "width-compact", compact: "width-compact", xnarrow: "width-xcompact", xcompact: "width-xcompact", minimal: "width-minimal", "layout-full": "width-loose", "layout-normal": "width-normal", "layout-narrow": "width-compact", "layout-xnarrow": "width-xcompact", "layout-minimal": "width-minimal" },
     tiles: { auto: "tiles-auto", two: "tiles-two", one: "tiles-one", compact: "tiles-compact" }
   };
 
@@ -79,7 +81,7 @@
       uiScale: normalizeUiClass(settings.uiScale, "ui", "ui-normal"),
       buttonSize: normalizeUiClass(settings.buttonSize, "buttons", "buttons-normal"),
       iconSize: normalizeUiClass(settings.iconSize, "icons", "icons-normal"),
-      layoutWidth: normalizeUiClass(settings.layoutWidth, "layout", "layout-normal"),
+      layoutWidth: normalizeUiClass(settings.layoutWidth, "width", "width-normal"),
       tileLayout: normalizeUiClass(settings.tileLayout, "tiles", "tiles-auto")
     };
   }
@@ -117,6 +119,7 @@
       "buttons-minimal", "buttons-xsmall", "buttons-small", "buttons-normal", "buttons-large", "buttons-xlarge",
       "icons-minimal", "icons-xsmall", "icons-small", "icons-normal", "icons-large",
       "layout-full", "layout-normal", "layout-narrow", "layout-xnarrow", "layout-minimal",
+      "width-loose", "width-normal", "width-compact", "width-xcompact", "width-minimal",
       "tiles-auto", "tiles-two", "tiles-one", "tiles-compact"
     );
     document.documentElement.classList.add(settings.fontSize, settings.uiScale, settings.buttonSize, settings.iconSize, settings.layoutWidth, settings.tileLayout);
@@ -423,7 +426,7 @@
         `różnica scrollWidth - innerWidth: <strong>${overflowDiagnostics.scrollDelta}px</strong>`,
         `elementy overflow: <strong>${overflowDiagnostics.overflowItems.length}</strong>`,
         `największy overflow: <span>${escapeHtml(overflowDiagnostics.biggest ? `${overflowDiagnostics.biggest.tagName}${overflowDiagnostics.biggest.id ? "#" + overflowDiagnostics.biggest.id : ""}${overflowDiagnostics.biggest.className ? "." + overflowDiagnostics.biggest.className.replace(/\s+/g, ".") : ""} width=${overflowDiagnostics.biggest.width} right=${overflowDiagnostics.biggest.right}` : "—")}</span>`,
-        overflowDiagnostics.scrollDelta > 1 ? `<strong class="warning-text">Wykryto poziome przewijanie. Użyj trybu minimalnego albo zgłoś diagnostykę administratorowi.</strong>` : `poziome przewijanie: <strong>nie wykryto</strong>`,
+        overflowDiagnostics.scrollDelta > 1 ? `<strong class="warning-text">Wykryto poziome przewijanie. Użyj presetu iPhone bez poziomego przewijania.</strong>` : `poziome przewijanie: <strong>nie wykryto</strong>`,
         `devicePixelRatio: <strong>${window.devicePixelRatio || 1}</strong>`,
         `PWA standalone: <strong>${isStandaloneApp() ? "tak" : "nie"}</strong>`,
         `APP_VERSION: <strong>${escapeHtml(APP_VERSION)}</strong>`,
@@ -772,7 +775,7 @@
       renderUserPanel();
     });
     $("#ui-layout-width")?.addEventListener("change", () => {
-      saveUiSettingsPatch({ layoutWidth: value("#ui-layout-width", "layout-normal"), activePreset: "" });
+      saveUiSettingsPatch({ layoutWidth: value("#ui-layout-width", "width-normal"), activePreset: "" });
       applyUiSettings();
       renderUserPanel();
     });
@@ -790,19 +793,19 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       renderUserPanel();
     });
     $("#preset-small-screen")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "width-xcompact", tileLayout: "tiles-auto" });
     });
     $("#preset-smallest-view")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-minimal", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
+      applyUiPreset({ activePreset: "Najmniejszy widok", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-minimal", layoutWidth: "width-minimal", tileLayout: "tiles-one" });
     });
     $("#preset-iphone-narrow")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "iPhone / wąski ekran", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-minimal", tileLayout: "tiles-one" });
+      applyUiPreset({ activePreset: "iPhone bez poziomego przewijania", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "width-minimal", tileLayout: "tiles-one" });
     });
     $("#preset-standard-view")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "layout-normal", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "width-normal", tileLayout: "tiles-auto" });
     });
     $("#preset-comfort-view")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "layout-normal", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Widok standardowy", uiScale: "ui-normal", buttonSize: "buttons-normal", iconSize: "icons-normal", fontSize: "font-normal", layoutWidth: "width-normal", tileLayout: "tiles-auto" });
     });
     $("#field-mode-toggle")?.addEventListener("change", () => {
       saveUiSettingsPatch({ fieldMode: !!$("#field-mode-toggle")?.checked });
@@ -3563,7 +3566,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       </div>`;
     const close = () => modal.remove();
     modal.querySelector("[data-compact-enable]")?.addEventListener("click", () => {
-      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "layout-xnarrow", tileLayout: "tiles-auto" });
+      applyUiPreset({ activePreset: "Dopasuj do małego ekranu", uiScale: "ui-minimal", buttonSize: "buttons-minimal", iconSize: "icons-minimal", fontSize: "font-small", layoutWidth: "width-xcompact", tileLayout: "tiles-auto" });
       close();
     });
     modal.querySelector("[data-compact-dismiss]")?.addEventListener("click", close);

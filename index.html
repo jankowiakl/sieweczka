@@ -131,13 +131,13 @@
           <option value="icons-large">Duże</option>
         </select>
       </label>
-      <label>Szerokość układu
+      <label>Zwartość szerokości
         <select id="ui-layout-width">
-          <option value="layout-full">Pełna</option>
-          <option value="layout-normal">Normalna</option>
-          <option value="layout-narrow">Zwężona</option>
-          <option value="layout-xnarrow">Bardzo zwężona</option>
-          <option value="layout-minimal">Minimalna</option>
+          <option value="width-loose">Luźna</option>
+          <option value="width-normal">Normalna</option>
+          <option value="width-compact">Zwarta</option>
+          <option value="width-xcompact">Bardzo zwarta</option>
+          <option value="width-minimal">Minimalna</option>
         </select>
       </label>
       <label>Układ kafelków
@@ -151,10 +151,10 @@
       <div class="ui-presets row-actions">
         <button id="preset-small-screen" type="button">Dopasuj do małego ekranu</button>
         <button id="preset-smallest-view" type="button">Najmniejszy widok</button>
-        <button id="preset-iphone-narrow" type="button">iPhone / wąski ekran</button>
+        <button id="preset-iphone-narrow" type="button">iPhone bez poziomego przewijania</button>
         <button id="preset-standard-view" type="button" class="ghost-light">Widok standardowy</button>
       </div>
-      <p class="muted">Użyj, jeśli na iPhonie albo małym ekranie menu, formularz, karty i kafelki są zbyt duże. Preset „iPhone / wąski ekran” pomaga, gdy ekran jest za szeroki albo aplikację da się przesuwać w lewo/prawo. „Rozmiar tekstu” zmienia litery, „Skala interfejsu” zmienia odstępy, a „Szerokość układu” kontroluje kontenery i paddingi.</p>
+      <p class="muted">Użyj tych opcji, jeśli na iPhonie ekran wychodzi poza ramkę albo można przesuwać aplikację w lewo/prawo. Preset „iPhone bez poziomego przewijania” najmocniej zwęża karty, menu, gridy i przyciski. Ustawienia wyglądu działają globalnie na tekst, skalę interfejsu, przyciski, ikony, szerokość i układ kafelków.</p>
       <p class="record-preview">Przykładowy tekst</p>
       <label class="inline-check user-setting-toggle">
         <input id="field-mode-toggle" type="checkbox" />
@@ -180,7 +180,7 @@
         <summary>Diagnostyka interfejsu</summary>
         <p id="ui-diagnostics" class="muted"></p>
         <div class="row-actions">
-          <button id="check-horizontal-overflow" type="button">Sprawdź poziomy overflow</button>
+          <button id="check-horizontal-overflow" type="button">Pokaż elementy wychodzące poza ekran</button>
         </div>
         <pre id="horizontal-overflow-results" class="diagnostics-output muted"></pre>
       </details>
