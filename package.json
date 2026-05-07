@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "convert:brysna-smieck": "node tools/convert-points-brysna-smieck.mjs",
     "viewport-check": "playwright install chromium && node tools/viewport-check.mjs"
   },
   "devDependencies": {

@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-map-measure-shared-orto-cache";
+  const APP_VERSION = "2026.05.07-map-ui-folded-options-brysna-smieck-points";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -988,6 +988,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let gridGeoJsonData = null;
   let gridGeoJsonPromise = null;
   const gridStatus = { records: "", working: "" };
+  let brysnaSmieckPointsGeojson = null;
+  let brysnaSmieckPointsPromise = null;
+  const brysnaSmieckLayerStates = {
+    records: { layer: null, visible: false, map: null },
+    working: { layer: null, visible: false, map: null }
+  };
   let workingViewMode = "map";
   let workingFocusId = null;
   let editingWorkingId = null;
@@ -1117,6 +1123,84 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setGridStatus(target, `załadowano ${count} pól`);
     console.info(`Grid loaded: ${count} features (${target})`);
     return gridLayer;
+  }
+
+  async function loadBrysnaSmieckPoints() {
+    if (brysnaSmieckPointsGeojson) return brysnaSmieckPointsGeojson;
+    if (!brysnaSmieckPointsPromise) {
+      brysnaSmieckPointsPromise = fetch("data/points_brysna_smieck.geojson", { cache: "no-cache" })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Nie udało się załadować punktów Brysna/Śmieck: ${response.status}`);
+          return response.json();
+        })
+        .then((json) => {
+          brysnaSmieckPointsGeojson = json;
+          return json;
+        })
+        .catch((error) => {
+          console.error(error);
+          brysnaSmieckPointsPromise = null;
+          alert("Nie udało się załadować punktów Brysna/Śmieck. Jeśli plik GeoJSON nie istnieje, uruchom konwersję z data/points_brysna_smieck.gpkg.");
+          return null;
+        });
+    }
+    return brysnaSmieckPointsPromise;
+  }
+
+  function getBrysnaSmieckPointLabel(feature) {
+    const props = feature?.properties || {};
+    return props.name || props.Name || props.nazwa || props.Nazwa || props.label || props.Label || props.id || props.ID || "punkt";
+  }
+
+  function buildBrysnaSmieckPopup(feature) {
+    const props = feature?.properties || {};
+    const rows = Object.entries(props).map(([key, value]) => `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value ?? "")}</td></tr>`).join("");
+    return `<strong>${escapeHtml(getBrysnaSmieckPointLabel(feature))}</strong>${rows ? `<table class="mini-table">${rows}</table>` : ""}`;
+  }
+
+  function initBrysnaSmieckLayer(map, mapId) {
+    const state = brysnaSmieckLayerStates[mapId];
+    if (!state) return;
+    state.map = map;
+  }
+
+  async function setBrysnaSmieckLayerVisible(mapId, visible) {
+    const state = brysnaSmieckLayerStates[mapId];
+    if (!state?.map) return;
+    state.visible = !!visible;
+    if (visible) await renderBrysnaSmieckPoints(mapId);
+    else if (state.layer && state.map.hasLayer(state.layer)) state.map.removeLayer(state.layer);
+  }
+
+  async function renderBrysnaSmieckPoints(mapId) {
+    const state = brysnaSmieckLayerStates[mapId];
+    if (!state?.map || !state.visible) return;
+    const data = await loadBrysnaSmieckPoints();
+    if (!data) return;
+    if (!state.layer) {
+      state.layer = L.geoJSON(data, {
+        pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+          radius: 5,
+          color: "#ffffff",
+          weight: 2,
+          fillColor: "#e11d48",
+          fillOpacity: 0.9,
+          className: "brysna-smieck-point-marker"
+        }),
+        onEachFeature: (feature, layer) => {
+          const label = String(getBrysnaSmieckPointLabel(feature));
+          layer.bindTooltip(escapeHtml(label), {
+            permanent: true,
+            direction: "right",
+            offset: [8, 0],
+            className: "brysna-smieck-point-label"
+          });
+          layer.bindPopup(buildBrysnaSmieckPopup(feature));
+        }
+      });
+    }
+    if (!state.map.hasLayer(state.layer)) state.layer.addTo(state.map);
+    bringMeasureToFront(mapId);
   }
 
   function pointInRing(lon, lat, ring) {
@@ -2818,16 +2902,35 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return $(`#${mapId}-orto-cache-status`);
   }
 
-  function setOrtoCacheStatus(mapId, message) {
+  function showMapOfflineStatus(mapId, message, options = {}) {
     const el = getOrtoCacheStatusEl(mapId);
-    if (el) el.textContent = message;
+    if (!el) return;
+    const type = options.type || "info";
+    el.textContent = message;
+    el.hidden = false;
+    el.className = `map-offline-status ${type}`;
+    clearTimeout(el._hideTimer);
+    if (options.autoHide) {
+      el._hideTimer = setTimeout(() => hideMapOfflineStatus(mapId), options.timeoutMs || 8000);
+    }
+  }
+
+  function hideMapOfflineStatus(mapId) {
+    const el = getOrtoCacheStatusEl(mapId);
+    if (!el) return;
+    clearTimeout(el._hideTimer);
+    el.hidden = true;
+  }
+
+  function setOrtoCacheStatus(mapId, message, options = {}) {
+    showMapOfflineStatus(mapId, message, options);
   }
 
   async function ensureOrtoStoragePersistence(mapId) {
     if (!navigator.storage?.persist) return;
     try {
       await navigator.storage.persist();
-      setOrtoCacheStatus(mapId, "Zapisane kafle są przechowywane lokalnie w telefonie. System może je usunąć, gdy zabraknie miejsca, ale aplikacja nie usuwa ich sama.");
+      showMapOfflineStatus(mapId, "Zapisane kafle są przechowywane lokalnie w telefonie. System może je usunąć, gdy zabraknie miejsca, ale aplikacja nie usuwa ich sama.", { type: "info", autoHide: true, timeoutMs: 8000 });
     } catch (error) {
       console.warn(error);
     }
@@ -2899,7 +3002,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     try {
       const plan = getVisibleTilePlan(map);
       state.lastZoom = plan.z;
-      setOrtoCacheStatus(mapId, "Zapisuję widoczne kafle ortofoto...");
+      showMapOfflineStatus(mapId, "Zapisuję widoczne kafle ortofoto...", { type: "info" });
       const cache = await caches.open(ORTO_OFFLINE_CACHE);
       const missing = [];
       for (const tile of plan.tiles) {
@@ -2930,7 +3033,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
             localStorage.setItem(ORTO_CACHE_META_KEY, JSON.stringify({ lastSavedAt: new Date().toISOString() }));
           }
           state.skippedSession += result === "skipped" ? 1 : 0;
-          setOrtoCacheStatus(mapId, `Zapisuję widoczne kafle ortofoto... zapisano ${saved}, pominięto ${skipped}.`);
+          showMapOfflineStatus(mapId, `Zapisuję widoczne kafle ortofoto... zapisano ${saved}, pominięto ${skipped}.`, { type: "info" });
         } catch (error) {
           state.lastError = error.message || String(error);
         }
@@ -2961,7 +3064,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!state) return;
     state.enabled = true;
     ensureOrtoStoragePersistence(mapId);
-    setOrtoCacheStatus(mapId, "Zapis oglądanej ortofotomapy włączony. Przesuwaj mapę — widoczne miejsca zostaną zapisane offline.");
+    showMapOfflineStatus(mapId, "Zapis oglądanej ortofotomapy włączony. Przesuwaj mapę — widoczne miejsca zostaną zapisane offline.", { type: "info", autoHide: true, timeoutMs: 8000 });
     scheduleViewedOrtoCache(map, mapId);
   }
 
@@ -2970,7 +3073,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!state) return;
     state.enabled = false;
     clearTimeout(state.timer);
-    setOrtoCacheStatus(mapId, "Offline ortofoto: wyłączone");
+    showMapOfflineStatus(mapId, "Offline ortofoto: wyłączone", { type: "info", autoHide: true, timeoutMs: 6000 });
   }
 
   async function clearViewedOrtoCache() {
@@ -3007,7 +3110,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       `Status: ${navigator.onLine ? "online" : "offline"}.`,
       state?.lastError ? `Ostatni błąd: ${state.lastError}.` : ""
     ].filter(Boolean).join(" ");
-    setOrtoCacheStatus(mapId, message);
+    const type = /błąd|brak kafli|limit/i.test(message) ? "warning" : /usunięto|zapisano|dostępny/i.test(message) ? "success" : "info";
+    showMapOfflineStatus(mapId, message, { type, autoHide: !state?.running, timeoutMs: 9000 });
   }
 
   async function switchToOfflineOrtoIfNeeded(map, mapId) {
@@ -3016,9 +3120,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const summary = await getViewedOrtoCacheSummary();
     if (summary.count > 0) {
       state.offlineLayer.addTo(map);
-      setOrtoCacheStatus(mapId, "Brak internetu. Pokazuję zapisane kafle offline.");
+      showMapOfflineStatus(mapId, "Brak internetu. Pokazuję zapisane kafle offline.", { type: "warning" });
     } else {
-      setOrtoCacheStatus(mapId, "Brak kafli offline dla tego widoku.");
+      showMapOfflineStatus(mapId, "Brak kafli offline dla tego widoku.", { type: "warning", autoHide: true, timeoutMs: 8000 });
     }
   }
 
@@ -3055,7 +3159,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       switchToOfflineOrtoIfNeeded(map, mapId);
       updateViewedOrtoCacheDiagnostics(mapId, "Brak internetu. Pokazuję zapisane kafle offline.");
     });
-    updateViewedOrtoCacheDiagnostics(mapId, "Offline ortofoto: wyłączone.");
+    hideMapOfflineStatus(mapId);
   }
 
 
@@ -3214,6 +3318,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
       initViewedOrtoCacheTools(recordsMap, "records");
       initMeasureTools(recordsMap, "records");
+      initBrysnaSmieckLayer(recordsMap, "records");
       switchToOfflineOrtoIfNeeded(recordsMap, "records");
     }
     if ($("#records-grid-toggle")?.checked) {
@@ -3252,6 +3357,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setMapInfo("records", `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`);
     if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
+    renderBrysnaSmieckPoints("records");
     ensureUserLocationTracking(points, focusUid); syncUserLocationLayers("records"); bringMeasureToFront("records");
   }
 
@@ -3495,6 +3601,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       recordSpeciesLabelsVisible = !!$("#records-species-labels-toggle")?.checked;
       renderRecordsMap(mapFocusUid);
     });
+    $("#records-brysna-smieck-toggle")?.addEventListener("change", () => {
+      void setBrysnaSmieckLayerVisible("records", !!$("#records-brysna-smieck-toggle")?.checked);
+    });
 
     $("#nest-photos").addEventListener("change", () => {
       setValue("#nest-one-m-photo-done", "yes");
@@ -3534,6 +3643,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-notes-toggle")?.addEventListener("change", () => {
       workingNotesVisible = !!$("#working-notes-toggle")?.checked;
       renderWorkingMap();
+    });
+    $("#working-brysna-smieck-toggle")?.addEventListener("change", () => {
+      void setBrysnaSmieckLayerVisible("working", !!$("#working-brysna-smieck-toggle")?.checked);
     });
     $("#working-map-screen").addEventListener("click", onWorkingScreenClick);
     $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
@@ -4021,6 +4133,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       workingLayer = L.layerGroup().addTo(workingMap);
       initViewedOrtoCacheTools(workingMap, "working");
       initMeasureTools(workingMap, "working");
+      initBrysnaSmieckLayer(workingMap, "working");
       switchToOfflineOrtoIfNeeded(workingMap, "working");
     }
     if ($("#working-grid-toggle")?.checked) {
@@ -4043,6 +4156,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button>${canEditItem(w) ? `<button data-w-action="edit" data-working-id="${w.id}">Edytuj</button>` : ""}${canSoftDeleteItem(w) ? `<button class="danger" data-w-action="delete" data-working-id="${w.id}">Ukryj</button>` : ""}${canEditItem(w) ? `<select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}</div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
+    renderBrysnaSmieckPoints("working");
     workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); ensureUserLocationTracking([], null); syncUserLocationLayers("working"); bringMeasureToFront("working");} 
   }
 

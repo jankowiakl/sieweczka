@@ -1563,8 +1563,43 @@ summary {
 .row-actions{flex-wrap:wrap;min-width:0;max-width:100%}
 .row-actions input{flex:1}
 #record-readonly-content p{margin:.35rem 0}
+.map-primary-actions,
 .map-toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}
+.map-primary-actions,
 .map-toolbar{min-width:0;max-width:100%}
+.map-primary-actions{
+  padding:.45rem;
+  border:1px solid rgba(15,118,110,.22);
+  border-radius:12px;
+  background:#f0fdfa;
+}
+.map-options-panel{
+  margin:.45rem 0;
+  padding:.5rem .6rem;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:#fff;
+}
+.map-options-panel summary{
+  cursor:pointer;
+  font-weight:850;
+  color:var(--primary-dark);
+}
+.map-options-panel[open] summary{
+  margin-bottom:.45rem;
+}
+.map-offline-status{
+  margin:.45rem 0 0;
+  padding:.5rem .65rem;
+  border-radius:10px;
+  border:1px solid var(--border);
+  font-weight:750;
+  line-height:1.35;
+}
+.map-offline-status.info{background:#eff6ff;border-color:#93c5fd;color:#1e3a8a}
+.map-offline-status.success{background:var(--ok-bg);border-color:var(--ok-border);color:#065f46}
+.map-offline-status.warning{background:var(--warning-bg);border-color:var(--warning-border);color:#92400e}
+.map-offline-status.error{background:var(--bad-bg);border-color:var(--bad-border);color:#991b1b}
 .map-canvas{height:min(55dvh,520px);min-height:300px;border-radius:12px}
 #working-map.map-canvas{height:min(50dvh,480px)}
 @supports not (height: 1dvh){
@@ -1629,6 +1664,31 @@ summary {
 }
 .offline-cache-danger-zone button{
   margin-top:.5rem;
+}
+.brysna-smieck-point-label{
+  background:rgba(255,255,255,.86);
+  border:1px solid rgba(15,23,42,.45);
+  border-radius:4px;
+  color:#0f172a;
+  font-size:11px;
+  font-weight:800;
+  padding:1px 4px;
+  box-shadow:none;
+}
+.brysna-smieck-point-marker{
+  border-radius:999px;
+}
+.mini-table{
+  border-collapse:collapse;
+  margin-top:.35rem;
+  font-size:.85rem;
+}
+.mini-table th,
+.mini-table td{
+  border-bottom:1px solid var(--border);
+  padding:.15rem .35rem;
+  text-align:left;
+  vertical-align:top;
 }
 .map-legend{margin:.2rem 0 .5rem}
 .working-legend{display:flex;gap:.45rem .8rem;flex-wrap:wrap;align-items:center}
@@ -2385,8 +2445,14 @@ body {
 
 @media (max-width: 430px) {
   .row-actions,
-  .map-toolbar {
+  .map-toolbar,
+  .map-primary-actions {
     flex-wrap: wrap;
+  }
+
+  .map-primary-actions > *,
+  .map-toolbar > * {
+    flex: 1 1 46%;
   }
 
   .measure-toolbar {
