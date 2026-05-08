@@ -1,5 +1,7 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-07-offline-cache-first-map-state";
+const CACHE_NAME = "sieweczka-app-v2026-05-08-dominik-offline-map-position-fix";
 const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
+const DOMINIK_OFFLINE_CACHE = "sieweczka-dominik-view-cache-v1";
+const MAPTILER_HOST = "api.maptiler.com";
 const GEOPORTAL_ORTO_WMS_HOST = "mapy.geoportal.gov.pl";
 const GEOPORTAL_ORTO_WMS_PATH = "/wss/service/PZGIK/ORTO/WMS/StandardResolution";
 
@@ -30,7 +32,7 @@ self.addEventListener("activate", (event) => {
     caches.keys()
       .then((keys) => Promise.all(
         keys
-          .filter((key) => key.startsWith("sieweczka-") && key !== CACHE_NAME && key !== ORTO_OFFLINE_CACHE)
+          .filter((key) => key.startsWith("sieweczka-") && key !== CACHE_NAME && key !== ORTO_OFFLINE_CACHE && key !== DOMINIK_OFFLINE_CACHE)
           .map((key) => caches.delete(key))
       ))
       .then(() => self.clients.claim())
@@ -45,6 +47,16 @@ self.addEventListener("fetch", (event) => {
       ? getOfflineOrtoTileResponse(event.request)
       : fetch(event.request).catch(() => caches.open(ORTO_OFFLINE_CACHE).then((cache) => (
         cache.match(normalizeOrtoTileCacheKey(event.request.url)).then((cached) => cached || createMissingOrtoTileResponse())
+      )))
+    );
+    return;
+  }
+
+  if (isDominikTileRequest(url)) {
+    event.respondWith(url.searchParams.get("sieweczkaDominikOffline") === "1"
+      ? getOfflineDominikTileResponse(event.request)
+      : fetch(event.request).catch(() => caches.open(DOMINIK_OFFLINE_CACHE).then((cache) => (
+        cache.match(normalizeDominikTileCacheKey(event.request.url)).then((cached) => cached || createMissingDominikTileResponse())
       )))
     );
     return;
@@ -76,6 +88,50 @@ self.addEventListener("fetch", (event) => {
       }))
   );
 });
+
+
+function isDominikTileRequest(url) {
+  return url.hostname === MAPTILER_HOST && url.pathname.startsWith("/tiles/01994d7c-6984-7a15-ab37-9ec1ec822405/") && !url.pathname.endsWith("/tiles.json");
+}
+
+function normalizeDominikTileCacheKey(url) {
+  const normalized = new URL(typeof url === "string" ? url : url.url);
+  normalized.searchParams.delete("sieweczkaDominikOffline");
+  return normalized.toString();
+}
+
+async function getOfflineDominikTileResponse(request) {
+  const cacheKey = normalizeDominikTileCacheKey(request.url);
+  const cache = await caches.open(DOMINIK_OFFLINE_CACHE);
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(cacheKey, { signal: controller.signal, cache: "no-store" });
+    if (response && (response.ok || response.type === "opaque")) {
+      await cache.put(cacheKey, response.clone());
+      return response;
+    }
+    return createMissingDominikTileResponse();
+  } catch {
+    return createMissingDominikTileResponse();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function createMissingDominikTileResponse() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="#fff7ed"/><path d="M0 256 256 0M-64 192 192-64M64 320 320 64" stroke="#fed7aa" stroke-width="10"/><text x="128" y="124" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#9a3412">Brak kafla Dominik</text><text x="128" y="145" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#9a3412">offline dla tego miejsca</text></svg>`;
+  return new Response(svg, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/svg+xml",
+      "Cache-Control": "no-store"
+    }
+  });
+}
 
 function isGeoportalOrtoWmsRequest(url) {
   return url.hostname === GEOPORTAL_ORTO_WMS_HOST && url.pathname === GEOPORTAL_ORTO_WMS_PATH;
