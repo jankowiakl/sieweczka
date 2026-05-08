@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.08-egg-measurements-2dec";
+  const APP_VERSION = "2026.05.08-egg-measurements-cm-2dec";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -2058,18 +2058,25 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return Object.values(coverage || {}).reduce((sum, n) => sum + (Number(n) || 0), 0);
   }
 
-  function parseOptionalMm(value) {
+  function parseOptionalCm(value) {
     const raw = String(value ?? "").trim().replace(",", ".");
     if (!raw) return null;
     const number = Number(raw);
     return Number.isFinite(number) ? Math.round(number * 100) / 100 : null;
   }
 
-  function formatEggInputValue(value) {
-    return value == null || Number.isNaN(Number(value)) ? "" : String(Number(value));
+  function parseLegacyMmAsCm(value) {
+    const raw = String(value ?? "").trim().replace(",", ".");
+    if (!raw) return null;
+    const number = Number(raw);
+    return Number.isFinite(number) ? Math.round((number / 10) * 100) / 100 : null;
   }
 
-  function formatMm(value) {
+  function formatEggInputValue(value) {
+    return value == null || Number.isNaN(Number(value)) ? "" : Number(value).toFixed(2);
+  }
+
+  function formatCm(value) {
     return value == null || Number.isNaN(Number(value)) ? "" : String(Number(value).toFixed(2)).replace(".", ",");
   }
 
@@ -2081,8 +2088,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         if (!Number.isFinite(eggNo) || eggNo < 1) return null;
         return {
           eggNo: Math.floor(eggNo),
-          widthMm: parseOptionalMm(item?.widthMm),
-          lengthMm: parseOptionalMm(item?.lengthMm),
+          widthCm: item?.widthCm != null ? parseOptionalCm(item.widthCm) : parseLegacyMmAsCm(item?.widthMm),
+          lengthCm: item?.lengthCm != null ? parseOptionalCm(item.lengthCm) : parseLegacyMmAsCm(item?.lengthMm),
           note: String(item?.note ?? "")
         };
       })
@@ -2103,8 +2110,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const rows = $$(".egg-measurement-row", $("#egg-measurements-grid"));
     return normalizeEggMeasurements(rows.map((row, index) => ({
       eggNo: Number(row.dataset.eggNo || index + 1),
-      widthMm: row.querySelector("[data-field='widthMm']")?.value ?? "",
-      lengthMm: row.querySelector("[data-field='lengthMm']")?.value ?? "",
+      widthCm: row.querySelector("[data-field='widthCm']")?.value ?? "",
+      lengthCm: row.querySelector("[data-field='lengthCm']")?.value ?? "",
       note: row.querySelector("[data-field='note']")?.value ?? ""
     })));
   }
@@ -2123,11 +2130,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         <div class="egg-measurement-row" data-egg-no="${eggNo}">
           <div class="egg-measurement-label">Jajo ${eggNo}</div>
           <div class="egg-measurement-inputs">
-            <label>Szerokość [mm]
-              <input type="number" step="0.01" inputmode="decimal" placeholder="24,85" data-field="widthMm" value="${escapeHtml(formatEggInputValue(item.widthMm))}" />
+            <label>Szerokość [cm]
+              <input type="number" step="0.01" inputmode="decimal" placeholder="2,49" data-field="widthCm" value="${escapeHtml(formatEggInputValue(item.widthCm))}" />
             </label>
-            <label>Długość [mm]
-              <input type="number" step="0.01" inputmode="decimal" placeholder="34,25" data-field="lengthMm" value="${escapeHtml(formatEggInputValue(item.lengthMm))}" />
+            <label>Długość [cm]
+              <input type="number" step="0.01" inputmode="decimal" placeholder="3,43" data-field="lengthCm" value="${escapeHtml(formatEggInputValue(item.lengthCm))}" />
             </label>
           </div>
         </div>
@@ -2156,9 +2163,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function eggMeasurementRangeWarnings(measurements = []) {
     const warnings = [];
     normalizeEggMeasurements(measurements).forEach((item) => {
-      [["widthMm", "szerokość"], ["lengthMm", "długość"]].forEach(([field, label]) => {
+      [["widthCm", "szerokość"], ["lengthCm", "długość"]].forEach(([field, label]) => {
         const value = item[field];
-        if (value != null && (value < 5 || value > 80)) warnings.push(`Jajo ${item.eggNo}: ${label} ${formatMm(value)} mm jest poza zakresem 5-80 mm.`);
+        if (value != null && (value < 0.5 || value > 8)) warnings.push(`Jajo ${item.eggNo}: ${label} ${formatCm(value)} cm jest poza zakresem 0,50-8,00 cm.`);
       });
     });
     return warnings;
@@ -2175,7 +2182,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function setupEggMeasurements() {
     $("#egg-count")?.addEventListener("change", syncEggMeasurementsWithEggCount);
     $("#egg-measurements-grid")?.addEventListener("input", (event) => {
-      if (event.target?.matches("input[data-field='widthMm'], input[data-field='lengthMm']") && String(event.target.value || "").includes(",")) {
+      if (event.target?.matches("input[data-field='widthCm'], input[data-field='lengthCm']") && String(event.target.value || "").includes(",")) {
         event.target.value = String(event.target.value || "").replace(",", ".");
       }
       updateEggMeasurementWarnings();
@@ -2617,7 +2624,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const observerText = String($("#observer")?.value || "").trim();
     if (observerText && observerText !== currentUserDisplayName()) return true;
     if (String($("#egg-count")?.value || "").trim()) return true;
-    if (readEggMeasurementsFromForm().some((item) => item.widthMm != null || item.lengthMm != null || String(item.note || "").trim())) return true;
+    if (readEggMeasurementsFromForm().some((item) => item.widthCm != null || item.lengthCm != null || String(item.note || "").trim())) return true;
     const meaningful = ["#nest-id", "#season", "#sector", "#lat", "#lon", "#notes-identification", "#notes-nest-micro", "#notes-random-micro", "#notes-meso", "#notes"];
     return meaningful.some((selector) => String($(selector)?.value || "").trim());
   }
@@ -4176,7 +4183,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   function renderEggMeasurementsReadonly(record) {
     const measurements = normalizeEggMeasurements(record?.eggMeasurements || []);
-    const hasAnyMeasurement = measurements.some((item) => item.widthMm != null || item.lengthMm != null || String(item.note || "").trim());
+    const hasAnyMeasurement = measurements.some((item) => item.widthCm != null || item.lengthCm != null || String(item.note || "").trim());
     if (!hasAnyMeasurement) return `<p class="muted">Pomiary jaj: brak</p>`;
     const count = Number(record?.eggCount);
     const maxNo = Math.max(
@@ -4187,12 +4194,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return Array.from({ length: maxNo }, (_, index) => {
       const eggNo = index + 1;
       const item = byNo.get(eggNo);
-      if (!item || (item.widthMm == null && item.lengthMm == null && !String(item.note || "").trim())) {
+      if (!item || (item.widthCm == null && item.lengthCm == null && !String(item.note || "").trim())) {
         return `<div class="readonly-field"><div class="label">Jajo ${eggNo}</div><div class="value">brak pomiaru</div></div>`;
       }
       const parts = [];
-      parts.push(item.widthMm == null ? "szer. brak" : `szer. ${formatMm(item.widthMm)} mm`);
-      parts.push(item.lengthMm == null ? "dł. brak" : `dł. ${formatMm(item.lengthMm)} mm`);
+      parts.push(item.widthCm == null ? "szer. brak" : `szer. ${formatCm(item.widthCm)} cm`);
+      parts.push(item.lengthCm == null ? "dł. brak" : `dł. ${formatCm(item.lengthCm)} cm`);
       if (String(item.note || "").trim()) parts.push(`uwaga: ${item.note}`);
       return `<div class="readonly-field"><div class="label">Jajo ${eggNo}</div><div class="value">${escapeHtml(parts.join(", "))}</div></div>`;
     }).join("");
@@ -4834,8 +4841,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const byNo = new Map(normalizeEggMeasurements(entry?.eggMeasurements || []).map((item) => [Number(item.eggNo), item]));
     for (let eggNo = 1; eggNo <= maxEggNo; eggNo += 1) {
       const item = byNo.get(eggNo) || {};
-      row[`egg_${eggNo}_width_mm`] = item.widthMm ?? "";
-      row[`egg_${eggNo}_length_mm`] = item.lengthMm ?? "";
+      row[`egg_${eggNo}_width_cm`] = item.widthCm ?? "";
+      row[`egg_${eggNo}_length_cm`] = item.lengthCm ?? "";
     }
     return row;
   }
@@ -4968,13 +4975,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
           nest_id: entry.nestId || "",
           species: entry.species || "",
           egg_no: item.eggNo,
-          width_mm: item.widthMm ?? "",
-          length_mm: item.lengthMm ?? "",
+          width_cm: item.widthCm ?? "",
+          length_cm: item.lengthCm ?? "",
           note: item.note || ""
         });
       });
     });
-    return csvFromRows(rows, ["record_uid", "nest_id", "species", "egg_no", "width_mm", "length_mm", "note"]);
+    return csvFromRows(rows, ["record_uid", "nest_id", "species", "egg_no", "width_cm", "length_cm", "note"]);
   }
 
   function setExportStatus(message) {
