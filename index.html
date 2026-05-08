@@ -275,6 +275,7 @@
             <option value="Ortofotomapa Geoportal">Ortofotomapa Geoportal</option>
             <option value="Ortofotomapa offline">Ortofotomapa offline</option>
             <option value="OpenStreetMap">OpenStreetMap</option>
+            <option value="Dominik Layer">Dominik Layer</option>
             <option value="Esri Imagery + Labels">Esri Imagery + Labels</option>
             <option value="ArcGIS Terrain with Labels">ArcGIS Terrain with Labels</option>
             <option value="Esri World Imagery">Esri World Imagery</option>
@@ -304,7 +305,9 @@
           <label class="inline-check map-toggle"><input id="records-species-labels-toggle" type="checkbox" checked /> Pokaż gatunki</label>
           <label class="inline-check map-toggle"><input id="records-brysna-smieck-toggle" type="checkbox" /> Punkty Brysna/Śmieck</label>
           <label class="inline-check map-toggle"><input id="records-orto-cache-toggle" type="checkbox" /> Zapisuj oglądaną ortofoto offline</label>
+          <button id="records-layer-health-check" type="button" class="secondary">Sprawdź warstwy mapy</button>
         </div>
+        <div id="records-layer-diagnostics" class="map-layer-diagnostics" hidden></div>
         <details class="offline-cache-danger-zone">
           <summary>Zaawansowane / pamięć offline</summary>
           <button id="records-orto-cache-clear" class="danger" type="button">Usuń ortofoto offline</button>
@@ -341,6 +344,7 @@
             <option value="Ortofotomapa Geoportal">Ortofotomapa Geoportal</option>
             <option value="Ortofotomapa offline">Ortofotomapa offline</option>
             <option value="OpenStreetMap">OpenStreetMap</option>
+            <option value="Dominik Layer">Dominik Layer</option>
             <option value="Esri Imagery + Labels">Esri Imagery + Labels</option>
             <option value="ArcGIS Terrain with Labels">ArcGIS Terrain with Labels</option>
             <option value="Esri World Imagery">Esri World Imagery</option>
@@ -370,8 +374,10 @@
           <label class="inline-check map-toggle"><input id="working-notes-toggle" type="checkbox" checked /> Pokaż notatki</label>
           <label class="inline-check map-toggle"><input id="working-brysna-smieck-toggle" type="checkbox" /> Punkty Brysna/Śmieck</label>
           <label class="inline-check map-toggle"><input id="working-orto-cache-toggle" type="checkbox" /> Zapisuj oglądaną ortofoto offline</label>
+          <button id="working-layer-health-check" type="button" class="secondary">Sprawdź warstwy mapy</button>
           <button id="working-orto-cache-clear" class="danger" type="button">Usuń ortofoto offline</button>
         </div>
+        <div id="working-layer-diagnostics" class="map-layer-diagnostics" hidden></div>
       </details>
       <details id="working-legend-panel" class="map-legend-panel">
         <summary>Legenda</summary>
@@ -557,6 +563,12 @@
             <label>Notatki identyfikacyjne
               <textarea id="notes-identification" rows="2"></textarea>
             </label>
+
+            <div class="quick-basic-save-panel">
+              <p><strong>Zapis podstawowy — bez pełnej kontroli</strong></p>
+              <p class="muted">Tylko gdy nie wykonujesz pełnej kontroli siedliska.</p>
+              <button type="button" id="quick-basic-save" class="quick-basic-save-button secondary">Zapis podstawowy — bez pełnej kontroli</button>
+            </div>
           </fieldset>
         </section>
 
@@ -954,7 +966,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="app.js?v=2026.05.07-working-point-cancel-danger-v2"></script>
+  <script src="app.js?v=2026.05.08-layer-diagnostics-dominik-basic-save"></script>
   <script src="field-help.js?v=2026.05.07-gps-confirm-map-fullscreen-v1"></script>
   <script>
   (() => {
