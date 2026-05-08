@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.08-basic-valid-gps-map-edit-warning";
+  const APP_VERSION = "2026.05.08-egg-measurements-2dec";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -2062,7 +2062,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const raw = String(value ?? "").trim().replace(",", ".");
     if (!raw) return null;
     const number = Number(raw);
-    return Number.isFinite(number) ? Math.round(number * 10) / 10 : null;
+    return Number.isFinite(number) ? Math.round(number * 100) / 100 : null;
   }
 
   function formatEggInputValue(value) {
@@ -2070,7 +2070,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function formatMm(value) {
-    return value == null || Number.isNaN(Number(value)) ? "" : String(Number(value).toFixed(1)).replace(".", ",");
+    return value == null || Number.isNaN(Number(value)) ? "" : String(Number(value).toFixed(2)).replace(".", ",");
   }
 
   function normalizeEggMeasurements(measurements = []) {
@@ -2124,10 +2124,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
           <div class="egg-measurement-label">Jajo ${eggNo}</div>
           <div class="egg-measurement-inputs">
             <label>Szerokość [mm]
-              <input type="number" step="0.1" inputmode="decimal" placeholder="24,8" data-field="widthMm" value="${escapeHtml(formatEggInputValue(item.widthMm))}" />
+              <input type="number" step="0.01" inputmode="decimal" placeholder="24,85" data-field="widthMm" value="${escapeHtml(formatEggInputValue(item.widthMm))}" />
             </label>
             <label>Długość [mm]
-              <input type="number" step="0.1" inputmode="decimal" placeholder="34,2" data-field="lengthMm" value="${escapeHtml(formatEggInputValue(item.lengthMm))}" />
+              <input type="number" step="0.01" inputmode="decimal" placeholder="34,25" data-field="lengthMm" value="${escapeHtml(formatEggInputValue(item.lengthMm))}" />
             </label>
           </div>
         </div>
