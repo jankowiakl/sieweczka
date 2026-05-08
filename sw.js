@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-08-dominik-offline-last-map-view";
+const CACHE_NAME = "sieweczka-app-v2026-05-08-basic-valid-gps-map-edit-warning";
 const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
 const DOMINIK_OFFLINE_CACHE = "sieweczka-dominik-view-cache-v1";
 const GEOPORTAL_ORTO_WMS_HOST = "mapy.geoportal.gov.pl";
