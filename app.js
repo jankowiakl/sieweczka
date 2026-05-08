@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-offline-cache-first-map-state";
+  const APP_VERSION = "2026.05.08-basic-valid-gps-map-edit-warning";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -21,6 +21,7 @@
   const PHOTO_SYNC_KEY = "sieweczka-photo-sync-v1";
   const AUTH_STATE_KEY = "sieweczka-auth-v1";
   const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
+  const DOMINIK_OFFLINE_CACHE = "sieweczka-dominik-view-cache-v1";
   const GEOPORTAL_ORTO_WMS_URL = "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution";
   const ORTO_TILE_SIZE = 256;
   const ORTO_MAX_NEW_TILES_PER_VIEW = 200;
@@ -31,6 +32,15 @@
   const MAP_VIEW_STATE_KEY = "sieweczka-map-view-state-v1";
   const MAP_VIEW_STATE_DEBOUNCE_MS = 400;
   const ORTO_OFFLINE_LAYER_PARAM = "sieweczkaOffline";
+  const DOMINIK_OFFLINE_LAYER_PARAM = "sieweczkaDominikOffline";
+  const DOMINIK_MAX_NATIVE_ZOOM = 22;
+  const DOMINIK_MAX_DISPLAY_ZOOM = 50;
+  const MAP_MAX_ZOOM = 30;
+  // TODO: docelowo przenieść klucz MapTiler do konfiguracji, np. stałej MAPTILER_KEY w środowisku/buildzie.
+  const DOMINIK_LAYER_TILESET_ID = "01994d7c-6984-7a15-ab37-9ec1ec822405";
+  const DOMINIK_LAYER_KEY = "vi11VQ5jJfCfKBHmWKix";
+  const DOMINIK_LAYER_XYZ_URL = `https://api.maptiler.com/tiles/${DOMINIK_LAYER_TILESET_ID}/{z}/{x}/{y}?key=${DOMINIK_LAYER_KEY}`;
+  const DOMINIK_LAYER_TILEJSON_URL = `https://api.maptiler.com/tiles/${DOMINIK_LAYER_TILESET_ID}/tiles.json?key=${DOMINIK_LAYER_KEY}`;
   let deferredInstallPrompt = null;
 
   function getClientId() {
@@ -53,6 +63,7 @@
   function ownsItem(item) { return !!getCurrentUser()?.id && String(item?.createdBy || item?.created_by || item?.uploadedBy || "") === String(getCurrentUser().id); }
   function canSoftDeleteItem(item) { return canManageData() || (getCurrentUser()?.role === "observer" && ownsItem(item)); }
   function canEditItem(item) { return canManageData() || getCurrentUser()?.role === "observer" && ownsItem(item); }
+  function canMoveMapPoint(item) { return isAdmin() || ownsItem(item); }
   function isDeleted(item) { return !!(item?.deletedAt || item?.deleted_at); }
   function activeEntries() { return getEntries().filter((entry) => !isDeleted(entry)); }
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
@@ -999,6 +1010,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
+  const mapPointEditMode = { records: false, working: false };
+  const mapPointEditControls = { records: null, working: null };
   const mapUserState = {
     records: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false },
     working: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false }
@@ -1032,8 +1045,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
   const ortoCacheState = {
-    records: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, map: null, onlineLayer: null, offlineLayer: null, viewRestored: false, stateBound: false },
-    working: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, map: null, onlineLayer: null, offlineLayer: null, viewRestored: false, stateBound: false }
+    records: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, dominikEnabled: false, dominikRunning: false, dominikPending: false, dominikTimer: 0, dominikSavedSession: 0, dominikSkippedSession: 0, lastZoom: null, dominikLastZoom: null, lastError: "", dominikLastError: "", bound: false, dominikBound: false, map: null, onlineLayer: null, offlineLayer: null, dominikOnlineLayer: null, dominikOfflineLayer: null, viewRestored: false, stateBound: false },
+    working: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, dominikEnabled: false, dominikRunning: false, dominikPending: false, dominikTimer: 0, dominikSavedSession: 0, dominikSkippedSession: 0, lastZoom: null, dominikLastZoom: null, lastError: "", dominikLastError: "", bound: false, dominikBound: false, map: null, onlineLayer: null, offlineLayer: null, dominikOnlineLayer: null, dominikOfflineLayer: null, viewRestored: false, stateBound: false }
   };
   const measureStates = {
     records: { mode: "off", points: [], markers: [], line: null, polygon: null, finished: false, map: null, bound: false },
@@ -1610,6 +1623,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       deleteReason: entry.deleteReason || entry.delete_reason || "",
       season: entry.season || "",
       observer: entry.observer || "",
+      recordCompleteness: entry.recordCompleteness || (entry.quickSave ? "basic" : "full"),
+      quickSave: !!entry.quickSave,
+      quickSaveReason: entry.quickSaveReason || entry.quick_save_reason || "",
+      habitatDescriptionSkipped: !!(entry.habitatDescriptionSkipped || entry.habitat_description_skipped),
+      savedFromStep: entry.savedFromStep ?? entry.saved_from_step ?? null,
       eggMeasurements: normalizeEggMeasurements(entry.eggMeasurements || []),
       docPhotoDone: entry.docPhotoDone || "unknown",
       nestOneMPhotoDone: entry.nestOneMPhotoDone || "unknown",
@@ -2277,6 +2295,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
       notes: trim("#notes"),
       validationOverride: !!$("#validation-override-summary")?.checked,
+      recordCompleteness: "full",
+      quickSave: false,
+      quickSaveReason: "",
+      habitatDescriptionSkipped: false,
+      savedFromStep: currentStep,
     };
   }
 
@@ -2301,8 +2324,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (record.eggCount == null || Number.isNaN(record.eggCount)) addErr(1, "#egg-count", "Brak liczby jaj.");
     eggMeasurementRangeWarnings(record.eggMeasurements).forEach((message) => addWarn(1, "#egg-measurements-panel", message));
 
-    if (record.lat == null || record.lon == null) addErr(2, "#lat", "Brak GPS gniazda.");
-    if (record.randomMicro.lat == null || record.randomMicro.lon == null) addErr(5, "#random-lat", "Brak GPS punktu losowego / kontroli.");
+    if (!hasValidCoords(record.lat, record.lon)) addErr(2, "#lat", "Brak poprawnego GPS gniazda.");
+    if (!hasValidCoords(record.randomMicro?.lat, record.randomMicro?.lon)) addErr(5, "#random-lat", "Brak poprawnego GPS punktu losowego / kontroli.");
     if (record.randomMicro.azimuthDeg == null) addWarn(5, "#random-azimuth", "Brakuje azymutu punktu losowego.");
 
     const infos = [];
@@ -2389,8 +2412,107 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
   }
 
+
+  function getBasicRecordWarnings() {
+    const warnings = [];
+    if (!trim("#nest-id")) warnings.push("ID gniazda zostanie wygenerowane automatycznie.");
+    if (!trim("#season")) warnings.push("Sezon zostanie ustawiony na bieżący rok.");
+    if (!trim("#observer")) warnings.push("Obserwator zostanie ustawiony na zalogowanego użytkownika, jeśli jest dostępny.");
+    if (!value("#obs-date")) warnings.push("Data zostanie ustawiona na dzisiaj.");
+    if (!value("#obs-time")) warnings.push("Godzina zostanie ustawiona na aktualną.");
+    if (!trim("#sector")) warnings.push("Sektor zostanie zapisany jako brak danych.");
+    if (!String(value("#egg-count", "")).trim()) warnings.push("Liczba jaj zostanie zapisana jako brak danych.");
+    return warnings;
+  }
+
+  function validateBasicRecordForSave(record) {
+    const errors = [];
+    if (!record.nestId) errors.push("Brakuje ID gniazda.");
+    if (!record.obsDate) errors.push("Brakuje daty.");
+    if (!record.obsTime) errors.push("Brakuje godziny.");
+    if (!record.sector) errors.push("Brakuje sektora / części wyspy.");
+    if (!record.species || record.species === "unknown") errors.push("Do zapisu podstawowego wybierz gatunek.");
+    if (!hasValidCoords(record.lat, record.lon)) errors.push("Do zapisu podstawowego pobierz lub wpisz poprawny GPS gniazda na karcie 2. Nie można zapisać żadnego rekordu bez pozycji.");
+    return errors;
+  }
+
+  function markRecordAsBasic(record) {
+    record.recordCompleteness = "basic";
+    record.quickSave = true;
+    record.quickSaveReason = "basic_without_full_control";
+    record.habitatDescriptionSkipped = true;
+    record.savedFromStep = 2;
+    return record;
+  }
+
+  function isBasicRecord(record) {
+    return record?.recordCompleteness === "basic" || record?.quickSave === true;
+  }
+
+  function renderRecordCompletenessBadge(record) {
+    return isBasicRecord(record) ? `<span class="record-completeness-badge basic">Rekord niepełny</span>` : "";
+  }
+
+  function ensureBasicStepOneDefaults() {
+    const now = new Date();
+    if (!trim("#nest-id")) setValue("#nest-id", buildNestId(value("#species", "unknown")));
+    if (!trim("#season")) setValue("#season", String(now.getFullYear()));
+    if (!trim("#observer")) setValue("#observer", currentUserDisplayName());
+    if (!value("#obs-date")) setValue("#obs-date", now.toISOString().slice(0, 10));
+    if (!value("#obs-time")) setValue("#obs-time", now.toTimeString().slice(0, 5));
+  }
+
+  async function buildBasicRecordFromStepOne() {
+    ensureBasicStepOneDefaults();
+    const record = await buildRecord({ persistPhotos: false });
+    if (!record.sector) record.sector = "brak danych";
+    if (record.eggCount == null || Number.isNaN(record.eggCount)) record.eggCount = null;
+    return markRecordAsBasic(record);
+  }
+
+  async function quickSaveBasicRecord() {
+    const warnings = getBasicRecordWarnings();
+    const record = await buildBasicRecordFromStepOne();
+    const errors = validateBasicRecordForSave(record);
+    if (errors.length) {
+      alert(`Nie zapiszę rekordu podstawowego:\n- ${errors.join("\n- ")}`);
+      return;
+    }
+    const extra = warnings.length ? `\n\nUwaga:\n- ${warnings.join("\n- ")}` : "";
+    const confirmed = confirm(`To jest zapis podstawowy bez pełnej kontroli siedliska. Aplikacja sprawdziła podstawowe dane i GPS gniazda. Użyj tylko wtedy, gdy nie wykonujesz pełnego opisu gniazda. Rekord zostanie oznaczony jako niepełny. Czy zapisać?${extra}`);
+    if (!confirmed) return;
+    const entries = getEntries();
+    const idx = entries.findIndex((entry) => String(entry.uid) === String(record.uid));
+    if (idx >= 0) entries[idx] = record;
+    else entries.unshift(record);
+    record.syncStatus = "pending";
+    if (!setEntries(entries)) return;
+    editingUid = null;
+    currentNestPhotos = [];
+    currentRandomPhotos = [];
+    localStorage.removeItem(DRAFT_KEY);
+    updateDraftResumeButton();
+    renderEntries();
+    resetForm();
+    showView("records");
+    alert("Rekord zapisany jako podstawowy — bez pełnej kontroli.");
+    if (navigator.onLine) { syncNow().catch(() => { markSyncStatus(record.uid, "error"); }); }
+  }
+
   async function saveFinalRecord() {
     const record = await buildRecord({ persistPhotos: true });
+    if (!hasValidCoords(record.lat, record.lon)) {
+      alert("Nie zapiszę rekordu bez poprawnego GPS gniazda. Pobierz lub wpisz pozycję na karcie 2.");
+      showStep(2);
+      setTimeout(() => $("#lat")?.focus(), 100);
+      return;
+    }
+    if (!hasValidCoords(record.randomMicro?.lat, record.randomMicro?.lon)) {
+      alert("Nie zapiszę pełnego rekordu bez poprawnego GPS punktu losowego / kontroli. Pobierz lub wpisz pozycję na karcie 5.");
+      showStep(5);
+      setTimeout(() => $("#random-lat")?.focus(), 100);
+      return;
+    }
     const { errors } = validateRecord(record);
     if (errors.length && !$("#validation-override-summary")?.checked) {
       renderValidationAndPreview();
@@ -2831,6 +2953,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       card.innerHTML = `
         <div class="entry-main">
           <h3>${escapeHtml(entry.nestId || "(bez ID)")}</h3>
+          ${renderRecordCompletenessBadge(entry)}
           <p>${escapeHtml(LABELS.species[entry.species] || entry.species || "gatunek?")} • ${escapeHtml(entry.sector || "sektor?")}</p>
           <p class="muted">${escapeHtml(entry.obsDate || "")} ${escapeHtml(entry.obsTime || "")} • jaja: ${entry.eggCount ?? "brak"} • obserwator: ${escapeHtml(entry.observer || "brak")}</p>
           <p class="muted">GPS: ${entry.lat ?? "brak"}, ${entry.lon ?? "brak"} • protokół: ${escapeHtml(entry.protocolVersion || "")}</p>
@@ -3129,6 +3252,29 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }
   }
 
+
+
+  function createDominikTileUrl(x, y, z, options = {}) {
+    const requestedZ = Math.max(0, Math.round(Number(z) || 0));
+    const nativeZ = Math.min(requestedZ, DOMINIK_MAX_NATIVE_ZOOM);
+    const scale = 2 ** Math.max(0, requestedZ - nativeZ);
+    const nativeX = Math.floor(Number(x) / scale);
+    const nativeY = Math.floor(Number(y) / scale);
+    const params = new URLSearchParams({ key: DOMINIK_LAYER_KEY });
+    if (options.offline) params.set(DOMINIK_OFFLINE_LAYER_PARAM, "1");
+    return `https://api.maptiler.com/tiles/${DOMINIK_LAYER_TILESET_ID}/${nativeZ}/${nativeX}/${nativeY}?${params.toString()}`;
+  }
+
+  function normalizeDominikTileCacheKey(url) {
+    try {
+      const normalized = new URL(url, window.location.href);
+      normalized.searchParams.delete(DOMINIK_OFFLINE_LAYER_PARAM);
+      return normalized.toString();
+    } catch {
+      return String(url || "").replace(/([?&])sieweczkaDominikOffline=1(&)?/, (match, prefix, suffix) => suffix ? prefix : "").replace(/[?&]$/, "");
+    }
+  }
+
   function createEmptyTileResponse() {
     return new Response(createEmptyTileSvg(), { status: 200, headers: { "Content-Type": "image/svg+xml", "Cache-Control": "no-store" } });
   }
@@ -3165,8 +3311,51 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     return new OfflineOrtoLayer("", {
       tileSize: ORTO_TILE_SIZE,
-      maxZoom: 21,
+      maxZoom: MAP_MAX_ZOOM,
+      maxNativeZoom: 21,
       attribution: "Ortofotomapa offline: cache-first Geoportal / GUGiK"
+    });
+  }
+
+
+
+  async function getOfflineDominikTileResponse(url) {
+    if (!("caches" in window)) return createEmptyTileResponse();
+    const cacheKey = normalizeDominikTileCacheKey(url);
+    const cache = await caches.open(DOMINIK_OFFLINE_CACHE);
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+    if (!navigator.onLine) return createEmptyTileResponse();
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    try {
+      const response = await fetch(cacheKey, { signal: controller.signal, cache: "no-store" });
+      if (response && response.ok) {
+        await cache.put(cacheKey, response.clone());
+        return response;
+      }
+      return createEmptyTileResponse();
+    } catch {
+      return createEmptyTileResponse();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  function createDominikOfflineTileLayer() {
+    const OfflineDominikLayer = L.TileLayer.extend({
+      getTileUrl(coords) {
+        return createDominikTileUrl(coords.x, coords.y, coords.z, { offline: true });
+      }
+    });
+    return new OfflineDominikLayer("", {
+      tileSize: ORTO_TILE_SIZE,
+      minZoom: 0,
+      maxZoom: DOMINIK_MAX_DISPLAY_ZOOM,
+      maxNativeZoom: DOMINIK_MAX_NATIVE_ZOOM,
+      errorTileUrl: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(createEmptyTileSvg())}`,
+      attribution: "Dominik Layer offline: cache-first MapTiler"
     });
   }
 
@@ -3212,8 +3401,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }
   }
 
-  function getVisibleTilePlan(map) {
-    const z = Math.round(map.getZoom());
+  function getVisibleTilePlan(map, layerKey = "geoportalOrto") {
+    const requestedZoom = Math.round(map.getZoom());
+    const z = layerKey === "dominikLayer" ? Math.min(requestedZoom, DOMINIK_MAX_NATIVE_ZOOM) : Math.min(requestedZoom, 21);
     const bounds = map.getBounds();
     const northWest = map.project(bounds.getNorthWest(), z);
     const southEast = map.project(bounds.getSouthEast(), z);
@@ -3224,21 +3414,29 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     for (let x = min.x - 1; x <= max.x + 1; x++) {
       const wrappedX = ((x % tileCount) + tileCount) % tileCount;
       for (let y = Math.max(0, min.y - 1); y <= Math.min(tileCount - 1, max.y + 1); y++) {
-        tiles.push({ x: wrappedX, y, z, url: createGeoportalWmsTileUrl(wrappedX, y, z) });
+        const url = layerKey === "dominikLayer" ? createDominikTileUrl(wrappedX, y, z) : createGeoportalWmsTileUrl(wrappedX, y, z);
+        tiles.push({ x: wrappedX, y, z, url });
       }
     }
-    return { z, tiles };
+    return { z, requestedZoom, tiles };
   }
 
-  async function hasCachedTile(url) {
+  function getTileCacheConfig(layerKey = "geoportalOrto") {
+    if (layerKey === "dominikLayer") return { cacheName: DOMINIK_OFFLINE_CACHE, normalize: normalizeDominikTileCacheKey, label: "Dominik Layer", metaKey: `${ORTO_CACHE_META_KEY}-dominik` };
+    return { cacheName: ORTO_OFFLINE_CACHE, normalize: normalizeOrtoTileCacheKey, label: "ortofoto", metaKey: ORTO_CACHE_META_KEY };
+  }
+
+  async function hasCachedTile(url, layerKey = "geoportalOrto") {
     if (!("caches" in window)) return false;
-    const cache = await caches.open(ORTO_OFFLINE_CACHE);
-    return !!(await cache.match(normalizeOrtoTileCacheKey(url)));
+    const cfg = getTileCacheConfig(layerKey);
+    const cache = await caches.open(cfg.cacheName);
+    return !!(await cache.match(cfg.normalize(url)));
   }
 
-  async function cacheTileUrl(url) {
-    const cache = await caches.open(ORTO_OFFLINE_CACHE);
-    const cacheKey = normalizeOrtoTileCacheKey(url);
+  async function cacheTileUrl(url, layerKey = "geoportalOrto") {
+    const cfg = getTileCacheConfig(layerKey);
+    const cache = await caches.open(cfg.cacheName);
+    const cacheKey = cfg.normalize(url);
     const cached = await cache.match(cacheKey);
     if (cached) return "skipped";
     let response;
@@ -3264,67 +3462,76 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     await Promise.all(workers);
   }
 
-  async function cacheCurrentMapView(map, mapId) {
+  async function cacheCurrentMapView(map, mapId, layerKey = "geoportalOrto") {
     const state = ortoCacheState[mapId];
+    const isDominik = layerKey === "dominikLayer";
+    const cfg = getTileCacheConfig(layerKey);
     if (!state || !map || !("caches" in window)) return;
-    if (state.running) {
-      state.pending = true;
+    const runningKey = isDominik ? "dominikRunning" : "running";
+    const pendingKey = isDominik ? "dominikPending" : "pending";
+    const enabledKey = isDominik ? "dominikEnabled" : "enabled";
+    const savedKey = isDominik ? "dominikSavedSession" : "savedSession";
+    const skippedKey = isDominik ? "dominikSkippedSession" : "skippedSession";
+    const zoomKey = isDominik ? "dominikLastZoom" : "lastZoom";
+    const errorKey = isDominik ? "dominikLastError" : "lastError";
+    if (state[runningKey]) {
+      state[pendingKey] = true;
       return;
     }
-    state.running = true;
-    state.pending = false;
-    state.lastError = "";
+    state[runningKey] = true;
+    state[pendingKey] = false;
+    state[errorKey] = "";
     let saved = 0;
     let skipped = 0;
     try {
-      const plan = getVisibleTilePlan(map);
-      state.lastZoom = plan.z;
-      showMapOfflineStatus(mapId, "Zapisuję widoczne kafle ortofoto...", { type: "info" });
-      const cache = await caches.open(ORTO_OFFLINE_CACHE);
+      const plan = getVisibleTilePlan(map, layerKey);
+      state[zoomKey] = plan.z;
+      showMapOfflineStatus(mapId, `Zapisuję widoczne kafle ${cfg.label}...`, { type: "info" });
+      const cache = await caches.open(cfg.cacheName);
       const missing = [];
       for (const tile of plan.tiles) {
-        if (await cache.match(normalizeOrtoTileCacheKey(tile.url))) {
+        if (await cache.match(cfg.normalize(tile.url))) {
           skipped++;
         } else {
           missing.push(tile);
         }
       }
       if (!missing.length) {
-        state.skippedSession += skipped;
-        await updateViewedOrtoCacheDiagnostics(mapId, `Ten widok jest dostępny offline. Pominięto ${skipped} kafli, bo już były zapisane.`);
+        state[skippedKey] += skipped;
+        await updateViewedOrtoCacheDiagnostics(mapId, `Ten widok ${cfg.label} jest dostępny offline. Pominięto ${skipped} kafli, bo już były zapisane.`);
         return;
       }
-      if (missing.length > ORTO_MAX_NEW_TILES_PER_VIEW || state.savedSession >= ORTO_MAX_NEW_TILES_PER_SESSION) {
-        await updateViewedOrtoCacheDiagnostics(mapId, "Limit zapisu ortofoto osiągnięty. Zmień zoom albo wyłącz i włącz ponownie.");
+      if (missing.length > ORTO_MAX_NEW_TILES_PER_VIEW || state[savedKey] >= ORTO_MAX_NEW_TILES_PER_SESSION) {
+        await updateViewedOrtoCacheDiagnostics(mapId, `Limit zapisu ${cfg.label} osiągnięty. Zmień zoom albo wyłącz i włącz ponownie.`);
         return;
       }
-      const allowed = Math.min(missing.length, ORTO_MAX_NEW_TILES_PER_VIEW, ORTO_MAX_NEW_TILES_PER_SESSION - state.savedSession);
+      const allowed = Math.min(missing.length, ORTO_MAX_NEW_TILES_PER_VIEW, ORTO_MAX_NEW_TILES_PER_SESSION - state[savedKey]);
       const queue = missing.slice(0, allowed);
       await runOrtoQueue(queue, async (tile) => {
         try {
-          const result = await cacheTileUrl(tile.url);
+          const result = await cacheTileUrl(tile.url, layerKey);
           if (result === "saved") saved++;
           else skipped++;
           if (result === "saved") {
-            state.savedSession += 1;
-            localStorage.setItem(ORTO_CACHE_META_KEY, JSON.stringify({ lastSavedAt: new Date().toISOString() }));
+            state[savedKey] += 1;
+            localStorage.setItem(cfg.metaKey, JSON.stringify({ lastSavedAt: new Date().toISOString() }));
           }
-          state.skippedSession += result === "skipped" ? 1 : 0;
-          showMapOfflineStatus(mapId, `Zapisuję widoczne kafle ortofoto... zapisano ${saved}, pominięto ${skipped}.`, { type: "info" });
+          state[skippedKey] += result === "skipped" ? 1 : 0;
+          showMapOfflineStatus(mapId, `Zapisuję widoczne kafle ${cfg.label}... zapisano ${saved}, pominięto ${skipped}.`, { type: "info" });
         } catch (error) {
-          state.lastError = error.message || String(error);
+          state[errorKey] = error.message || String(error);
         }
       });
-      state.skippedSession += skipped;
-      await updateViewedOrtoCacheDiagnostics(mapId, `Zapisano ${saved} nowych kafli. Pominięto ${skipped} kafli, bo już były zapisane. Ten widok powinien działać offline.`);
+      state[skippedKey] += skipped;
+      await updateViewedOrtoCacheDiagnostics(mapId, `Zapisano ${saved} nowych kafli ${cfg.label}. Pominięto ${skipped} kafli, bo już były zapisane. Ten widok powinien działać offline.`);
     } catch (error) {
-      state.lastError = error.message || String(error);
-      await updateViewedOrtoCacheDiagnostics(mapId, `Błąd zapisu ortofoto: ${state.lastError}`);
+      state[errorKey] = error.message || String(error);
+      await updateViewedOrtoCacheDiagnostics(mapId, `Błąd zapisu ${cfg.label}: ${state[errorKey]}`);
     } finally {
-      state.running = false;
-      if (state.pending && state.enabled) {
-        state.pending = false;
-        cacheCurrentMapView(map, mapId);
+      state[runningKey] = false;
+      if (state[pendingKey] && state[enabledKey]) {
+        state[pendingKey] = false;
+        cacheCurrentMapView(map, mapId, layerKey);
       }
     }
   }
@@ -3353,19 +3560,51 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     showMapOfflineStatus(mapId, "Offline ortofoto: wyłączone", { type: "info", autoHide: true, timeoutMs: 6000 });
   }
 
+
+  function scheduleViewedDominikCache(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state?.dominikEnabled) return;
+    clearTimeout(state.dominikTimer);
+    state.dominikTimer = setTimeout(() => cacheCurrentMapView(map, mapId, "dominikLayer"), ORTO_CACHE_DEBOUNCE_MS);
+  }
+
+  function enableViewedDominikCaching(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state) return;
+    state.dominikEnabled = true;
+    ensureOrtoStoragePersistence(mapId);
+    showMapOfflineStatus(mapId, "Zapis Dominik Layer włączony. Przesuwaj mapę — widoczne kafle zostaną zapisane offline w telefonie.", { type: "info", autoHide: true, timeoutMs: 8000 });
+    scheduleViewedDominikCache(map, mapId);
+  }
+
+  function disableViewedDominikCaching(mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state) return;
+    state.dominikEnabled = false;
+    clearTimeout(state.dominikTimer);
+    showMapOfflineStatus(mapId, "Offline Dominik Layer: wyłączone", { type: "info", autoHide: true, timeoutMs: 6000 });
+  }
+
   async function clearViewedOrtoCache() {
     if (!("caches" in window)) return false;
     localStorage.removeItem(ORTO_CACHE_META_KEY);
     return caches.delete(ORTO_OFFLINE_CACHE);
   }
 
-  async function getViewedOrtoCacheSummary() {
+  async function clearViewedDominikCache() {
+    if (!("caches" in window)) return false;
+    localStorage.removeItem(`${ORTO_CACHE_META_KEY}-dominik`);
+    return caches.delete(DOMINIK_OFFLINE_CACHE);
+  }
+
+  async function getViewedOrtoCacheSummary(layerKey = "geoportalOrto") {
     if (!("caches" in window)) return { count: 0 };
-    const cache = await caches.open(ORTO_OFFLINE_CACHE);
+    const cfg = getTileCacheConfig(layerKey);
+    const cache = await caches.open(cfg.cacheName);
     const keys = await cache.keys();
     let lastSavedAt = "";
     try {
-      lastSavedAt = JSON.parse(localStorage.getItem(ORTO_CACHE_META_KEY) || "{}").lastSavedAt || "";
+      lastSavedAt = JSON.parse(localStorage.getItem(cfg.metaKey) || "{}").lastSavedAt || "";
     } catch {
       lastSavedAt = "";
     }
@@ -3374,18 +3613,21 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   async function updateViewedOrtoCacheDiagnostics(mapId, prefix = "") {
     const state = ortoCacheState[mapId];
-    const summary = await getViewedOrtoCacheSummary();
+    const summary = await getViewedOrtoCacheSummary("geoportalOrto");
+    const dominikSummary = await getViewedOrtoCacheSummary("dominikLayer");
     const lastSaved = summary.lastSavedAt ? new Date(summary.lastSavedAt).toLocaleString("pl-PL") : "—";
+    const dominikLastSaved = dominikSummary.lastSavedAt ? new Date(dominikSummary.lastSavedAt).toLocaleString("pl-PL") : "—";
     const message = [
       prefix,
-      "Ortofotomapa offline: wspólna dla obu map.",
-      `Kafle offline: ${summary.count}.`,
-      `Ostatni zapis: ${lastSaved}.`,
+      "Offline: wspólne dla obu map.",
+      `Ortofotomapa: ${summary.count} kafli, ostatni zapis: ${lastSaved}.`,
+      `Dominik Layer: ${dominikSummary.count} kafli, ostatni zapis: ${dominikLastSaved}.`,
       "Cache działa na mapie rekordów i mapie gniazd roboczych.",
-      `Sesja: zapisano ${state?.savedSession || 0}, pominięto ${state?.skippedSession || 0}.`,
-      `Zoom cache: ${state?.lastZoom ?? "—"}.`,
+      `Sesja orto: zapisano ${state?.savedSession || 0}, pominięto ${state?.skippedSession || 0}, zoom ${state?.lastZoom ?? "—"}.`,
+      `Sesja Dominik: zapisano ${state?.dominikSavedSession || 0}, pominięto ${state?.dominikSkippedSession || 0}, zoom kafli ${state?.dominikLastZoom ?? "—"}.`,
       `Status: ${navigator.onLine ? "online" : "offline"}.`,
-      state?.lastError ? `Ostatni błąd: ${state.lastError}.` : ""
+      state?.lastError ? `Ostatni błąd orto: ${state.lastError}.` : "",
+      state?.dominikLastError ? `Ostatni błąd Dominik: ${state.dominikLastError}.` : ""
     ].filter(Boolean).join(" ");
     const type = /błąd/i.test(message) ? "error" : /brak kafli|limit/i.test(message) ? "warning" : /usunięto|zapisano|dostępny/i.test(message) ? "success" : "info";
     showMapOfflineStatus(mapId, message, { type, autoHide: type !== "error" && !state?.running, timeoutMs: 9000 });
@@ -3394,10 +3636,20 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   async function switchToOfflineOrtoIfNeeded(map, mapId) {
     const state = ortoCacheState[mapId];
     if (!map || navigator.onLine || !state?.offlineLayer) return;
-    const summary = await getViewedOrtoCacheSummary();
+    const current = state.currentBaseLayerName || $(`#${mapId}-base-layer`)?.value || "";
+    const dominikSummary = await getViewedOrtoCacheSummary("dominikLayer");
+    if (current.includes("Dominik") && dominikSummary.count > 0) {
+      setMapBaseLayer(map, mapId, "Dominik Layer offline");
+      showMapOfflineStatus(mapId, "Brak internetu. Pokazuję zapisany Dominik Layer offline.", { type: "warning" });
+      return;
+    }
+    const summary = await getViewedOrtoCacheSummary("geoportalOrto");
     if (summary.count > 0) {
       setMapBaseLayer(map, mapId, "Ortofotomapa offline");
       showMapOfflineStatus(mapId, "Brak internetu. Pokazuję zapisane kafle offline.", { type: "warning" });
+    } else if (dominikSummary.count > 0) {
+      setMapBaseLayer(map, mapId, "Dominik Layer offline");
+      showMapOfflineStatus(mapId, "Brak internetu. Brak ortofoto offline, pokazuję zapisany Dominik Layer offline.", { type: "warning" });
     } else {
       showMapOfflineStatus(mapId, "Brak kafli offline dla tego widoku.", { type: "warning", autoHide: true, timeoutMs: 8000 });
     }
@@ -3409,9 +3661,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     state.bound = true;
     const toggle = $(`#${mapId}-orto-cache-toggle`);
     const clearBtn = $(`#${mapId}-orto-cache-clear`);
+    const dominikToggle = $(`#${mapId}-dominik-cache-toggle`);
+    const dominikClearBtn = $(`#${mapId}-dominik-cache-clear`);
     toggle?.addEventListener("change", () => {
       if (toggle.checked) enableViewedOrtoCaching(map, mapId);
       else disableViewedOrtoCaching(mapId);
+    });
+    dominikToggle?.addEventListener("change", () => {
+      if (dominikToggle.checked) enableViewedDominikCaching(map, mapId);
+      else disableViewedDominikCaching(mapId);
     });
     clearBtn?.addEventListener("click", async () => {
       const confirmed = confirm("Usunąć zapisaną ortofotomapę offline z telefonu? Ta operacja usunie kafle offline używane przez mapę rekordów i mapę gniazd roboczych. Rekordy, zdjęcia i gniazda robocze nie zostaną usunięte.");
@@ -3433,7 +3691,24 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const otherMapId = mapId === "records" ? "working" : "records";
       await updateViewedOrtoCacheDiagnostics(otherMapId, "Usunięto ortofotomapę offline. Rekordy i gniazda robocze pozostały bez zmian.");
     });
-    map.on("moveend zoomend", () => scheduleViewedOrtoCache(map, mapId));
+
+    dominikClearBtn?.addEventListener("click", async () => {
+      const confirmed = confirm("Usunąć zapisany Dominik Layer offline z telefonu? Ta operacja usunie tylko kafle Dominik Layer używane przez obie mapy.");
+      if (!confirmed) {
+        await updateViewedOrtoCacheDiagnostics(mapId, "Usuwanie Dominik Layer offline anulowane.");
+        return;
+      }
+      await clearViewedDominikCache();
+      for (const item of Object.values(ortoCacheState)) {
+        item.dominikSavedSession = 0;
+        item.dominikSkippedSession = 0;
+        item.dominikLastError = "";
+      }
+      await updateViewedOrtoCacheDiagnostics(mapId, "Usunięto Dominik Layer offline. Rekordy i gniazda robocze pozostały bez zmian.");
+      const otherMapId = mapId === "records" ? "working" : "records";
+      await updateViewedOrtoCacheDiagnostics(otherMapId, "Usunięto Dominik Layer offline. Rekordy i gniazda robocze pozostały bez zmian.");
+    });
+    map.on("moveend zoomend", () => { scheduleViewedOrtoCache(map, mapId); scheduleViewedDominikCache(map, mapId); });
     window.addEventListener("online", () => updateViewedOrtoCacheDiagnostics(mapId));
     window.addEventListener("offline", () => {
       switchToOfflineOrtoIfNeeded(map, mapId);
@@ -3573,9 +3848,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function createBaseLayers() {
     const geoportalOrto = createGeoportalOrtoLayer();
     const geoportalOffline = createGeoportalOfflineTileLayer();
-    const esriImg = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
-    const esriLbl = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}");
-    const esriImgLbl = L.layerGroup([esriImg, esriLbl]);
+    const dominikLayer = createDominikLayer();
+    const dominikOffline = createDominikOfflineTileLayer();
+    const esriImgLbl = L.layerGroup([
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"),
+      L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}")
+    ]);
+    const esriWorldImagery = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}");
     return {
       defaultLayer: geoportalOrto,
       onlineLayer: geoportalOrto,
@@ -3583,12 +3862,17 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       layers: {
         "Ortofotomapa Geoportal": geoportalOrto,
         "Ortofotomapa offline": geoportalOffline,
-        "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors" }),
+        "OpenStreetMap": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; OpenStreetMap contributors", maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 19 }),
+        "Dominik Layer": dominikLayer,
+        "Dominik Layer offline": dominikOffline,
         "Esri Imagery + Labels": esriImgLbl,
-        "ArcGIS Terrain with Labels": L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"),
-        "Esri World Imagery": esriImg,
-        "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"),
-        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png"),
+        "ArcGIS Terrain with Labels": L.layerGroup([
+          L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}", { maxZoom: 13, maxNativeZoom: 13, attribution: "Esri Terrain" }),
+          L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}", { maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 19, attribution: "Esri Labels" })
+        ]),
+        "Esri World Imagery": esriWorldImagery,
+        "OSM Standard": L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 19 }),
+        "OSM DE": L.tileLayer("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png", { maxZoom: MAP_MAX_ZOOM, maxNativeZoom: 18 }),
         "CARTO Positron": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"),
         "CARTO Voyager": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"),
         "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png")
@@ -3600,16 +3884,26 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const state = ortoCacheState[mapId];
     const layers = state?.baseLayers;
     const nextLayer = layers?.[layerName];
-    if (!map || !nextLayer || !layers) return;
+    if (!map || !nextLayer || !layers) {
+      showMapOfflineStatus(mapId, `Nieznana warstwa mapy: ${layerName}. Przywracam Geoportal.`, { type: "warning", autoHide: true, timeoutMs: 7000 });
+      if (layerName !== "Ortofotomapa Geoportal") setMapBaseLayer(map, mapId, "Ortofotomapa Geoportal");
+      return;
+    }
     Object.values(layers).forEach((layer) => {
       if (map.hasLayer(layer)) map.removeLayer(layer);
     });
     nextLayer.addTo(map);
+    const layerMaxZoom = layerName.startsWith("Dominik Layer") ? DOMINIK_MAX_DISPLAY_ZOOM : MAP_MAX_ZOOM;
+    map.setMaxZoom(layerMaxZoom);
+    if (map.getZoom() > layerMaxZoom) map.setZoom(layerMaxZoom);
     state.currentBaseLayerName = layerName;
     const select = $(`#${mapId}-base-layer`);
     if (select) select.value = layerName;
     if (layerName === "Ortofotomapa offline") {
       showMapOfflineStatus(mapId, "Ortofotomapa offline działa cache-first. Brakujące kafle pokażą neutralny placeholder.", { type: "info", autoHide: true, timeoutMs: 6000 });
+    }
+    if (layerName === "Dominik Layer offline") {
+      showMapOfflineStatus(mapId, "Dominik Layer offline działa cache-first. Brakujące kafle pokażą neutralny placeholder. Powyżej zoomu kafelków aplikacja powiększa ostatnie dostępne kafle.", { type: "info", autoHide: true, timeoutMs: 8000 });
     }
     if (state.stateBound) saveMapViewState(mapId, { baseLayer: layerName });
   }
@@ -3620,6 +3914,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!state || !select) return;
     state.baseLayers = base.layers;
     state.currentBaseLayerName = select.value || "Ortofotomapa Geoportal";
+    Array.from(select.options).forEach((option) => { option.disabled = !base.layers[option.value]; });
+    if (!base.layers[state.currentBaseLayerName]) state.currentBaseLayerName = "Ortofotomapa Geoportal";
     if (!state.baseLayerSelectBound) {
       state.baseLayerSelectBound = true;
       select.addEventListener("change", () => {
@@ -3629,20 +3925,172 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }
   }
 
-  function createGeoportalOrtoLayer() {
-    return L.tileLayer.wms(
-      GEOPORTAL_ORTO_WMS_URL,
-      {
-        layers: "Raster",
-        styles: "",
-        format: "image/jpeg",
-        transparent: false,
-        version: "1.3.0",
-        crs: L.CRS.EPSG3857,
-        attribution: "Ortofotomapa: Geoportal / GUGiK",
-        maxZoom: 21
+
+  function buildLayerHealthCatalog(mapId) {
+    const map = ortoCacheState[mapId]?.map;
+    return [
+      { key: "geoportalOrto", name: "Ortofotomapa Geoportal", type: "WMS", url: getSampleTileUrlForLayer("geoportalOrto", map) },
+      { key: "geoportalOffline", name: "Ortofotomapa offline", type: "offline cache", url: getSampleTileUrlForLayer("geoportalOffline", map), offline: true },
+      { key: "openStreetMap", name: "OpenStreetMap", type: "OSM", url: getSampleTileUrlForLayer("openStreetMap", map) },
+      { key: "dominikLayer", name: "Dominik Layer", type: "XYZ", url: getSampleTileUrlForLayer("dominikLayer", map) },
+      { key: "dominikOffline", name: "Dominik Layer offline", type: "offline cache", url: getSampleTileUrlForLayer("dominikOffline", map), offline: true, layerKey: "dominikLayer" },
+      { key: "arcgisTerrainLabels", name: "ArcGIS Terrain with Labels", type: "XYZ", url: getSampleTileUrlForLayer("arcgisTerrainLabels", map) },
+      { key: "esriWorldImagery", name: "Esri World Imagery", type: "XYZ", url: getSampleTileUrlForLayer("esriWorldImagery", map) },
+      { key: "cartoVoyager", name: "CARTO Voyager", type: "XYZ", url: getSampleTileUrlForLayer("cartoVoyager", map) },
+      { key: "openTopoMap", name: "OpenTopoMap", type: "XYZ", url: getSampleTileUrlForLayer("openTopoMap", map) }
+    ];
+  }
+
+  function getSampleTileCoords(map) {
+    const z = Math.max(1, Math.min(17, Math.round(map?.getZoom?.() || 17)));
+    const center = map?.getCenter?.() || { lat: 53.796, lng: 14.449 };
+    if (typeof L !== "undefined" && L.CRS?.EPSG3857) {
+      const point = L.CRS.EPSG3857.latLngToPoint(center, z).divideBy(256).floor();
+      const tileCount = 2 ** z;
+      return { z, x: ((point.x % tileCount) + tileCount) % tileCount, y: Math.max(0, Math.min(tileCount - 1, point.y)) };
+    }
+    return { z: 17, x: 70774, y: 42941 };
+  }
+
+  function xyzUrl(template, coords) {
+    return template.replace("{z}", coords.z).replace("{x}", coords.x).replace("{y}", coords.y).replace("{s}", "a").replace("{r}", "");
+  }
+
+  function getSampleTileUrlForLayer(layerKey, map) {
+    const c = getSampleTileCoords(map);
+    if (layerKey === "geoportalOrto" || layerKey === "geoportalOffline") return createGeoportalWmsTileUrl(c.x, c.y, c.z, { offline: layerKey === "geoportalOffline" });
+    if (layerKey === "openStreetMap") return xyzUrl("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", c);
+    if (layerKey === "dominikLayer") return xyzUrl(DOMINIK_LAYER_XYZ_URL, c);
+    if (layerKey === "dominikOffline") return createDominikTileUrl(c.x, c.y, Math.min(c.z, DOMINIK_MAX_NATIVE_ZOOM), { offline: true });
+    if (layerKey === "arcgisTerrainLabels") return xyzUrl("https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}", { ...c, z: Math.min(c.z, 13) });
+    if (layerKey === "esriWorldImagery") return xyzUrl("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", c);
+    if (layerKey === "cartoVoyager") return xyzUrl("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", c);
+    if (layerKey === "openTopoMap") return xyzUrl("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", c);
+    return "";
+  }
+
+  function sanitizeDiagnosticUrl(url) {
+    try {
+      const parsed = new URL(url, window.location.href);
+      if (parsed.searchParams.has("key")) parsed.searchParams.set("key", "…WKix");
+      return parsed.toString();
+    } catch {
+      return String(url || "").replace(/key=[^&]+/, "key=…WKix");
+    }
+  }
+
+  function classifyLayerProblem(status, layerName = "") {
+    if (status === "OK") return "warstwa działa; brak problemu w aplikacji";
+    if (String(layerName).includes("Dominik") && status === "HTTP 403") return "problem prawdopodobnie po stronie MapTiler: klucz może być błędny, ograniczony domeną albo limit został przekroczony";
+    if (String(layerName).includes("Dominik") && status === "HTTP 404") return "problem prawdopodobnie w konfiguracji: tileset może nie istnieć albo URL jest błędny";
+    if (["timeout", "HTTP 403", "HTTP 404", "brak kafla"].includes(status)) return "problem prawdopodobnie po stronie serwera mapowego albo sieci";
+    if (status === "błąd CORS / fetch") return "problem prawdopodobnie po stronie CORS/sieci; Leaflet może nadal pokazywać kafle jako obrazy";
+    if (status === "brak w cache") return "problem lokalny: brak zapisanych kafli dla bieżącego widoku";
+    return "nie da się jednoznacznie ustalić — sprawdź konfigurację i sieć";
+  }
+
+  async function checkTileUrlHealth(layerName, url, options = {}) {
+    const started = performance.now();
+    const controller = new AbortController();
+    const timeoutMs = options.timeoutMs || 4500;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { method: "GET", cache: "no-store", mode: "cors", signal: controller.signal });
+      const elapsedMs = Math.round(performance.now() - started);
+      let status = "OK";
+      if (response.status === 204) status = "OK";
+      else if (response.status === 403) status = "HTTP 403";
+      else if (response.status === 404) status = "HTTP 404";
+      else if (!response.ok) status = `HTTP ${response.status}`;
+      const contentType = response.headers.get("content-type") || "";
+      if (response.ok && response.status !== 204 && contentType && !/image|json|octet-stream/i.test(contentType)) status = "brak kafla";
+      return { layerName, type: options.type || "XYZ", status, elapsedMs, url: sanitizeDiagnosticUrl(url), diagnosis: classifyLayerProblem(status, layerName) };
+    } catch (error) {
+      const elapsedMs = Math.round(performance.now() - started);
+      const status = error?.name === "AbortError" ? "timeout" : "błąd CORS / fetch";
+      return { layerName, type: options.type || "XYZ", status, elapsedMs, url: sanitizeDiagnosticUrl(url), diagnosis: classifyLayerProblem(status, layerName) };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function checkOfflineOrtoHealth(mapId, item) {
+    const started = performance.now();
+    if (!("caches" in window)) {
+      return { layerName: item.name, type: item.type, status: "brak w cache", elapsedMs: 0, url: sanitizeDiagnosticUrl(item.url), diagnosis: "Cache Storage niedostępny w tej przeglądarce" };
+    }
+    try {
+      const cfg = getTileCacheConfig(item.layerKey || "geoportalOrto");
+      const cache = await caches.open(cfg.cacheName);
+      const keys = await cache.keys();
+      const map = ortoCacheState[mapId]?.map;
+      const plan = map ? getVisibleTilePlan(map, item.layerKey || "geoportalOrto") : { tiles: [{ url: item.url }] };
+      let visibleCached = 0;
+      for (const tile of plan.tiles.slice(0, 80)) {
+        if (await cache.match(cfg.normalize(tile.url))) visibleCached++;
       }
-    );
+      const elapsedMs = Math.round(performance.now() - started);
+      const status = keys.length && visibleCached ? "OK" : "brak w cache";
+      const suffix = status === "OK" ? `OK — cache-first (${visibleCached}/${Math.min(plan.tiles.length, 80)} kafli widoku, cache ~${keys.length})` : `brak kafli dla tego miejsca (cache ~${keys.length})`;
+      return { layerName: item.name, type: item.type, status, statusText: suffix, elapsedMs, url: sanitizeDiagnosticUrl(item.url), diagnosis: status === "OK" ? "offline nie czeka na Geoportal; kafle czytane cache-first" : "problem lokalny: brak kafli offline dla tego miejsca" };
+    } catch (error) {
+      const elapsedMs = Math.round(performance.now() - started);
+      return { layerName: item.name, type: item.type, status: "nieznany błąd", elapsedMs, url: sanitizeDiagnosticUrl(item.url), diagnosis: error.message || "błąd odczytu cache" };
+    }
+  }
+
+  async function checkMapLayersHealth(mapId) {
+    const items = buildLayerHealthCatalog(mapId);
+    return Promise.all(items.map((item) => item.offline ? checkOfflineOrtoHealth(mapId, item) : checkTileUrlHealth(item.name, item.url, { type: item.type })));
+  }
+
+  function renderMapLayerDiagnostics(mapId, results) {
+    const el = $(`#${mapId}-layer-diagnostics`);
+    if (!el) return;
+    const statusClass = (status) => status === "OK" ? "status-ok" : (String(status).startsWith("HTTP") || status === "timeout" || status === "błąd CORS / fetch" ? "status-error" : "status-warn");
+    el.hidden = false;
+    el.innerHTML = `<div class="map-layer-diagnostics-head"><strong>Wynik sprawdzania warstw</strong><button type="button" class="secondary" data-map-action="collapse-layer-diagnostics" data-map-id="${mapId}">Zwiń tabelę</button></div><table><thead><tr><th>Warstwa</th><th>Typ</th><th>Status</th><th>Czas</th><th>URL testowy</th><th>Wniosek</th></tr></thead><tbody>${results.map((r) => `<tr><td>${escapeHtml(r.layerName)}</td><td>${escapeHtml(r.type)}</td><td class="${statusClass(r.status)}">${escapeHtml(r.statusText || r.status)}</td><td>${escapeHtml(String(r.elapsedMs ?? ""))} ms</td><td><code>${escapeHtml(r.url || "")}</code></td><td>${escapeHtml(r.diagnosis || "")}</td></tr>`).join("")}</tbody></table>`;
+  }
+
+  async function runMapLayerDiagnostics(mapId) {
+    const el = $(`#${mapId}-layer-diagnostics`);
+    if (el) {
+      el.hidden = false;
+      el.innerHTML = `<p class="muted">Sprawdzam warstwy mapy…</p>`;
+    }
+    const results = await checkMapLayersHealth(mapId);
+    renderMapLayerDiagnostics(mapId, results);
+  }
+
+  function createDominikLayer() {
+    const DominikLayer = L.TileLayer.extend({
+      getTileUrl(coords) {
+        return createDominikTileUrl(coords.x, coords.y, coords.z);
+      }
+    });
+    return new DominikLayer("", {
+      attribution: "Dominik Layer / MapTiler",
+      minZoom: 0,
+      maxZoom: DOMINIK_MAX_DISPLAY_ZOOM,
+      maxNativeZoom: DOMINIK_MAX_NATIVE_ZOOM,
+      tileSize: 256,
+      crossOrigin: true,
+      errorTileUrl: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(createEmptyTileSvg())}`
+    });
+  }
+
+  function createGeoportalOrtoLayer() {
+    const GeoportalOrtoLayer = L.TileLayer.extend({
+      getTileUrl(coords) {
+        return createGeoportalWmsTileUrl(coords.x, coords.y, coords.z);
+      }
+    });
+    return new GeoportalOrtoLayer("", {
+      tileSize: ORTO_TILE_SIZE,
+      maxZoom: MAP_MAX_ZOOM,
+      maxNativeZoom: 21,
+      attribution: "Ortofotomapa: Geoportal / GUGiK"
+    });
   }
 
   async function showMyLocationOnMap(map, statusSelector) {
@@ -3754,8 +4202,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const val = (v) => (v == null || String(v).trim() === "" ? "—" : String(v));
     const fld = (label, v) => `<div class="readonly-field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(val(v))}</div></div>`;
     const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>`<img src="" data-photo-ref="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="${alt}">`).join("") || "<p>—</p>"}</div>`;
+    const basicNotice = isBasicRecord(record) ? `<div class="basic-record-notice"><strong>Zapis podstawowy — bez pełnej kontroli.</strong><br>Ten rekord zapisano jako podstawowy, bez pełnego opisu siedliska.</div>` : "";
     const sections = [
-      ["Identyfikacja", `${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
+      ["Identyfikacja", `${basicNotice}${renderRecordCompletenessBadge(record)}${fld("Kompletność", isBasicRecord(record) ? "basic — rekord niepełny" : "full")}${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
       ["Pomiary jaj", renderEggMeasurementsReadonly(record)],
       ["GPS i zdjęcia gniazda", `${fld("Lat", record.lat)}${fld("Lon", record.lon)}${fld("Dokładność [m]", record.gpsAccuracyM)}${photoGrid(record.nestMicro?.photos, "Zdjęcie gniazda")}`],
       ["Mikrohabitat gniazda", `${fld("Podłoże", LABELS.substrate[record.nestMicro?.substrate] || record.nestMicro?.substrate)}${fld("Piasek [%]", record.nestMicro?.coverage?.pctSand)}${fld("Drobny żwir [%]", record.nestMicro?.coverage?.pctFineGravel)}${fld("Gruby żwir/kamienie [%]", record.nestMicro?.coverage?.pctCoarse)}${fld("Muszle [%]", record.nestMicro?.coverage?.pctShells)}${fld("Roślinność żywa [%]", record.nestMicro?.coverage?.pctLiveVeg)}${fld("Roślinność sucha [%]", record.nestMicro?.coverage?.pctDryVeg)}${fld("Drewno/szczątki [%]", record.nestMicro?.coverage?.pctOrganic)}${fld("Antropogeniczne [%]", record.nestMicro?.coverage?.pctAnthro)}${fld("Suma pokrycia [%]", coverageSum(record.nestMicro?.coverage||{}))}${fld("Odległość do rośliny [cm]", record.nestMicro?.distPlantCm)}${fld("Wysokość rośliny [cm]", record.nestMicro?.heightPlantCm)}${fld("Odległość do obiektu [cm]", record.nestMicro?.distObjectCm)}${fld("Wysokość obiektu [cm]", record.nestMicro?.heightObjectCm)}${fld("Nachylenie", LABELS.slope[record.nestMicro?.slope] || record.nestMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.nestMicro?.microrelief] || record.nestMicro?.microrelief)}`],
@@ -3769,17 +4218,120 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
   function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $$("#record-readonly-content img[data-photo-ref]").forEach((img)=>{ resolvePhotoSrc(img.dataset.photoRef).then((src)=>{ if(src) img.src=src; });}); $("#record-readonly-content").addEventListener("click",(e)=>{ const img=e.target.closest("img[data-photo-ref]"); if(img?.src) window.open(img.src,"_blank","noopener");}); }
 
+
+  function isMapPointEditModeEnabled(mapId) {
+    return !!mapPointEditMode[mapId];
+  }
+
+  function updateMapPointEditControl(mapId) {
+    const button = mapPointEditControls[mapId]?.button;
+    if (!button) return;
+    const enabled = isMapPointEditModeEnabled(mapId);
+    button.classList.toggle("active", enabled);
+    button.setAttribute("aria-pressed", enabled ? "true" : "false");
+    button.title = enabled ? "Wyłącz edycję punktów" : "Włącz edycję punktów";
+    button.innerHTML = enabled ? "🔓 Edycja punktów" : "🔒 Edycja punktów";
+  }
+
+  function setMapPointEditMode(mapId, enabled) {
+    const nextEnabled = !!enabled;
+    if (nextEnabled && !isMapPointEditModeEnabled(mapId)) {
+      const confirmed = confirm("Wchodzisz w tryb edycji punktów na mapie. Możesz przesuwać zapisane pozycje — bądź pewny, co robisz. Czy włączyć tryb edycji punktów?");
+      if (!confirmed) return;
+    }
+    mapPointEditMode[mapId] = nextEnabled;
+    updateMapPointEditControl(mapId);
+    if (mapId === "records" && recordsMap) renderRecordsMap(mapFocusUid);
+    if (mapId === "working" && workingMap) renderWorkingMap();
+  }
+
+  function initMapPointEditControl(map, mapId) {
+    if (!map || mapPointEditControls[mapId]) return;
+    const control = L.control({ position: "bottomright" });
+    control.onAdd = () => {
+      const wrap = L.DomUtil.create("div", "leaflet-control map-point-edit-control");
+      const button = L.DomUtil.create("button", "map-point-edit-button", wrap);
+      button.type = "button";
+      button.setAttribute("aria-pressed", "false");
+      L.DomEvent.disableClickPropagation(wrap);
+      L.DomEvent.disableScrollPropagation(wrap);
+      L.DomEvent.on(button, "click", (event) => {
+        L.DomEvent.stop(event);
+        setMapPointEditMode(mapId, !isMapPointEditModeEnabled(mapId));
+      });
+      mapPointEditControls[mapId] = { control, button };
+      updateMapPointEditControl(mapId);
+      return wrap;
+    };
+    control.addTo(map);
+  }
+
+  function roundMapCoordinate(value) {
+    return Math.round(Number(value) * 1e6) / 1e6;
+  }
+
+  function updateRecordMapPoint(uid, pointType, latLng) {
+    const entries = getEntries();
+    const idx = entries.findIndex((entry) => String(entry.uid) === String(uid));
+    if (idx < 0) return null;
+    const target = entries[idx];
+    if (!canMoveMapPoint(target)) {
+      alert("Brak uprawnień do przesunięcia tego punktu. Możesz przesuwać tylko swoje punkty, a administrator może przesuwać wszystkie.");
+      return null;
+    }
+    const user = getCurrentUser();
+    const patch = {
+      updatedAt: new Date().toISOString(),
+      updatedBy: user?.id || target.updatedBy || "",
+      updatedByName: user?.name || target.updatedByName || "",
+      syncStatus: "pending"
+    };
+    const lat = roundMapCoordinate(latLng.lat);
+    const lon = roundMapCoordinate(latLng.lng);
+    const updated = pointType === "kontrola"
+      ? normalizeEntry({ ...target, ...patch, randomMicro: { ...(target.randomMicro || {}), lat, lon } })
+      : normalizeEntry({ ...target, ...patch, lat, lon });
+    entries[idx] = updated;
+    if (!setEntries(entries)) return null;
+    renderEntries();
+    if (navigator.onLine) syncNow().catch(() => markSyncStatus(uid, "error"));
+    return updated;
+  }
+
+  function bindRecordPointDrag(marker, point) {
+    if (!canMoveMapPoint(point.entry) || !isMapPointEditModeEnabled("records")) return;
+    marker.dragging?.enable();
+    marker.on("dragend", () => {
+      const next = marker.getLatLng();
+      const label = point.type === "kontrola" ? "punkt kontrolny / losowy" : "punkt gniazda";
+      const confirmed = confirm(`Przesunąć ${label} rekordu ${point.entry.nestId || "(bez ID)"} na nowe współrzędne ${roundMapCoordinate(next.lat)}, ${roundMapCoordinate(next.lng)}?`);
+      if (!confirmed) {
+        marker.setLatLng(point.pos);
+        return;
+      }
+      const updated = updateRecordMapPoint(point.entry.uid, point.type, next);
+      if (!updated) {
+        marker.setLatLng(point.pos);
+        return;
+      }
+      mapFocusUid = updated.uid;
+      renderRecordsMap(updated.uid);
+    });
+  }
+
   function renderRecordsMap(focusUid = null) {
     const mapEl = $("#records-map");
     if (!mapEl || typeof L === "undefined") { $("#map-info").textContent = "Mapa niedostępna offline (brak biblioteki Leaflet)."; return; }
     if (!recordsMap) {
       const base = createBaseLayers();
-      recordsMap = L.map(mapEl, { layers: [base.defaultLayer] });
+      recordsMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: MAP_MAX_ZOOM });
       recordsMap.attributionControl.setPrefix("");
       initMapBaseLayerSelect(recordsMap, "records", base);
       ortoCacheState.records.map = recordsMap;
       ortoCacheState.records.onlineLayer = base.onlineLayer;
       ortoCacheState.records.offlineLayer = base.offlineLayer;
+      ortoCacheState.records.dominikOnlineLayer = base.layers["Dominik Layer"];
+      ortoCacheState.records.dominikOfflineLayer = base.layers["Dominik Layer offline"];
       restoreMapViewState(recordsMap, "records");
       initMapViewStatePersistence(recordsMap, "records");
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
@@ -3787,6 +4339,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       initMeasureTools(recordsMap, "records");
       initBrysnaSmieckLayer(recordsMap, "records");
       switchToOfflineOrtoIfNeeded(recordsMap, "records");
+      initMapPointEditControl(recordsMap, "records");
     }
     if ($("#records-grid-toggle")?.checked) {
       if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
@@ -3806,10 +4359,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     points.forEach((p)=>{
       const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div class="pin"><span>${p.type==='gniazdo'?'G':'K'}</span></div>`});
-      const m = L.marker(p.pos,{icon}).addTo(mapMarkersLayer);
+      const canMove = canMoveMapPoint(p.entry);
+      const movable = canMove && isMapPointEditModeEnabled("records");
+      const m = L.marker(p.pos, { icon, draggable: movable, autoPan: movable }).addTo(mapMarkersLayer);
+      bindRecordPointDrag(m, p);
       if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(LABELS.species[p.entry.species] || p.entry.species || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
-      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
+      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("records") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
     });
     if (focusUid) {
@@ -3825,7 +4381,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (points.length && !ortoCacheState.records.viewRestored && !focusUid) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
     renderBrysnaSmieckPoints("records");
-    ensureUserLocationTracking(points, focusUid); syncUserLocationLayers("records"); bringMeasureToFront("records");
+    syncUserLocationLayers("records"); bringMeasureToFront("records");
   }
 
   function ensureUserLocationTracking(points, focusUid) {
@@ -3841,7 +4397,6 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         updateMapHeadingButtons();
         syncUserLocationLayers("records");
         syncUserLocationLayers("working");
-        if (recordsMap && !mapUserState.records.hasAutoCenteredOnUser && !focusUid) { recordsMap.setView(latestUserLatLng, 18); mapUserState.records.hasAutoCenteredOnUser = true; }
       }, () => {
         $("#map-user-status").textContent = "Twoja pozycja: niedostępna";
         $("#working-user-status").textContent = "Twoja pozycja: niedostępna";
@@ -4020,6 +4575,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       console.error(error);
       alert(`Zapis nie powiódł się: ${error.message || error}`);
     }));
+    $("#quick-basic-save")?.addEventListener("click", () => quickSaveBasicRecord().catch((error) => {
+      console.error(error);
+      alert(`Zapis podstawowy nie powiódł się: ${error.message || error}`);
+    }));
     $("#save-draft").addEventListener("click", () => saveDraft().catch((error) => {
       console.error(error);
       alert(`Nie udało się zapisać szkicu: ${error.message || error}`);
@@ -4057,15 +4616,28 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#map-back").addEventListener("click", () => showView("records"));
     $("#records-fullscreen-map")?.addEventListener("click", () => setMapFullscreen("records", true));
     $("#records-fullscreen-close")?.addEventListener("click", () => setMapFullscreen("records", false));
-    $("#map-center-user").addEventListener("click", () => {
-      if (!latestUserLatLng) return alert("Twoja pozycja jest jeszcze niedostępna.");
-      recordsMap?.setView(latestUserLatLng, 18);
+    $("#map-center-user").addEventListener("click", async () => {
+      try {
+        await showMyLocationOnMap(recordsMap, "#map-user-status");
+        ensureUserLocationTracking([], null);
+        syncUserLocationLayers("records");
+        recordsMap?.setView(latestUserLatLng, 18);
+        mapUserState.records.hasAutoCenteredOnUser = true;
+      } catch {
+        alert("Nie udało się pobrać mojej pozycji. Sprawdź uprawnienia lokalizacji.");
+      }
     });
     $("#map-enable-heading").addEventListener("click", () => { void toggleMapHeading(); });
+    $("#records-layer-health-check")?.addEventListener("click", () => runMapLayerDiagnostics("records").catch((error) => { console.error(error); renderMapLayerDiagnostics("records", [{ layerName: "Diagnostyka", type: "app", status: "nieznany błąd", elapsedMs: 0, url: "", diagnosis: error.message || String(error) }]); }));
     $("#map-screen").addEventListener("click", (event) => {
       const btn = event.target.closest("button[data-map-action]");
       if (!btn) return;
       const action = btn.dataset.mapAction;
+      if (action === "collapse-layer-diagnostics") {
+        const target = $(`#${btn.dataset.mapId || "records"}-layer-diagnostics`);
+        if (target) target.hidden = true;
+        return;
+      }
       if (action === "view") showReadonlyRecord(btn.dataset.uid);
       if (action === "share") void shareRecord(btn.dataset.uid);
       if (action === "edit") editRecord(btn.dataset.uid);
@@ -4118,6 +4690,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     $("#working-fit").addEventListener("click", () => fitWorkingMapBounds());
     $("#working-enable-heading").addEventListener("click", () => { void toggleMapHeading(); });
+    $("#working-layer-health-check")?.addEventListener("click", () => runMapLayerDiagnostics("working").catch((error) => { console.error(error); renderMapLayerDiagnostics("working", [{ layerName: "Diagnostyka", type: "app", status: "nieznany błąd", elapsedMs: 0, url: "", diagnosis: error.message || String(error) }]); }));
     $("#working-show-map").addEventListener("click",()=>{workingViewMode="map";renderWorkingMap();});
     $("#working-show-list").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap();});
     $("#working-nearest").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap(true);});
@@ -4273,6 +4846,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       protocolVersion: entry.protocolVersion,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
+      recordCompleteness: entry.recordCompleteness || (entry.quickSave ? "basic" : "full"),
+      quickSave: !!entry.quickSave,
+      quickSaveReason: entry.quickSaveReason || "",
+      habitatDescriptionSkipped: !!entry.habitatDescriptionSkipped,
+      savedFromStep: entry.savedFromStep ?? "",
       nestId: entry.nestId,
       season: entry.season,
       obsDate: entry.obsDate,
@@ -4573,7 +5151,39 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     items[idx] = updated;
     setWorkingNests(items);
     renderWorkingMap();
+    if (navigator.onLine) syncNow().catch(() => { showMapOfflineStatus("working", "Nie udało się od razu zsynchronizować zmiany gniazda roboczego. Zostanie wysłana przy następnej synchronizacji.", { type: "warning", autoHide: true, timeoutMs: 8000 }); });
     return updated;
+  }
+
+  function moveWorkingNestFromMap(id, latLng) {
+    const item = findWorkingNest(id);
+    if (!item) return null;
+    if (!canMoveMapPoint(item)) {
+      alert("Brak uprawnień do przesunięcia tego gniazda roboczego. Możesz przesuwać tylko swoje punkty, a administrator może przesuwać wszystkie.");
+      return null;
+    }
+    return updateWorkingNest(id, { lat: roundMapCoordinate(latLng.lat), lon: roundMapCoordinate(latLng.lng) });
+  }
+
+  function bindWorkingNestDrag(marker, item, pos) {
+    if (!canMoveMapPoint(item) || !isMapPointEditModeEnabled("working")) return;
+    marker.dragging?.enable();
+    marker.on("dragend", () => {
+      const next = marker.getLatLng();
+      const confirmed = confirm(`Przesunąć gniazdo robocze ${item.label || "(bez etykiety)"} na nowe współrzędne ${roundMapCoordinate(next.lat)}, ${roundMapCoordinate(next.lng)}?`);
+      if (!confirmed) {
+        marker.setLatLng(pos);
+        return;
+      }
+      const updated = moveWorkingNestFromMap(item.id, next);
+      if (!updated) {
+        marker.setLatLng(pos);
+        return;
+      }
+      workingFocusId = updated.id;
+      workingViewMode = "map";
+      renderWorkingMap();
+    });
   }
   async function deleteWorkingNest(id) {
     const items = getWorkingNests();
@@ -4616,7 +5226,6 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function fitWorkingMapBounds() {
     const points = activeWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
     if (points.length) workingMap?.fitBounds(L.latLngBounds(points), { padding: [30, 30] });
-    else if (latestUserLatLng) workingMap?.setView(latestUserLatLng, 18);
     else workingMap?.setView([52, 19], 7);
   }
   function askWorkingGpsPointDetails() {
@@ -4685,6 +5294,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }, () => alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
   }
   function onWorkingScreenClick(event) {
+    const collapseBtn = event.target.closest("[data-map-action='collapse-layer-diagnostics']");
+    if (collapseBtn) {
+      const target = $(`#${collapseBtn.dataset.mapId || "working"}-layer-diagnostics`);
+      if (target) target.hidden = true;
+      return;
+    }
     const btn = event.target.closest("[data-w-action]"); if (!btn) return;
     const id = btn.dataset.workingId; const item = findWorkingNest(id); if (!item) return;
     if (btn.dataset.wAction === "show") { workingViewMode='map'; workingFocusId=item.id; renderWorkingMap(); return; }
@@ -4709,12 +5324,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
     if (!workingMap) {
       const base = createBaseLayers();
-      workingMap = L.map(mapEl, { layers: [base.defaultLayer] });
+      workingMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: MAP_MAX_ZOOM });
       workingMap.attributionControl.setPrefix("");
       initMapBaseLayerSelect(workingMap, "working", base);
       ortoCacheState.working.map = workingMap;
       ortoCacheState.working.onlineLayer = base.onlineLayer;
       ortoCacheState.working.offlineLayer = base.offlineLayer;
+      ortoCacheState.working.dominikOnlineLayer = base.layers["Dominik Layer"];
+      ortoCacheState.working.dominikOfflineLayer = base.layers["Dominik Layer offline"];
       restoreMapViewState(workingMap, "working");
       initMapViewStatePersistence(workingMap, "working");
       workingLayer = L.layerGroup().addTo(workingMap);
@@ -4722,6 +5339,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       initMeasureTools(workingMap, "working");
       initBrysnaSmieckLayer(workingMap, "working");
       switchToOfflineOrtoIfNeeded(workingMap, "working");
+      initMapPointEditControl(workingMap, "working");
     }
     if ($("#working-grid-toggle")?.checked) {
       if (!workingGridLayer) void addGridToMap(workingMap, "working");
@@ -4733,10 +5351,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const items = activeWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
     enriched.forEach(({w,pos}) => {
-      const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }) }).addTo(workingLayer);
+      const canMove = canMoveMapPoint(w);
+      const movable = canMove && isMapPointEditModeEnabled("working");
+      const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }), draggable: movable, autoPan: movable }).addTo(workingLayer);
+      bindWorkingNestDrag(m, w, pos);
       const noteText = String(w.note ?? w.notes ?? "").trim();
       if (workingNotesVisible && noteText) m.bindTooltip(escapeHtml(noteText), { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
-      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
+      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("working") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
     setMapInfo("working", `Punkty robocze: ${enriched.length}`);
@@ -4744,7 +5365,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
     renderBrysnaSmieckPoints("working");
-    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId && !ortoCacheState.working.viewRestored) fitWorkingMapBounds(); ensureUserLocationTracking([], null); syncUserLocationLayers("working"); bringMeasureToFront("working");}
+    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId && !ortoCacheState.working.viewRestored) fitWorkingMapBounds(); syncUserLocationLayers("working"); bringMeasureToFront("working");}
   }
 
   function setupFieldMode() {
