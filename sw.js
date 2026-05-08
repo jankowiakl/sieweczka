@@ -1,7 +1,10 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-08-layer-diagnostics-dominik-basic-save";
+const CACHE_NAME = "sieweczka-app-v2026-05-08-dominik-offline-last-map-view";
 const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
+const DOMINIK_OFFLINE_CACHE = "sieweczka-dominik-view-cache-v1";
 const GEOPORTAL_ORTO_WMS_HOST = "mapy.geoportal.gov.pl";
 const GEOPORTAL_ORTO_WMS_PATH = "/wss/service/PZGIK/ORTO/WMS/StandardResolution";
+const MAPTILER_TILE_HOST = "api.maptiler.com";
+const DOMINIK_LAYER_TILESET_ID = "01994d7c-6984-7a15-ab37-9ec1ec822405";
 
 const APP_SHELL = [
   "./",
@@ -30,7 +33,7 @@ self.addEventListener("activate", (event) => {
     caches.keys()
       .then((keys) => Promise.all(
         keys
-          .filter((key) => key.startsWith("sieweczka-") && key !== CACHE_NAME && key !== ORTO_OFFLINE_CACHE)
+          .filter((key) => key.startsWith("sieweczka-") && key !== CACHE_NAME && key !== ORTO_OFFLINE_CACHE && key !== DOMINIK_OFFLINE_CACHE)
           .map((key) => caches.delete(key))
       ))
       .then(() => self.clients.claim())
@@ -42,9 +45,19 @@ self.addEventListener("fetch", (event) => {
 
   if (isGeoportalOrtoWmsRequest(url)) {
     event.respondWith(url.searchParams.get("sieweczkaOffline") === "1"
-      ? getOfflineOrtoTileResponse(event.request)
+      ? getOfflineTileResponse(event.request, ORTO_OFFLINE_CACHE, normalizeOrtoTileCacheKey)
       : fetch(event.request).catch(() => caches.open(ORTO_OFFLINE_CACHE).then((cache) => (
-        cache.match(normalizeOrtoTileCacheKey(event.request.url)).then((cached) => cached || createMissingOrtoTileResponse())
+        cache.match(normalizeOrtoTileCacheKey(event.request.url)).then((cached) => cached || createMissingTileResponse())
+      )))
+    );
+    return;
+  }
+
+  if (isDominikTileRequest(url)) {
+    event.respondWith(url.searchParams.get("sieweczkaDominikOffline") === "1"
+      ? getOfflineTileResponse(event.request, DOMINIK_OFFLINE_CACHE, normalizeDominikTileCacheKey)
+      : fetch(event.request).catch(() => caches.open(DOMINIK_OFFLINE_CACHE).then((cache) => (
+        cache.match(normalizeDominikTileCacheKey(event.request.url)).then((cached) => cached || createMissingTileResponse())
       )))
     );
     return;
@@ -81,35 +94,45 @@ function isGeoportalOrtoWmsRequest(url) {
   return url.hostname === GEOPORTAL_ORTO_WMS_HOST && url.pathname === GEOPORTAL_ORTO_WMS_PATH;
 }
 
+function isDominikTileRequest(url) {
+  return url.hostname === MAPTILER_TILE_HOST && url.pathname.startsWith(`/tiles/${DOMINIK_LAYER_TILESET_ID}/`);
+}
+
 function normalizeOrtoTileCacheKey(url) {
   const normalized = new URL(typeof url === "string" ? url : url.url);
   normalized.searchParams.delete("sieweczkaOffline");
   return normalized.toString();
 }
 
-async function getOfflineOrtoTileResponse(request) {
-  const cacheKey = normalizeOrtoTileCacheKey(request.url);
-  const cache = await caches.open(ORTO_OFFLINE_CACHE);
+function normalizeDominikTileCacheKey(url) {
+  const normalized = new URL(typeof url === "string" ? url : url.url);
+  normalized.searchParams.delete("sieweczkaDominikOffline");
+  return normalized.toString();
+}
+
+async function getOfflineTileResponse(request, cacheName, normalize) {
+  const cacheKey = normalize(request.url);
+  const cache = await caches.open(cacheName);
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2500);
   try {
-    const response = await fetch(request, { signal: controller.signal, cache: "no-store" });
+    const response = await fetch(cacheKey, { signal: controller.signal, cache: "no-store" });
     if (response && (response.ok || response.type === "opaque")) {
       await cache.put(cacheKey, response.clone());
       return response;
     }
-    return createMissingOrtoTileResponse();
+    return createMissingTileResponse();
   } catch {
-    return createMissingOrtoTileResponse();
+    return createMissingTileResponse();
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function createMissingOrtoTileResponse() {
+function createMissingTileResponse() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="#eef2f7"/><path d="M0 0h256v256H0z" fill="#f8fafc"/><path d="M0 256 256 0M-64 192 192-64M64 320 320 64" stroke="#d7dee8" stroke-width="10"/><text x="128" y="126" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#64748b">Brak kafla offline</text><text x="128" y="146" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#64748b">dla tego miejsca</text></svg>`;
   return new Response(svg, {
     status: 200,
