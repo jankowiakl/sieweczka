@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=2026.05.07-map-fullscreen-select-point-v2" />
+  <link rel="stylesheet" href="styles.css?v=2026.05.08-map-edit-lock-dominik-basic-gps" />
 </head>
 <body>
   <noscript>
@@ -569,12 +569,6 @@
             <label>Notatki identyfikacyjne
               <textarea id="notes-identification" rows="2"></textarea>
             </label>
-
-            <div class="quick-basic-save-panel">
-              <p><strong>Zapis podstawowy — bez pełnej kontroli</strong></p>
-              <p class="muted">Tylko gdy nie wykonujesz pełnej kontroli siedliska.</p>
-              <button type="button" id="quick-basic-save" class="quick-basic-save-button secondary">Zapis podstawowy — bez pełnej kontroli</button>
-            </div>
           </fieldset>
         </section>
 
@@ -594,6 +588,12 @@
                 </label>
               </div>
               <input id="gps-accuracy" type="hidden" value="" />
+            </div>
+
+            <div class="quick-basic-save-panel">
+              <p><strong>Zapis podstawowy — bez pełnej kontroli</strong></p>
+              <p class="muted">Tylko gdy nie wykonujesz pełnej kontroli siedliska. GPS gniazda z tej karty jest obowiązkowy.</p>
+              <button type="button" id="quick-basic-save" class="quick-basic-save-button secondary">Zapis podstawowy — bez pełnej kontroli</button>
             </div>
 
             <label class="photo-input">
