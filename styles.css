@@ -2879,27 +2879,25 @@ body {
 .map-layer-diagnostics code { white-space: normal; word-break: break-all; }
 
 .map-point-edit-control {
-  margin: .65rem .65rem 0 0 !important;
+  margin: 0 .65rem .65rem 0 !important;
   background: transparent;
   box-shadow: none;
 }
 .map-point-edit-button {
-  border: 1px solid rgba(15, 118, 110, .45);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .72);
+  border: 2px solid #0f766e;
+  border-radius: 10px;
+  background: #ffffff;
   color: #0f3f3b;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, .22);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  min-height: 38px;
-  padding: .45rem .7rem;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .28);
+  min-height: 36px;
+  padding: .42rem .62rem;
   font-weight: 900;
-  font-size: .9rem;
+  font-size: .85rem;
   cursor: pointer;
 }
 .map-point-edit-button.active {
-  background: rgba(15, 118, 110, .84);
-  border-color: rgba(255, 255, 255, .82);
+  background: #0f766e;
+  border-color: #0f766e;
   color: #fff;
 }
 .map-point-edit-button:focus-visible {

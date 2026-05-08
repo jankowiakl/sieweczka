@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.08-map-edit-lock-dominik-basic-gps";
+  const APP_VERSION = "2026.05.08-basic-valid-gps-map-edit-warning";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -2324,8 +2324,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (record.eggCount == null || Number.isNaN(record.eggCount)) addErr(1, "#egg-count", "Brak liczby jaj.");
     eggMeasurementRangeWarnings(record.eggMeasurements).forEach((message) => addWarn(1, "#egg-measurements-panel", message));
 
-    if (record.lat == null || record.lon == null) addErr(2, "#lat", "Brak GPS gniazda.");
-    if (record.randomMicro.lat == null || record.randomMicro.lon == null) addErr(5, "#random-lat", "Brak GPS punktu losowego / kontroli.");
+    if (!hasValidCoords(record.lat, record.lon)) addErr(2, "#lat", "Brak poprawnego GPS gniazda.");
+    if (!hasValidCoords(record.randomMicro?.lat, record.randomMicro?.lon)) addErr(5, "#random-lat", "Brak poprawnego GPS punktu losowego / kontroli.");
     if (record.randomMicro.azimuthDeg == null) addWarn(5, "#random-azimuth", "Brakuje azymutu punktu losowego.");
 
     const infos = [];
@@ -2413,7 +2413,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
 
-  function canQuickSaveBasicRecord() {
+  function getBasicRecordWarnings() {
     const warnings = [];
     if (!trim("#nest-id")) warnings.push("ID gniazda zostanie wygenerowane automatycznie.");
     if (!trim("#season")) warnings.push("Sezon zostanie ustawiony na bieżący rok.");
@@ -2421,10 +2421,19 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!value("#obs-date")) warnings.push("Data zostanie ustawiona na dzisiaj.");
     if (!value("#obs-time")) warnings.push("Godzina zostanie ustawiona na aktualną.");
     if (!trim("#sector")) warnings.push("Sektor zostanie zapisany jako brak danych.");
-    if (value("#species", "unknown") === "unknown") return { ok: false, warnings, message: "Do zapisu podstawowego wybierz gatunek." };
-    if (!hasValidCoords(getNumber("#lat", null), getNumber("#lon", null))) return { ok: false, warnings, message: "Do zapisu podstawowego pobierz lub wpisz poprawny GPS gniazda na karcie 2." };
     if (!String(value("#egg-count", "")).trim()) warnings.push("Liczba jaj zostanie zapisana jako brak danych.");
-    return { ok: true, warnings, message: "" };
+    return warnings;
+  }
+
+  function validateBasicRecordForSave(record) {
+    const errors = [];
+    if (!record.nestId) errors.push("Brakuje ID gniazda.");
+    if (!record.obsDate) errors.push("Brakuje daty.");
+    if (!record.obsTime) errors.push("Brakuje godziny.");
+    if (!record.sector) errors.push("Brakuje sektora / części wyspy.");
+    if (!record.species || record.species === "unknown") errors.push("Do zapisu podstawowego wybierz gatunek.");
+    if (!hasValidCoords(record.lat, record.lon)) errors.push("Do zapisu podstawowego pobierz lub wpisz poprawny GPS gniazda na karcie 2. Nie można zapisać żadnego rekordu bez pozycji.");
+    return errors;
   }
 
   function markRecordAsBasic(record) {
@@ -2462,15 +2471,16 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   async function quickSaveBasicRecord() {
-    const check = canQuickSaveBasicRecord();
-    if (!check.ok) {
-      alert(check.message);
+    const warnings = getBasicRecordWarnings();
+    const record = await buildBasicRecordFromStepOne();
+    const errors = validateBasicRecordForSave(record);
+    if (errors.length) {
+      alert(`Nie zapiszę rekordu podstawowego:\n- ${errors.join("\n- ")}`);
       return;
     }
-    const extra = check.warnings.length ? `\n\nUwaga:\n- ${check.warnings.join("\n- ")}` : "";
-    const confirmed = confirm(`To jest zapis podstawowy bez pełnej kontroli siedliska. Użyj tylko wtedy, gdy nie wykonujesz pełnego opisu gniazda. Rekord zostanie oznaczony jako niepełny. Czy zapisać?${extra}`);
+    const extra = warnings.length ? `\n\nUwaga:\n- ${warnings.join("\n- ")}` : "";
+    const confirmed = confirm(`To jest zapis podstawowy bez pełnej kontroli siedliska. Aplikacja sprawdziła podstawowe dane i GPS gniazda. Użyj tylko wtedy, gdy nie wykonujesz pełnego opisu gniazda. Rekord zostanie oznaczony jako niepełny. Czy zapisać?${extra}`);
     if (!confirmed) return;
-    const record = await buildBasicRecordFromStepOne();
     const entries = getEntries();
     const idx = entries.findIndex((entry) => String(entry.uid) === String(record.uid));
     if (idx >= 0) entries[idx] = record;
@@ -2491,6 +2501,18 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   async function saveFinalRecord() {
     const record = await buildRecord({ persistPhotos: true });
+    if (!hasValidCoords(record.lat, record.lon)) {
+      alert("Nie zapiszę rekordu bez poprawnego GPS gniazda. Pobierz lub wpisz pozycję na karcie 2.");
+      showStep(2);
+      setTimeout(() => $("#lat")?.focus(), 100);
+      return;
+    }
+    if (!hasValidCoords(record.randomMicro?.lat, record.randomMicro?.lon)) {
+      alert("Nie zapiszę pełnego rekordu bez poprawnego GPS punktu losowego / kontroli. Pobierz lub wpisz pozycję na karcie 5.");
+      showStep(5);
+      setTimeout(() => $("#random-lat")?.focus(), 100);
+      return;
+    }
     const { errors } = validateRecord(record);
     if (errors.length && !$("#validation-override-summary")?.checked) {
       renderValidationAndPreview();
@@ -4212,7 +4234,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function setMapPointEditMode(mapId, enabled) {
-    mapPointEditMode[mapId] = !!enabled;
+    const nextEnabled = !!enabled;
+    if (nextEnabled && !isMapPointEditModeEnabled(mapId)) {
+      const confirmed = confirm("Wchodzisz w tryb edycji punktów na mapie. Możesz przesuwać zapisane pozycje — bądź pewny, co robisz. Czy włączyć tryb edycji punktów?");
+      if (!confirmed) return;
+    }
+    mapPointEditMode[mapId] = nextEnabled;
     updateMapPointEditControl(mapId);
     if (mapId === "records" && recordsMap) renderRecordsMap(mapFocusUid);
     if (mapId === "working" && workingMap) renderWorkingMap();
@@ -4220,7 +4247,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   function initMapPointEditControl(map, mapId) {
     if (!map || mapPointEditControls[mapId]) return;
-    const control = L.control({ position: "topright" });
+    const control = L.control({ position: "bottomright" });
     control.onAdd = () => {
       const wrap = L.DomUtil.create("div", "leaflet-control map-point-edit-control");
       const button = L.DomUtil.create("button", "map-point-edit-button", wrap);
