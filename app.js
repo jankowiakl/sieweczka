@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.08-map-drag-dominik-zoom";
+  const APP_VERSION = "2026.05.08-map-edit-lock-dominik-basic-gps";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -1010,6 +1010,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
+  const mapPointEditMode = { records: false, working: false };
+  const mapPointEditControls = { records: null, working: null };
   const mapUserState = {
     records: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false },
     working: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false }
@@ -2420,6 +2422,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!value("#obs-time")) warnings.push("Godzina zostanie ustawiona na aktualną.");
     if (!trim("#sector")) warnings.push("Sektor zostanie zapisany jako brak danych.");
     if (value("#species", "unknown") === "unknown") return { ok: false, warnings, message: "Do zapisu podstawowego wybierz gatunek." };
+    if (!hasValidCoords(getNumber("#lat", null), getNumber("#lon", null))) return { ok: false, warnings, message: "Do zapisu podstawowego pobierz lub wpisz poprawny GPS gniazda na karcie 2." };
     if (!String(value("#egg-count", "")).trim()) warnings.push("Liczba jaj zostanie zapisana jako brak danych.");
     return { ok: true, warnings, message: "" };
   }
@@ -2429,7 +2432,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     record.quickSave = true;
     record.quickSaveReason = "basic_without_full_control";
     record.habitatDescriptionSkipped = true;
-    record.savedFromStep = 1;
+    record.savedFromStep = 2;
     return record;
   }
 
@@ -4038,13 +4041,19 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function createDominikLayer() {
-    return L.tileLayer(DOMINIK_LAYER_XYZ_URL, {
+    const DominikLayer = L.TileLayer.extend({
+      getTileUrl(coords) {
+        return createDominikTileUrl(coords.x, coords.y, coords.z);
+      }
+    });
+    return new DominikLayer("", {
       attribution: "Dominik Layer / MapTiler",
       minZoom: 0,
       maxZoom: DOMINIK_MAX_DISPLAY_ZOOM,
       maxNativeZoom: DOMINIK_MAX_NATIVE_ZOOM,
       tileSize: 256,
-      crossOrigin: true
+      crossOrigin: true,
+      errorTileUrl: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(createEmptyTileSvg())}`
     });
   }
 
@@ -4188,6 +4197,48 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $$("#record-readonly-content img[data-photo-ref]").forEach((img)=>{ resolvePhotoSrc(img.dataset.photoRef).then((src)=>{ if(src) img.src=src; });}); $("#record-readonly-content").addEventListener("click",(e)=>{ const img=e.target.closest("img[data-photo-ref]"); if(img?.src) window.open(img.src,"_blank","noopener");}); }
 
 
+  function isMapPointEditModeEnabled(mapId) {
+    return !!mapPointEditMode[mapId];
+  }
+
+  function updateMapPointEditControl(mapId) {
+    const button = mapPointEditControls[mapId]?.button;
+    if (!button) return;
+    const enabled = isMapPointEditModeEnabled(mapId);
+    button.classList.toggle("active", enabled);
+    button.setAttribute("aria-pressed", enabled ? "true" : "false");
+    button.title = enabled ? "Wyłącz edycję punktów" : "Włącz edycję punktów";
+    button.innerHTML = enabled ? "🔓 Edycja punktów" : "🔒 Edycja punktów";
+  }
+
+  function setMapPointEditMode(mapId, enabled) {
+    mapPointEditMode[mapId] = !!enabled;
+    updateMapPointEditControl(mapId);
+    if (mapId === "records" && recordsMap) renderRecordsMap(mapFocusUid);
+    if (mapId === "working" && workingMap) renderWorkingMap();
+  }
+
+  function initMapPointEditControl(map, mapId) {
+    if (!map || mapPointEditControls[mapId]) return;
+    const control = L.control({ position: "topright" });
+    control.onAdd = () => {
+      const wrap = L.DomUtil.create("div", "leaflet-control map-point-edit-control");
+      const button = L.DomUtil.create("button", "map-point-edit-button", wrap);
+      button.type = "button";
+      button.setAttribute("aria-pressed", "false");
+      L.DomEvent.disableClickPropagation(wrap);
+      L.DomEvent.disableScrollPropagation(wrap);
+      L.DomEvent.on(button, "click", (event) => {
+        L.DomEvent.stop(event);
+        setMapPointEditMode(mapId, !isMapPointEditModeEnabled(mapId));
+      });
+      mapPointEditControls[mapId] = { control, button };
+      updateMapPointEditControl(mapId);
+      return wrap;
+    };
+    control.addTo(map);
+  }
+
   function roundMapCoordinate(value) {
     return Math.round(Number(value) * 1e6) / 1e6;
   }
@@ -4221,7 +4272,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function bindRecordPointDrag(marker, point) {
-    if (!canMoveMapPoint(point.entry)) return;
+    if (!canMoveMapPoint(point.entry) || !isMapPointEditModeEnabled("records")) return;
     marker.dragging?.enable();
     marker.on("dragend", () => {
       const next = marker.getLatLng();
@@ -4261,6 +4312,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       initMeasureTools(recordsMap, "records");
       initBrysnaSmieckLayer(recordsMap, "records");
       switchToOfflineOrtoIfNeeded(recordsMap, "records");
+      initMapPointEditControl(recordsMap, "records");
     }
     if ($("#records-grid-toggle")?.checked) {
       if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
@@ -4280,12 +4332,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     points.forEach((p)=>{
       const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div class="pin"><span>${p.type==='gniazdo'?'G':'K'}</span></div>`});
-      const movable = canMoveMapPoint(p.entry);
+      const canMove = canMoveMapPoint(p.entry);
+      const movable = canMove && isMapPointEditModeEnabled("records");
       const m = L.marker(p.pos, { icon, draggable: movable, autoPan: movable }).addTo(mapMarkersLayer);
       bindRecordPointDrag(m, p);
       if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(LABELS.species[p.entry.species] || p.entry.species || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
-      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}${canMoveMapPoint(e) ? "<br><span class='muted'>Możesz przeciągnąć punkt — zapis wymaga potwierdzenia.</span>" : ""}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
+      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("records") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
     });
     if (focusUid) {
@@ -5086,7 +5139,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function bindWorkingNestDrag(marker, item, pos) {
-    if (!canMoveMapPoint(item)) return;
+    if (!canMoveMapPoint(item) || !isMapPointEditModeEnabled("working")) return;
     marker.dragging?.enable();
     marker.on("dragend", () => {
       const next = marker.getLatLng();
@@ -5259,6 +5312,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       initMeasureTools(workingMap, "working");
       initBrysnaSmieckLayer(workingMap, "working");
       switchToOfflineOrtoIfNeeded(workingMap, "working");
+      initMapPointEditControl(workingMap, "working");
     }
     if ($("#working-grid-toggle")?.checked) {
       if (!workingGridLayer) void addGridToMap(workingMap, "working");
@@ -5270,12 +5324,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const items = activeWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
     enriched.forEach(({w,pos}) => {
-      const movable = canMoveMapPoint(w);
+      const canMove = canMoveMapPoint(w);
+      const movable = canMove && isMapPointEditModeEnabled("working");
       const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }), draggable: movable, autoPan: movable }).addTo(workingLayer);
       bindWorkingNestDrag(m, w, pos);
       const noteText = String(w.note ?? w.notes ?? "").trim();
       if (workingNotesVisible && noteText) m.bindTooltip(escapeHtml(noteText), { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
-      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}${canMoveMapPoint(w) ? "<br><span class='muted'>Możesz przeciągnąć punkt — zapis wymaga potwierdzenia.</span>" : ""}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
+      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("working") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
     setMapInfo("working", `Punkty robocze: ${enriched.length}`);

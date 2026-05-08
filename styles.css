@@ -2877,3 +2877,32 @@ body {
 .map-layer-diagnostics .status-warn { color: #92400e; font-weight: 700; }
 .map-layer-diagnostics .status-error { color: #991b1b; font-weight: 700; }
 .map-layer-diagnostics code { white-space: normal; word-break: break-all; }
+
+.map-point-edit-control {
+  margin: .65rem .65rem 0 0 !important;
+  background: transparent;
+  box-shadow: none;
+}
+.map-point-edit-button {
+  border: 1px solid rgba(15, 118, 110, .45);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+  color: #0f3f3b;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .22);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  min-height: 38px;
+  padding: .45rem .7rem;
+  font-weight: 900;
+  font-size: .9rem;
+  cursor: pointer;
+}
+.map-point-edit-button.active {
+  background: rgba(15, 118, 110, .84);
+  border-color: rgba(255, 255, 255, .82);
+  color: #fff;
+}
+.map-point-edit-button:focus-visible {
+  outline: 3px solid rgba(14, 165, 233, .8);
+  outline-offset: 2px;
+}
