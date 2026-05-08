@@ -2840,6 +2840,19 @@ body {
   background: #fffbeb;
   color: #92400e;
 }
+
+.map-layer-diagnostics-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .5rem;
+}
+
+.map-layer-diagnostics-head button {
+  flex: 0 0 auto;
+}
+
 .map-layer-diagnostics {
   margin-top: .75rem;
   overflow-x: auto;

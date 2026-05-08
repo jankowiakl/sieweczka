@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.08-dominik-offline-last-map-view";
+  const APP_VERSION = "2026.05.08-map-drag-dominik-zoom";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -34,6 +34,7 @@
   const ORTO_OFFLINE_LAYER_PARAM = "sieweczkaOffline";
   const DOMINIK_OFFLINE_LAYER_PARAM = "sieweczkaDominikOffline";
   const DOMINIK_MAX_NATIVE_ZOOM = 22;
+  const DOMINIK_MAX_DISPLAY_ZOOM = 50;
   const MAP_MAX_ZOOM = 30;
   // TODO: docelowo przenieść klucz MapTiler do konfiguracji, np. stałej MAPTILER_KEY w środowisku/buildzie.
   const DOMINIK_LAYER_TILESET_ID = "01994d7c-6984-7a15-ab37-9ec1ec822405";
@@ -62,6 +63,7 @@
   function ownsItem(item) { return !!getCurrentUser()?.id && String(item?.createdBy || item?.created_by || item?.uploadedBy || "") === String(getCurrentUser().id); }
   function canSoftDeleteItem(item) { return canManageData() || (getCurrentUser()?.role === "observer" && ownsItem(item)); }
   function canEditItem(item) { return canManageData() || getCurrentUser()?.role === "observer" && ownsItem(item); }
+  function canMoveMapPoint(item) { return isAdmin() || ownsItem(item); }
   function isDeleted(item) { return !!(item?.deletedAt || item?.deleted_at); }
   function activeEntries() { return getEntries().filter((entry) => !isDeleted(entry)); }
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
@@ -3228,9 +3230,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
 
   function createDominikTileUrl(x, y, z, options = {}) {
+    const requestedZ = Math.max(0, Math.round(Number(z) || 0));
+    const nativeZ = Math.min(requestedZ, DOMINIK_MAX_NATIVE_ZOOM);
+    const scale = 2 ** Math.max(0, requestedZ - nativeZ);
+    const nativeX = Math.floor(Number(x) / scale);
+    const nativeY = Math.floor(Number(y) / scale);
     const params = new URLSearchParams({ key: DOMINIK_LAYER_KEY });
     if (options.offline) params.set(DOMINIK_OFFLINE_LAYER_PARAM, "1");
-    return `https://api.maptiler.com/tiles/${DOMINIK_LAYER_TILESET_ID}/${z}/${x}/${y}?${params.toString()}`;
+    return `https://api.maptiler.com/tiles/${DOMINIK_LAYER_TILESET_ID}/${nativeZ}/${nativeX}/${nativeY}?${params.toString()}`;
   }
 
   function normalizeDominikTileCacheKey(url) {
@@ -3320,7 +3327,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return new OfflineDominikLayer("", {
       tileSize: ORTO_TILE_SIZE,
       minZoom: 0,
-      maxZoom: MAP_MAX_ZOOM,
+      maxZoom: DOMINIK_MAX_DISPLAY_ZOOM,
       maxNativeZoom: DOMINIK_MAX_NATIVE_ZOOM,
       errorTileUrl: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(createEmptyTileSvg())}`,
       attribution: "Dominik Layer offline: cache-first MapTiler"
@@ -3861,6 +3868,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (map.hasLayer(layer)) map.removeLayer(layer);
     });
     nextLayer.addTo(map);
+    const layerMaxZoom = layerName.startsWith("Dominik Layer") ? DOMINIK_MAX_DISPLAY_ZOOM : MAP_MAX_ZOOM;
+    map.setMaxZoom(layerMaxZoom);
+    if (map.getZoom() > layerMaxZoom) map.setZoom(layerMaxZoom);
     state.currentBaseLayerName = layerName;
     const select = $(`#${mapId}-base-layer`);
     if (select) select.value = layerName;
@@ -4014,7 +4024,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!el) return;
     const statusClass = (status) => status === "OK" ? "status-ok" : (String(status).startsWith("HTTP") || status === "timeout" || status === "błąd CORS / fetch" ? "status-error" : "status-warn");
     el.hidden = false;
-    el.innerHTML = `<table><thead><tr><th>Warstwa</th><th>Typ</th><th>Status</th><th>Czas</th><th>URL testowy</th><th>Wniosek</th></tr></thead><tbody>${results.map((r) => `<tr><td>${escapeHtml(r.layerName)}</td><td>${escapeHtml(r.type)}</td><td class="${statusClass(r.status)}">${escapeHtml(r.statusText || r.status)}</td><td>${escapeHtml(String(r.elapsedMs ?? ""))} ms</td><td><code>${escapeHtml(r.url || "")}</code></td><td>${escapeHtml(r.diagnosis || "")}</td></tr>`).join("")}</tbody></table>`;
+    el.innerHTML = `<div class="map-layer-diagnostics-head"><strong>Wynik sprawdzania warstw</strong><button type="button" class="secondary" data-map-action="collapse-layer-diagnostics" data-map-id="${mapId}">Zwiń tabelę</button></div><table><thead><tr><th>Warstwa</th><th>Typ</th><th>Status</th><th>Czas</th><th>URL testowy</th><th>Wniosek</th></tr></thead><tbody>${results.map((r) => `<tr><td>${escapeHtml(r.layerName)}</td><td>${escapeHtml(r.type)}</td><td class="${statusClass(r.status)}">${escapeHtml(r.statusText || r.status)}</td><td>${escapeHtml(String(r.elapsedMs ?? ""))} ms</td><td><code>${escapeHtml(r.url || "")}</code></td><td>${escapeHtml(r.diagnosis || "")}</td></tr>`).join("")}</tbody></table>`;
   }
 
   async function runMapLayerDiagnostics(mapId) {
@@ -4031,7 +4041,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return L.tileLayer(DOMINIK_LAYER_XYZ_URL, {
       attribution: "Dominik Layer / MapTiler",
       minZoom: 0,
-      maxZoom: MAP_MAX_ZOOM,
+      maxZoom: DOMINIK_MAX_DISPLAY_ZOOM,
       maxNativeZoom: DOMINIK_MAX_NATIVE_ZOOM,
       tileSize: 256,
       crossOrigin: true
@@ -4177,6 +4187,60 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
   function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $$("#record-readonly-content img[data-photo-ref]").forEach((img)=>{ resolvePhotoSrc(img.dataset.photoRef).then((src)=>{ if(src) img.src=src; });}); $("#record-readonly-content").addEventListener("click",(e)=>{ const img=e.target.closest("img[data-photo-ref]"); if(img?.src) window.open(img.src,"_blank","noopener");}); }
 
+
+  function roundMapCoordinate(value) {
+    return Math.round(Number(value) * 1e6) / 1e6;
+  }
+
+  function updateRecordMapPoint(uid, pointType, latLng) {
+    const entries = getEntries();
+    const idx = entries.findIndex((entry) => String(entry.uid) === String(uid));
+    if (idx < 0) return null;
+    const target = entries[idx];
+    if (!canMoveMapPoint(target)) {
+      alert("Brak uprawnień do przesunięcia tego punktu. Możesz przesuwać tylko swoje punkty, a administrator może przesuwać wszystkie.");
+      return null;
+    }
+    const user = getCurrentUser();
+    const patch = {
+      updatedAt: new Date().toISOString(),
+      updatedBy: user?.id || target.updatedBy || "",
+      updatedByName: user?.name || target.updatedByName || "",
+      syncStatus: "pending"
+    };
+    const lat = roundMapCoordinate(latLng.lat);
+    const lon = roundMapCoordinate(latLng.lng);
+    const updated = pointType === "kontrola"
+      ? normalizeEntry({ ...target, ...patch, randomMicro: { ...(target.randomMicro || {}), lat, lon } })
+      : normalizeEntry({ ...target, ...patch, lat, lon });
+    entries[idx] = updated;
+    if (!setEntries(entries)) return null;
+    renderEntries();
+    if (navigator.onLine) syncNow().catch(() => markSyncStatus(uid, "error"));
+    return updated;
+  }
+
+  function bindRecordPointDrag(marker, point) {
+    if (!canMoveMapPoint(point.entry)) return;
+    marker.dragging?.enable();
+    marker.on("dragend", () => {
+      const next = marker.getLatLng();
+      const label = point.type === "kontrola" ? "punkt kontrolny / losowy" : "punkt gniazda";
+      const confirmed = confirm(`Przesunąć ${label} rekordu ${point.entry.nestId || "(bez ID)"} na nowe współrzędne ${roundMapCoordinate(next.lat)}, ${roundMapCoordinate(next.lng)}?`);
+      if (!confirmed) {
+        marker.setLatLng(point.pos);
+        return;
+      }
+      const updated = updateRecordMapPoint(point.entry.uid, point.type, next);
+      if (!updated) {
+        marker.setLatLng(point.pos);
+        return;
+      }
+      mapFocusUid = updated.uid;
+      renderRecordsMap(updated.uid);
+    });
+  }
+
   function renderRecordsMap(focusUid = null) {
     const mapEl = $("#records-map");
     if (!mapEl || typeof L === "undefined") { $("#map-info").textContent = "Mapa niedostępna offline (brak biblioteki Leaflet)."; return; }
@@ -4216,10 +4280,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     points.forEach((p)=>{
       const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div class="pin"><span>${p.type==='gniazdo'?'G':'K'}</span></div>`});
-      const m = L.marker(p.pos,{icon}).addTo(mapMarkersLayer);
+      const movable = canMoveMapPoint(p.entry);
+      const m = L.marker(p.pos, { icon, draggable: movable, autoPan: movable }).addTo(mapMarkersLayer);
+      bindRecordPointDrag(m, p);
       if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(LABELS.species[p.entry.species] || p.entry.species || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
-      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
+      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}${canMoveMapPoint(e) ? "<br><span class='muted'>Możesz przeciągnąć punkt — zapis wymaga potwierdzenia.</span>" : ""}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
     });
     if (focusUid) {
@@ -4487,6 +4553,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const btn = event.target.closest("button[data-map-action]");
       if (!btn) return;
       const action = btn.dataset.mapAction;
+      if (action === "collapse-layer-diagnostics") {
+        const target = $(`#${btn.dataset.mapId || "records"}-layer-diagnostics`);
+        if (target) target.hidden = true;
+        return;
+      }
       if (action === "view") showReadonlyRecord(btn.dataset.uid);
       if (action === "share") void shareRecord(btn.dataset.uid);
       if (action === "edit") editRecord(btn.dataset.uid);
@@ -5000,7 +5071,39 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     items[idx] = updated;
     setWorkingNests(items);
     renderWorkingMap();
+    if (navigator.onLine) syncNow().catch(() => { showMapOfflineStatus("working", "Nie udało się od razu zsynchronizować zmiany gniazda roboczego. Zostanie wysłana przy następnej synchronizacji.", { type: "warning", autoHide: true, timeoutMs: 8000 }); });
     return updated;
+  }
+
+  function moveWorkingNestFromMap(id, latLng) {
+    const item = findWorkingNest(id);
+    if (!item) return null;
+    if (!canMoveMapPoint(item)) {
+      alert("Brak uprawnień do przesunięcia tego gniazda roboczego. Możesz przesuwać tylko swoje punkty, a administrator może przesuwać wszystkie.");
+      return null;
+    }
+    return updateWorkingNest(id, { lat: roundMapCoordinate(latLng.lat), lon: roundMapCoordinate(latLng.lng) });
+  }
+
+  function bindWorkingNestDrag(marker, item, pos) {
+    if (!canMoveMapPoint(item)) return;
+    marker.dragging?.enable();
+    marker.on("dragend", () => {
+      const next = marker.getLatLng();
+      const confirmed = confirm(`Przesunąć gniazdo robocze ${item.label || "(bez etykiety)"} na nowe współrzędne ${roundMapCoordinate(next.lat)}, ${roundMapCoordinate(next.lng)}?`);
+      if (!confirmed) {
+        marker.setLatLng(pos);
+        return;
+      }
+      const updated = moveWorkingNestFromMap(item.id, next);
+      if (!updated) {
+        marker.setLatLng(pos);
+        return;
+      }
+      workingFocusId = updated.id;
+      workingViewMode = "map";
+      renderWorkingMap();
+    });
   }
   async function deleteWorkingNest(id) {
     const items = getWorkingNests();
@@ -5111,6 +5214,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }, () => alert("Nie udało się pobrać GPS. Sprawdź uprawnienia lokalizacji."), { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
   }
   function onWorkingScreenClick(event) {
+    const collapseBtn = event.target.closest("[data-map-action='collapse-layer-diagnostics']");
+    if (collapseBtn) {
+      const target = $(`#${collapseBtn.dataset.mapId || "working"}-layer-diagnostics`);
+      if (target) target.hidden = true;
+      return;
+    }
     const btn = event.target.closest("[data-w-action]"); if (!btn) return;
     const id = btn.dataset.workingId; const item = findWorkingNest(id); if (!item) return;
     if (btn.dataset.wAction === "show") { workingViewMode='map'; workingFocusId=item.id; renderWorkingMap(); return; }
@@ -5161,10 +5270,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const items = activeWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
     enriched.forEach(({w,pos}) => {
-      const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }) }).addTo(workingLayer);
+      const movable = canMoveMapPoint(w);
+      const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }), draggable: movable, autoPan: movable }).addTo(workingLayer);
+      bindWorkingNestDrag(m, w, pos);
       const noteText = String(w.note ?? w.notes ?? "").trim();
       if (workingNotesVisible && noteText) m.bindTooltip(escapeHtml(noteText), { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
-      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
+      m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}${canMoveMapPoint(w) ? "<br><span class='muted'>Możesz przeciągnąć punkt — zapis wymaga potwierdzenia.</span>" : ""}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
     setMapInfo("working", `Punkty robocze: ${enriched.length}`);
