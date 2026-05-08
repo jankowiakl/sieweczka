@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-07-working-point-cancel-danger-v2";
+const CACHE_NAME = "sieweczka-app-v2026-05-07-offline-cache-first-map-state";
 const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
 const GEOPORTAL_ORTO_WMS_HOST = "mapy.geoportal.gov.pl";
 const GEOPORTAL_ORTO_WMS_PATH = "/wss/service/PZGIK/ORTO/WMS/StandardResolution";
@@ -41,9 +41,12 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   if (isGeoportalOrtoWmsRequest(url)) {
-    event.respondWith(fetch(event.request).catch(() => caches.open(ORTO_OFFLINE_CACHE).then((cache) => (
-      cache.match(event.request).then((cached) => cached || createMissingOrtoTileResponse())
-    ))));
+    event.respondWith(url.searchParams.get("sieweczkaOffline") === "1"
+      ? getOfflineOrtoTileResponse(event.request)
+      : fetch(event.request).catch(() => caches.open(ORTO_OFFLINE_CACHE).then((cache) => (
+        cache.match(normalizeOrtoTileCacheKey(event.request.url)).then((cached) => cached || createMissingOrtoTileResponse())
+      )))
+    );
     return;
   }
 
@@ -76,6 +79,34 @@ self.addEventListener("fetch", (event) => {
 
 function isGeoportalOrtoWmsRequest(url) {
   return url.hostname === GEOPORTAL_ORTO_WMS_HOST && url.pathname === GEOPORTAL_ORTO_WMS_PATH;
+}
+
+function normalizeOrtoTileCacheKey(url) {
+  const normalized = new URL(typeof url === "string" ? url : url.url);
+  normalized.searchParams.delete("sieweczkaOffline");
+  return normalized.toString();
+}
+
+async function getOfflineOrtoTileResponse(request) {
+  const cacheKey = normalizeOrtoTileCacheKey(request.url);
+  const cache = await caches.open(ORTO_OFFLINE_CACHE);
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(request, { signal: controller.signal, cache: "no-store" });
+    if (response && (response.ok || response.type === "opaque")) {
+      await cache.put(cacheKey, response.clone());
+      return response;
+    }
+    return createMissingOrtoTileResponse();
+  } catch {
+    return createMissingOrtoTileResponse();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function createMissingOrtoTileResponse() {

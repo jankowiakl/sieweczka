@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.07-working-point-cancel-danger-v2";
+  const APP_VERSION = "2026.05.07-offline-cache-first-map-state";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -28,6 +28,9 @@
   const ORTO_CACHE_CONCURRENCY = 4;
   const ORTO_CACHE_DEBOUNCE_MS = 700;
   const ORTO_CACHE_META_KEY = "sieweczka-orto-view-cache-meta-v1";
+  const MAP_VIEW_STATE_KEY = "sieweczka-map-view-state-v1";
+  const MAP_VIEW_STATE_DEBOUNCE_MS = 400;
+  const ORTO_OFFLINE_LAYER_PARAM = "sieweczkaOffline";
   let deferredInstallPrompt = null;
 
   function getClientId() {
@@ -1029,8 +1032,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let currentRandomPhotos = [];
   const photoUrlCache = new Map();
   const ortoCacheState = {
-    records: { enabled: false, running: false, pending: false, timer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, map: null, onlineLayer: null, offlineLayer: null },
-    working: { enabled: false, running: false, pending: false, timer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, map: null, onlineLayer: null, offlineLayer: null }
+    records: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, map: null, onlineLayer: null, offlineLayer: null, viewRestored: false, stateBound: false },
+    working: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, lastZoom: null, lastError: "", bound: false, map: null, onlineLayer: null, offlineLayer: null, viewRestored: false, stateBound: false }
   };
   const measureStates = {
     records: { mode: "off", points: [], markers: [], line: null, polygon: null, finished: false, map: null, bound: false },
@@ -1819,8 +1822,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!getCurrentUser() && name !== "login") name = "login";
     if (getCurrentUser() && mustChangePassword() && !["change-password", "login"].includes(name)) name = "change-password";
     if (name === "admin" && !isAdmin()) name = "home";
-    if (name !== "map") setMapFullscreen("records", false);
-    if (name !== "working-map") setMapFullscreen("working", false);
+    if (name !== "map") {
+      if (recordsMap) captureMapViewState(recordsMap, "records");
+      setMapFullscreen("records", false);
+    }
+    if (name !== "working-map") {
+      if (workingMap) captureMapViewState(workingMap, "working");
+      setMapFullscreen("working", false);
+    }
     $("#login-screen").hidden = name !== "login";
     $("#change-password-screen").hidden = name !== "change-password";
     $("#home-screen").hidden = name !== "home";
@@ -3091,7 +3100,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return [minx, miny, maxx, maxy];
   }
 
-  function createGeoportalWmsTileUrl(x, y, z) {
+  function createGeoportalWmsTileUrl(x, y, z, options = {}) {
     const bbox = tileToMercatorBbox(x, y, z).map((value) => value.toFixed(6)).join(",");
     const params = new URLSearchParams({
       service: "WMS",
@@ -3106,20 +3115,63 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       height: String(ORTO_TILE_SIZE),
       bbox
     });
+    if (options.offline) params.set(ORTO_OFFLINE_LAYER_PARAM, "1");
     return `${GEOPORTAL_ORTO_WMS_URL}?${params.toString()}`;
+  }
+
+  function normalizeOrtoTileCacheKey(url) {
+    try {
+      const normalized = new URL(url, window.location.href);
+      normalized.searchParams.delete(ORTO_OFFLINE_LAYER_PARAM);
+      return normalized.toString();
+    } catch {
+      return String(url || "").replace(/([?&])sieweczkaOffline=1(&)?/, (match, prefix, suffix) => suffix ? prefix : "").replace(/[?&]$/, "");
+    }
+  }
+
+  function createEmptyTileResponse() {
+    return new Response(createEmptyTileSvg(), { status: 200, headers: { "Content-Type": "image/svg+xml", "Cache-Control": "no-store" } });
+  }
+
+  async function getOfflineOrtoTileResponse(url) {
+    if (!("caches" in window)) return createEmptyTileResponse();
+    const cacheKey = normalizeOrtoTileCacheKey(url);
+    const cache = await caches.open(ORTO_OFFLINE_CACHE);
+    const cached = await cache.match(cacheKey);
+    if (cached) return cached;
+    if (!navigator.onLine) return createEmptyTileResponse();
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    try {
+      const response = await fetch(cacheKey, { signal: controller.signal, cache: "no-store" });
+      if (response && response.ok) {
+        await cache.put(cacheKey, response.clone());
+        return response;
+      }
+      return createEmptyTileResponse();
+    } catch {
+      return createEmptyTileResponse();
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   function createGeoportalOfflineTileLayer() {
     const OfflineOrtoLayer = L.TileLayer.extend({
       getTileUrl(coords) {
-        return createGeoportalWmsTileUrl(coords.x, coords.y, coords.z);
+        return createGeoportalWmsTileUrl(coords.x, coords.y, coords.z, { offline: true });
       }
     });
     return new OfflineOrtoLayer("", {
       tileSize: ORTO_TILE_SIZE,
       maxZoom: 21,
-      attribution: "Ortofotomapa offline: Geoportal / GUGiK"
+      attribution: "Ortofotomapa offline: cache-first Geoportal / GUGiK"
     });
+  }
+
+  function createEmptyTileSvg() {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="#f8fafc"/><path d="M0 256 256 0M-64 192 192-64M64 320 320 64" stroke="#d7dee8" stroke-width="10"/><text x="128" y="126" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#64748b">Brak kafla offline</text><text x="128" y="146" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#64748b">dla tego miejsca</text></svg>`;
   }
 
   function getOrtoCacheStatusEl(mapId) {
@@ -3181,22 +3233,23 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   async function hasCachedTile(url) {
     if (!("caches" in window)) return false;
     const cache = await caches.open(ORTO_OFFLINE_CACHE);
-    return !!(await cache.match(url));
+    return !!(await cache.match(normalizeOrtoTileCacheKey(url)));
   }
 
   async function cacheTileUrl(url) {
     const cache = await caches.open(ORTO_OFFLINE_CACHE);
-    const cached = await cache.match(url);
+    const cacheKey = normalizeOrtoTileCacheKey(url);
+    const cached = await cache.match(cacheKey);
     if (cached) return "skipped";
     let response;
     try {
-      response = await fetch(url);
+      response = await fetch(cacheKey);
       if (!response || !response.ok) throw new Error(`HTTP ${response?.status || 0}`);
     } catch {
-      response = await fetch(url, { mode: "no-cors" });
+      response = await fetch(cacheKey, { mode: "no-cors" });
       if (!response || (response.type !== "opaque" && !response.ok)) throw new Error(`HTTP ${response?.status || 0}`);
     }
-    await cache.put(url, response.clone());
+    await cache.put(cacheKey, response.clone());
     return "saved";
   }
 
@@ -3230,7 +3283,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const cache = await caches.open(ORTO_OFFLINE_CACHE);
       const missing = [];
       for (const tile of plan.tiles) {
-        if (await cache.match(tile.url)) {
+        if (await cache.match(normalizeOrtoTileCacheKey(tile.url))) {
           skipped++;
         } else {
           missing.push(tile);
@@ -3390,6 +3443,133 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
 
+
+  function getMapViewStates() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(MAP_VIEW_STATE_KEY) || "{}");
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function getMapViewState(mapId) {
+    const key = mapId === "working" ? "working" : "records";
+    const state = getMapViewStates()[key];
+    return state && typeof state === "object" ? state : {};
+  }
+
+  function saveMapViewState(mapId, patch = {}) {
+    const key = mapId === "working" ? "working" : "records";
+    const states = getMapViewStates();
+    states[key] = {
+      ...(states[key] || {}),
+      ...patch,
+      center: patch.center || states[key]?.center,
+      overlays: { ...(states[key]?.overlays || {}), ...(patch.overlays || {}) },
+      panels: { ...(states[key]?.panels || {}), ...(patch.panels || {}) },
+      updatedAt: new Date().toISOString()
+    };
+    try { localStorage.setItem(MAP_VIEW_STATE_KEY, JSON.stringify(states)); } catch {}
+  }
+
+  function getMapOverlayState(mapId) {
+    return {
+      grid: !!$(`#${mapId}-grid-toggle`)?.checked,
+      speciesLabels: mapId === "records" ? !!$("#records-species-labels-toggle")?.checked : undefined,
+      notes: mapId === "working" ? !!$("#working-notes-toggle")?.checked : undefined,
+      brysnaSmieckPoints: !!$(`#${mapId}-brysna-smieck-toggle`)?.checked
+    };
+  }
+
+  function saveMapOverlayState(mapId) {
+    saveMapViewState(mapId, { overlays: getMapOverlayState(mapId) });
+  }
+
+  function getMapPanelState(mapId) {
+    return {
+      optionsOpen: !!$(`#${mapId}-options-panel`)?.open,
+      legendOpen: !!$(`#${mapId}-legend-panel`)?.open,
+      measureOpen: !!$(`#${mapId}-measure-panel`)?.open
+    };
+  }
+
+  function saveMapPanelState(mapId) {
+    saveMapViewState(mapId, { panels: getMapPanelState(mapId) });
+  }
+
+  function captureMapViewState(map, mapId) {
+    if (!map) return;
+    const center = map.getCenter();
+    saveMapViewState(mapId, {
+      center: { lat: center.lat, lng: center.lng },
+      zoom: map.getZoom(),
+      baseLayer: ortoCacheState[mapId]?.currentBaseLayerName || $(`#${mapId}-base-layer`)?.value || "Ortofotomapa Geoportal",
+      overlays: getMapOverlayState(mapId),
+      panels: getMapPanelState(mapId)
+    });
+  }
+
+  function scheduleMapViewStateSave(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state) return;
+    clearTimeout(state.stateTimer);
+    state.stateTimer = setTimeout(() => captureMapViewState(map, mapId), MAP_VIEW_STATE_DEBOUNCE_MS);
+  }
+
+  function restoreMapOverlayState(mapId) {
+    const overlays = getMapViewState(mapId).overlays || {};
+    const gridToggle = $(`#${mapId}-grid-toggle`);
+    if (gridToggle && typeof overlays.grid === "boolean") gridToggle.checked = overlays.grid;
+    const brysnaToggle = $(`#${mapId}-brysna-smieck-toggle`);
+    if (brysnaToggle && typeof overlays.brysnaSmieckPoints === "boolean") brysnaToggle.checked = overlays.brysnaSmieckPoints;
+    if (mapId === "records") {
+      const speciesToggle = $("#records-species-labels-toggle");
+      if (speciesToggle && typeof overlays.speciesLabels === "boolean") speciesToggle.checked = overlays.speciesLabels;
+      recordSpeciesLabelsVisible = !!speciesToggle?.checked;
+    } else {
+      const notesToggle = $("#working-notes-toggle");
+      if (notesToggle && typeof overlays.notes === "boolean") notesToggle.checked = overlays.notes;
+      workingNotesVisible = !!notesToggle?.checked;
+    }
+    const brysnaState = brysnaSmieckLayerStates[mapId];
+    if (brysnaState && brysnaToggle) brysnaState.visible = !!brysnaToggle.checked;
+  }
+
+  function restoreMapPanelState(mapId) {
+    const panels = getMapViewState(mapId).panels || {};
+    const optionPanel = $(`#${mapId}-options-panel`);
+    const legendPanel = $(`#${mapId}-legend-panel`);
+    const measurePanel = $(`#${mapId}-measure-panel`);
+    if (optionPanel && typeof panels.optionsOpen === "boolean") optionPanel.open = panels.optionsOpen;
+    if (legendPanel && typeof panels.legendOpen === "boolean") legendPanel.open = panels.legendOpen;
+    if (measurePanel && typeof panels.measureOpen === "boolean") measurePanel.open = panels.measureOpen;
+  }
+
+  function restoreMapViewState(map, mapId) {
+    const saved = getMapViewState(mapId);
+    restoreMapOverlayState(mapId);
+    restoreMapPanelState(mapId);
+    const layers = ortoCacheState[mapId]?.baseLayers || {};
+    const savedLayer = layers[saved.baseLayer] ? saved.baseLayer : "Ortofotomapa Geoportal";
+    setMapBaseLayer(map, mapId, savedLayer);
+    if (saved.center && Number.isFinite(saved.center.lat) && Number.isFinite(saved.center.lng) && Number.isFinite(saved.zoom)) {
+      map.setView([saved.center.lat, saved.center.lng], saved.zoom);
+      ortoCacheState[mapId].viewRestored = true;
+    }
+  }
+
+  function initMapViewStatePersistence(map, mapId) {
+    const state = ortoCacheState[mapId];
+    if (!state || state.stateBound) return;
+    state.stateBound = true;
+    map.on("moveend zoomend baselayerchange overlayadd overlayremove", () => scheduleMapViewStateSave(map, mapId));
+    $$(`#${mapId}-options-panel, #${mapId}-legend-panel, #${mapId}-measure-panel`).forEach((panel) => {
+      panel.addEventListener("toggle", () => saveMapPanelState(mapId));
+    });
+    window.addEventListener("beforeunload", () => captureMapViewState(map, mapId));
+  }
+
   function createBaseLayers() {
     const geoportalOrto = createGeoportalOrtoLayer();
     const geoportalOffline = createGeoportalOfflineTileLayer();
@@ -3428,6 +3608,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     state.currentBaseLayerName = layerName;
     const select = $(`#${mapId}-base-layer`);
     if (select) select.value = layerName;
+    if (layerName === "Ortofotomapa offline") {
+      showMapOfflineStatus(mapId, "Ortofotomapa offline działa cache-first. Brakujące kafle pokażą neutralny placeholder.", { type: "info", autoHide: true, timeoutMs: 6000 });
+    }
+    if (state.stateBound) saveMapViewState(mapId, { baseLayer: layerName });
   }
 
   function initMapBaseLayerSelect(map, mapId, base) {
@@ -3438,7 +3622,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     state.currentBaseLayerName = select.value || "Ortofotomapa Geoportal";
     if (!state.baseLayerSelectBound) {
       state.baseLayerSelectBound = true;
-      select.addEventListener("change", () => setMapBaseLayer(map, mapId, select.value));
+      select.addEventListener("change", () => {
+        setMapBaseLayer(map, mapId, select.value);
+        captureMapViewState(map, mapId);
+      });
     }
   }
 
@@ -3593,6 +3780,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       ortoCacheState.records.map = recordsMap;
       ortoCacheState.records.onlineLayer = base.onlineLayer;
       ortoCacheState.records.offlineLayer = base.offlineLayer;
+      restoreMapViewState(recordsMap, "records");
+      initMapViewStatePersistence(recordsMap, "records");
       mapMarkersLayer = L.layerGroup().addTo(recordsMap);
       initViewedOrtoCacheTools(recordsMap, "records");
       initMeasureTools(recordsMap, "records");
@@ -3631,9 +3820,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (focusPos) recordsMap.setView(focusPos, 19);
       else setMapInfo("records", "Wybrany rekord nie ma poprawnych współrzędnych GPS.");
     }
-    if (!points.length) {setMapInfo("records", "Brak zapisanych punktów z GPS do pokazania na mapie."); recordsMap.setView([52,19],7);}
+    if (!points.length && !ortoCacheState.records.viewRestored && !focusUid) {setMapInfo("records", "Brak zapisanych punktów z GPS do pokazania na mapie."); recordsMap.setView([52,19],7);}
     setMapInfo("records", `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`);
-    if (points.length) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
+    if (points.length && !ortoCacheState.records.viewRestored && !focusUid) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
     renderBrysnaSmieckPoints("records");
     ensureUserLocationTracking(points, focusUid); syncUserLocationLayers("records"); bringMeasureToFront("records");
@@ -3889,14 +4078,17 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
         else recordsGridLayer.addTo(recordsMap);
       } else if (recordsGridLayer) recordsMap.removeLayer(recordsGridLayer);
+      saveMapOverlayState("records");
     });
 
     $("#records-species-labels-toggle")?.addEventListener("change", () => {
       recordSpeciesLabelsVisible = !!$("#records-species-labels-toggle")?.checked;
+      saveMapOverlayState("records");
       renderRecordsMap(mapFocusUid);
     });
     $("#records-brysna-smieck-toggle")?.addEventListener("change", () => {
       void setBrysnaSmieckLayerVisible("records", !!$("#records-brysna-smieck-toggle")?.checked);
+      saveMapOverlayState("records");
     });
 
     $("#nest-photos").addEventListener("change", () => {
@@ -3935,13 +4127,16 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         if (!workingGridLayer) void addGridToMap(workingMap, "working");
         else workingGridLayer.addTo(workingMap);
       } else if (workingGridLayer) workingMap.removeLayer(workingGridLayer);
+      saveMapOverlayState("working");
     });
     $("#working-notes-toggle")?.addEventListener("change", () => {
       workingNotesVisible = !!$("#working-notes-toggle")?.checked;
+      saveMapOverlayState("working");
       renderWorkingMap();
     });
     $("#working-brysna-smieck-toggle")?.addEventListener("change", () => {
       void setBrysnaSmieckLayerVisible("working", !!$("#working-brysna-smieck-toggle")?.checked);
+      saveMapOverlayState("working");
     });
     $("#working-map-screen").addEventListener("click", onWorkingScreenClick);
     $("#working-map-screen").addEventListener("change", onWorkingScreenChange);
@@ -4520,6 +4715,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       ortoCacheState.working.map = workingMap;
       ortoCacheState.working.onlineLayer = base.onlineLayer;
       ortoCacheState.working.offlineLayer = base.offlineLayer;
+      restoreMapViewState(workingMap, "working");
+      initMapViewStatePersistence(workingMap, "working");
       workingLayer = L.layerGroup().addTo(workingMap);
       initViewedOrtoCacheTools(workingMap, "working");
       initMeasureTools(workingMap, "working");
@@ -4547,7 +4744,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
     renderBrysnaSmieckPoints("working");
-    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId) fitWorkingMapBounds(); ensureUserLocationTracking([], null); syncUserLocationLayers("working"); bringMeasureToFront("working");} 
+    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId && !ortoCacheState.working.viewRestored) fitWorkingMapBounds(); ensureUserLocationTracking([], null); syncUserLocationLayers("working"); bringMeasureToFront("working");}
   }
 
   function setupFieldMode() {
