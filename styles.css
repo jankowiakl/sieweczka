@@ -394,7 +394,9 @@ html.ui-xcompact.buttons-xsmall {
   --menu-button-font-size: clamp(.78rem, 2vw, .88rem);
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -474,6 +476,8 @@ textarea {
 
 button,
 .button-like {
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
   font-size: var(--button-font-size);
   background: var(--primary);
@@ -1209,6 +1213,8 @@ label span,
   color: var(--text);
   border: 2px solid var(--border);
   min-height: calc(48px * var(--ui-scale));
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .tile.selected {
@@ -1357,7 +1363,7 @@ label span,
   bottom: calc(.6rem + var(--safe-bottom));
   z-index: 15;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: calc(var(--section-gap) * .65);
   padding: var(--panel-padding);
   padding-bottom: calc(var(--panel-padding) + max(0px, var(--safe-bottom)));
@@ -1523,17 +1529,22 @@ summary {
     order: -1;
   }
 
-  .tile-group,
-  .tile-group.compact {
-    grid-template-columns: 1fr;
+  /* iOS compact form controls: keep choice tiles in useful columns at 390px. */
+  .tile-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .tile-group.compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* iOS compact form controls: keep bottom actions horizontal on iPhone widths. */
   .sticky-actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   #save-final {
-    grid-column: auto;
+    grid-column: 3;
   }
 }
 
@@ -2227,8 +2238,9 @@ button.small.danger:hover {
 
 @media (max-width: 430px) {
   .field-help-panel, .draft-exit-modal, .ui-compact-suggestion { padding: var(--panel-padding); }
-  .sticky-actions { bottom: .35rem; grid-template-columns: 1fr; }
-  #save-final { grid-column: auto; }
+  /* iOS compact form controls: do not collapse the action bar at 390–430px. */
+  .sticky-actions { bottom: .35rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #save-final { grid-column: 3; }
   .entry-actions { grid-template-columns: 1fr 1fr; }
   .readonly-field { grid-template-columns: minmax(92px, 40%) 1fr; gap: calc(var(--section-gap) * .4); }
 }
@@ -2497,14 +2509,15 @@ html.viewport-tight.tiles-auto {
   --home-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* iOS compact form controls: even tight/minimal presets keep 3 compact actions unless truly tiny. */
 html.viewport-tight.layout-minimal .sticky-actions,
 html.viewport-tight.ui-minimal .sticky-actions {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 html.viewport-tight.layout-minimal #save-final,
 html.viewport-tight.ui-minimal #save-final {
-  grid-column: auto;
+  grid-column: 3;
 }
 
 html.viewport-tight.layout-minimal .pct-row,
@@ -2522,6 +2535,68 @@ select,
 textarea {
   max-width: 100%;
   min-width: 0;
+}
+
+
+@media (max-width: 430px) {
+  /* iOS compact form controls */
+  .sticky-actions {
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(.22rem, 1.4vw, .38rem);
+    padding: clamp(.38rem, 1.8vw, .55rem);
+    padding-bottom: calc(clamp(.38rem, 1.8vw, .55rem) + max(0px, var(--safe-bottom)));
+  }
+
+  .sticky-actions button {
+    min-width: 0;
+    min-height: clamp(2rem, 7vw, 2.4rem);
+    padding-inline: clamp(.24rem, 1.4vw, .45rem);
+    font-size: clamp(.78rem, 2.65vw, .92rem);
+    line-height: 1.08;
+  }
+
+  #save-final {
+    grid-column: 3;
+  }
+
+  .tile-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(.24rem, 1.45vw, .42rem);
+  }
+
+  .tile-group.compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tile-group .tile {
+    min-width: 0;
+    min-height: clamp(2rem, 7.2vw, 2.45rem);
+    padding: clamp(.28rem, 1.45vw, .48rem) clamp(.28rem, 1.6vw, .52rem);
+    font-size: clamp(.78rem, 2.65vw, .92rem);
+    line-height: 1.08;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 340px) {
+  /* iOS compact form controls: only truly tiny viewports may stack. */
+  .sticky-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #save-final {
+    grid-column: auto;
+  }
+
+  .tile-group {
+    grid-template-columns: 1fr;
+  }
+
+  .tile-group.compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .diagnostics-output {
