@@ -4198,8 +4198,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
           <button type="button" data-action="close">Zamknij</button>
           <button type="button" data-action="zoom-out" aria-label="Pomniejsz">−</button>
           <button type="button" data-action="zoom-in" aria-label="Powiększ">+</button>
-          <button type="button" data-action="calibrate">Kalibracja</button>
-          <button type="button" data-action="clear">Wyczyść kalibrację</button>
+          <button type="button" data-action="calibrate" data-measure-tool>Kalibracja</button>
+          <button type="button" data-action="clear" data-measure-tool>Wyczyść kalibrację</button>
         </div>
         <div class="photo-measure-status" data-status>Wczytuję zdjęcie…</div>
         <div class="photo-measure-viewport" data-viewport>
@@ -4226,11 +4226,24 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       points: [],
       activePointer: null,
       panStart: null,
+      pointers: new Map(),
+      pinchStart: null,
+      measuringEnabled: false,
       loaded: false
     };
 
     const getCalibration = () => photoMeasureCalibrations.get(calibrationKey);
     const setStatus = (message) => { status.textContent = message; };
+    const updateMeasureUi = () => {
+      modal.classList.toggle("is-measuring", state.measuringEnabled);
+      viewport.classList.toggle("is-measuring", state.measuringEnabled);
+    };
+    const markerRadius = () => Math.max(0.5, 5 / Math.max(state.zoom, 1));
+    const refreshMarkerSizes = () => {
+      overlay.querySelectorAll(".photo-measure-point").forEach((point) => {
+        point.setAttribute("r", String(markerRadius()));
+      });
+    };
     const applyTransform = () => {
       stage.style.width = `${state.baseW}px`;
       stage.style.height = `${state.baseH}px`;
@@ -4238,6 +4251,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       overlay.setAttribute("viewBox", `0 0 ${state.baseW} ${state.baseH}`);
       overlay.setAttribute("width", String(state.baseW));
       overlay.setAttribute("height", String(state.baseH));
+      refreshMarkerSizes();
     };
     const fitImage = () => {
       if (!img.naturalWidth || !img.naturalHeight) return;
@@ -4266,12 +4280,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const cls = kind === "calibration" ? "photo-measure-calibration-line" : "photo-measure-line";
       overlay.innerHTML = `
         <line class="${cls}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"></line>
-        <circle class="photo-measure-point" cx="${a.x}" cy="${a.y}" r="5"></circle>
-        <circle class="photo-measure-point" cx="${b.x}" cy="${b.y}" r="5"></circle>
+        <circle class="photo-measure-point" cx="${a.x}" cy="${a.y}" r="${markerRadius()}"></circle>
+        <circle class="photo-measure-point" cx="${b.x}" cy="${b.y}" r="${markerRadius()}"></circle>
         ${label ? `<text class="photo-measure-label" x="${(a.x + b.x) / 2}" y="${Math.max(18, (a.y + b.y) / 2 - 10)}">${escapeHtml(label)}</text>` : ""}`;
     };
     const refreshStatus = () => {
       if (!state.loaded) return setStatus("Wczytuję zdjęcie…");
+      if (!state.measuringEnabled) return setStatus("Oglądanie zdjęcia: przesuwaj i powiększaj jak zwykle. Naciśnij 📏, aby rozpocząć pomiar.");
       const calibration = getCalibration();
       if (state.mode === "calibrate") return setStatus("Kalibracja: dotknij dwóch końców znanego odcinka miarki na zdjęciu.");
       if (state.mode === "measure") {
@@ -4284,7 +4299,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const finishSegment = (point) => {
       state.points.push(point);
       if (state.points.length < 2) {
-        overlay.innerHTML = `<circle class="photo-measure-point" cx="${point.x}" cy="${point.y}" r="5"></circle>`;
+        overlay.innerHTML = `<circle class="photo-measure-point" cx="${point.x}" cy="${point.y}" r="${markerRadius()}"></circle>`;
         return;
       }
       const [a, b] = state.points;
@@ -4325,6 +4340,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       state.zoom = zoom;
       applyTransform();
     };
+    const distanceBetweenPointers = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const midpointBetweenPointers = (a, b) => {
+      const rect = viewport.getBoundingClientRect();
+      return { x: ((a.clientX + b.clientX) / 2) - rect.left, y: ((a.clientY + b.clientY) / 2) - rect.top };
+    };
 
     modal.addEventListener("click", (event) => {
       const action = event.target.closest("button")?.dataset.action;
@@ -4332,9 +4352,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (action === "close") modal.remove();
       if (action === "zoom-in") setZoom(state.zoom * 1.25);
       if (action === "zoom-out") setZoom(state.zoom / 1.25);
-      if (action === "calibrate") { state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; refreshStatus(); }
-      if (action === "measure") { state.mode = getCalibration() ? "measure" : "calibrate"; state.points = []; overlay.innerHTML = ""; refreshStatus(); }
-      if (action === "clear") { photoMeasureCalibrations.delete(calibrationKey); savePhotoMeasureCalibrations(); state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; setStatus("Kalibracja wyczyszczona dla tego zdjęcia. Wykonaj kalibrację ponownie."); }
+      if (action === "calibrate") { state.measuringEnabled = true; state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; updateMeasureUi(); refreshStatus(); }
+      if (action === "measure") { state.measuringEnabled = true; state.mode = getCalibration() ? "measure" : "calibrate"; state.points = []; overlay.innerHTML = ""; updateMeasureUi(); refreshStatus(); }
+      if (action === "clear") { photoMeasureCalibrations.delete(calibrationKey); savePhotoMeasureCalibrations(); state.measuringEnabled = true; state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; updateMeasureUi(); setStatus("Kalibracja wyczyszczona dla tego zdjęcia. Wykonaj kalibrację ponownie."); }
     });
     viewport.addEventListener("wheel", (event) => {
       event.preventDefault();
@@ -4343,7 +4363,22 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }, { passive: false });
     viewport.addEventListener("pointerdown", (event) => {
       if (!state.loaded || event.target.closest("button")) return;
+      event.preventDefault();
       viewport.setPointerCapture(event.pointerId);
+      state.pointers.set(event.pointerId, event);
+      if (state.pointers.size === 2) {
+        const [first, second] = Array.from(state.pointers.values());
+        state.pinchStart = {
+          distance: Math.max(1, distanceBetweenPointers(first, second)),
+          zoom: state.zoom,
+          tx: state.tx,
+          ty: state.ty,
+          center: midpointBetweenPointers(first, second)
+        };
+        state.panStart = null;
+        if (state.activePointer) state.activePointer.moved = true;
+        return;
+      }
       if (state.mode === "calibrate" || state.mode === "measure") {
         state.activePointer = { id: event.pointerId, x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty, moved: false };
       } else {
@@ -4351,6 +4386,21 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       }
     });
     viewport.addEventListener("pointermove", (event) => {
+      if (!state.pointers.has(event.pointerId)) return;
+      event.preventDefault();
+      state.pointers.set(event.pointerId, event);
+      if (state.pointers.size >= 2 && state.pinchStart) {
+        const [first, second] = Array.from(state.pointers.values());
+        const center = midpointBetweenPointers(first, second);
+        const baseX = (state.pinchStart.center.x - state.pinchStart.tx) / state.pinchStart.zoom;
+        const baseY = (state.pinchStart.center.y - state.pinchStart.ty) / state.pinchStart.zoom;
+        const zoom = Math.min(8, Math.max(1, state.pinchStart.zoom * (distanceBetweenPointers(first, second) / state.pinchStart.distance)));
+        state.tx = center.x - baseX * zoom;
+        state.ty = center.y - baseY * zoom;
+        state.zoom = zoom;
+        applyTransform();
+        return;
+      }
       if (state.panStart?.id === event.pointerId) {
         state.tx = state.panStart.tx + event.clientX - state.panStart.x;
         state.ty = state.panStart.ty + event.clientY - state.panStart.y;
@@ -4368,14 +4418,19 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         }
       }
     });
-    viewport.addEventListener("pointerup", (event) => {
+    const finishPointer = (event) => {
+      state.pointers.delete(event.pointerId);
+      if (state.pointers.size < 2) state.pinchStart = null;
       if (state.panStart?.id === event.pointerId) state.panStart = null;
       if (state.activePointer?.id === event.pointerId) {
         const pointer = state.activePointer;
         state.activePointer = null;
         if (!pointer.moved) finishSegment(basePointFromEvent(event));
       }
-    });
+    };
+    viewport.addEventListener("pointerup", finishPointer);
+    viewport.addEventListener("pointercancel", finishPointer);
+    updateMeasureUi();
     img.addEventListener("load", () => { state.loaded = true; fitImage(); refreshStatus(); });
     window.addEventListener("resize", fitImage, { once: true });
     document.body.appendChild(modal);
