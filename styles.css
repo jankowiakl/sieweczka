@@ -2979,3 +2979,129 @@ body {
   outline: 3px solid rgba(14, 165, 233, .8);
   outline-offset: 2px;
 }
+
+.photo-measure-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  background: rgba(15, 23, 42, .92);
+  padding: max(.45rem, var(--safe-top)) max(.45rem, var(--safe-right)) max(.45rem, var(--safe-bottom)) max(.45rem, var(--safe-left));
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.photo-measure-dialog {
+  width: min(100%, 980px);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: .45rem;
+  color: #fff;
+}
+
+.photo-measure-toolbar {
+  display: flex;
+  gap: .35rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.photo-measure-toolbar button {
+  min-height: 38px;
+  padding: .4rem .65rem;
+  border-color: rgba(255, 255, 255, .45);
+  background: rgba(255, 255, 255, .94);
+  color: #0f172a;
+}
+
+.photo-measure-status {
+  padding: .5rem .65rem;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, .72);
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.photo-measure-viewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #020617;
+  touch-action: none;
+  user-select: none;
+}
+
+.photo-measure-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.photo-measure-stage img,
+.photo-measure-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.photo-measure-stage img {
+  object-fit: contain;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.photo-measure-overlay {
+  pointer-events: none;
+  overflow: visible;
+}
+
+.photo-measure-ruler {
+  position: absolute;
+  right: calc(.85rem + var(--safe-right));
+  bottom: calc(.85rem + var(--safe-bottom));
+  width: 3.4rem;
+  height: 3.4rem;
+  min-height: 3.4rem;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  background: var(--primary);
+  color: #fff;
+  font-size: 1.55rem;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .45);
+}
+
+.photo-measure-line,
+.photo-measure-calibration-line {
+  stroke: #facc15;
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+}
+
+.photo-measure-calibration-line {
+  stroke: #38bdf8;
+}
+
+.photo-measure-point {
+  fill: #0f766e;
+  stroke: #fff;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.photo-measure-label {
+  fill: #fff;
+  stroke: rgba(15, 23, 42, .9);
+  stroke-width: 4;
+  paint-order: stroke;
+  font-size: 18px;
+  font-weight: 900;
+  text-anchor: middle;
+  vector-effect: non-scaling-stroke;
+}
