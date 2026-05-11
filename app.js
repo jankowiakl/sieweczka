@@ -11,10 +11,11 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.11-gps-tracking-preserve-zoom";
+  const APP_VERSION = "2026.05.11-photo-measure";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
+  const PHOTO_MEASURE_CALIBRATION_KEY = "sieweczka-photo-measure-calibrations-v1";
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
@@ -68,6 +69,7 @@
   function activeEntries() { return getEntries().filter((entry) => !isDeleted(entry)); }
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
   function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
+  function readObjectSetting(key) { try { const parsed = JSON.parse(localStorage.getItem(key) || "{}"); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; } catch { return {}; } }
   function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
   const UI_CLASS_VALUES = {
     font: ["font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge"],
@@ -4162,6 +4164,224 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${pos[0]},${pos[1]}`, "_blank", "noopener");
   }
 
+  const photoMeasureCalibrations = new Map(Object.entries(readObjectSetting(PHOTO_MEASURE_CALIBRATION_KEY)));
+
+  function savePhotoMeasureCalibrations() {
+    const data = Object.fromEntries(photoMeasureCalibrations.entries());
+    localStorage.setItem(PHOTO_MEASURE_CALIBRATION_KEY, JSON.stringify(data));
+  }
+
+  function getPhotoMeasureKey(photoRef, src) {
+    const raw = String(photoRef || src || "");
+    let hash = 5381;
+    for (let index = 0; index < raw.length; index += 1) {
+      hash = ((hash << 5) + hash) ^ raw.charCodeAt(index);
+    }
+    return `photo:${(hash >>> 0).toString(36)}`;
+  }
+
+  function formatMeasureCm(value) {
+    if (!Number.isFinite(value)) return "—";
+    if (value >= 100) return value.toFixed(1);
+    if (value >= 10) return value.toFixed(2);
+    return value.toFixed(3);
+  }
+
+  function showPhotoMeasureModal({ src, photoRef = "" }) {
+    if (!src) return;
+    const calibrationKey = getPhotoMeasureKey(photoRef, src);
+    const modal = document.createElement("div");
+    modal.className = "photo-measure-modal";
+    modal.innerHTML = `
+      <div class="photo-measure-dialog" role="dialog" aria-modal="true" aria-label="Pomiar zdjęcia">
+        <div class="photo-measure-toolbar">
+          <button type="button" data-action="close">Zamknij</button>
+          <button type="button" data-action="zoom-out" aria-label="Pomniejsz">−</button>
+          <button type="button" data-action="zoom-in" aria-label="Powiększ">+</button>
+          <button type="button" data-action="calibrate">Kalibracja</button>
+          <button type="button" data-action="clear">Wyczyść kalibrację</button>
+        </div>
+        <div class="photo-measure-status" data-status>Wczytuję zdjęcie…</div>
+        <div class="photo-measure-viewport" data-viewport>
+          <div class="photo-measure-stage" data-stage>
+            <img alt="Zdjęcie do pomiaru" draggable="false" data-img>
+            <svg class="photo-measure-overlay" data-overlay></svg>
+          </div>
+          <button type="button" class="photo-measure-ruler" data-action="measure" aria-label="Mierz na zdjęciu">📏</button>
+        </div>
+      </div>`;
+
+    const img = modal.querySelector("[data-img]");
+    const viewport = modal.querySelector("[data-viewport]");
+    const stage = modal.querySelector("[data-stage]");
+    const overlay = modal.querySelector("[data-overlay]");
+    const status = modal.querySelector("[data-status]");
+    const state = {
+      mode: "idle",
+      zoom: 1,
+      tx: 0,
+      ty: 0,
+      baseW: 1,
+      baseH: 1,
+      points: [],
+      activePointer: null,
+      panStart: null,
+      loaded: false
+    };
+
+    const getCalibration = () => photoMeasureCalibrations.get(calibrationKey);
+    const setStatus = (message) => { status.textContent = message; };
+    const applyTransform = () => {
+      stage.style.width = `${state.baseW}px`;
+      stage.style.height = `${state.baseH}px`;
+      stage.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.zoom})`;
+      overlay.setAttribute("viewBox", `0 0 ${state.baseW} ${state.baseH}`);
+      overlay.setAttribute("width", String(state.baseW));
+      overlay.setAttribute("height", String(state.baseH));
+    };
+    const fitImage = () => {
+      if (!img.naturalWidth || !img.naturalHeight) return;
+      const rect = viewport.getBoundingClientRect();
+      const fit = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight, 1);
+      state.baseW = Math.max(1, img.naturalWidth * fit);
+      state.baseH = Math.max(1, img.naturalHeight * fit);
+      state.tx = (rect.width - state.baseW) / 2;
+      state.ty = (rect.height - state.baseH) / 2;
+      state.zoom = 1;
+      applyTransform();
+    };
+    const basePointFromEvent = (event) => {
+      const rect = stage.getBoundingClientRect();
+      return {
+        x: Math.min(state.baseW, Math.max(0, (event.clientX - rect.left) / state.zoom)),
+        y: Math.min(state.baseH, Math.max(0, (event.clientY - rect.top) / state.zoom))
+      };
+    };
+    const naturalDistancePx = (a, b) => {
+      const dx = (b.x - a.x) * (img.naturalWidth / state.baseW);
+      const dy = (b.y - a.y) * (img.naturalHeight / state.baseH);
+      return Math.hypot(dx, dy);
+    };
+    const drawLine = (a, b, label = "", kind = "measure") => {
+      const cls = kind === "calibration" ? "photo-measure-calibration-line" : "photo-measure-line";
+      overlay.innerHTML = `
+        <line class="${cls}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"></line>
+        <circle class="photo-measure-point" cx="${a.x}" cy="${a.y}" r="5"></circle>
+        <circle class="photo-measure-point" cx="${b.x}" cy="${b.y}" r="5"></circle>
+        ${label ? `<text class="photo-measure-label" x="${(a.x + b.x) / 2}" y="${Math.max(18, (a.y + b.y) / 2 - 10)}">${escapeHtml(label)}</text>` : ""}`;
+    };
+    const refreshStatus = () => {
+      if (!state.loaded) return setStatus("Wczytuję zdjęcie…");
+      const calibration = getCalibration();
+      if (state.mode === "calibrate") return setStatus("Kalibracja: dotknij dwóch końców znanego odcinka miarki na zdjęciu.");
+      if (state.mode === "measure") {
+        if (!calibration) return setStatus("Najpierw wykonaj kalibrację: zmierz znany odcinek miarki i podaj jego długość w cm.");
+        return setStatus("Pomiar: dotknij dwóch punktów przedmiotu. Wynik pojawi się w centymetrach.");
+      }
+      if (calibration) return setStatus(`Kalibracja dokonana (${formatMeasureCm(calibration.pxPerCm)} px/cm). Można mierzyć.`);
+      return setStatus("Naciśnij 📏 albo „Kalibracja”, aby przeliczyć piksele na centymetry dla tego zdjęcia.");
+    };
+    const finishSegment = (point) => {
+      state.points.push(point);
+      if (state.points.length < 2) {
+        overlay.innerHTML = `<circle class="photo-measure-point" cx="${point.x}" cy="${point.y}" r="5"></circle>`;
+        return;
+      }
+      const [a, b] = state.points;
+      const distancePx = naturalDistancePx(a, b);
+      state.points = [];
+      if (state.mode === "calibrate") {
+        drawLine(a, b, "kalibracja", "calibration");
+        const answer = prompt("Jaką długość ma zaznaczony odcinek miarki? Podaj wartość w centymetrach (np. 5 lub 10).", "10");
+        const cm = Number(String(answer || "").replace(",", "."));
+        if (!Number.isFinite(cm) || cm <= 0) {
+          setStatus("Kalibracja przerwana — podaj dodatnią długość w centymetrach.");
+          state.mode = "idle";
+          return;
+        }
+        photoMeasureCalibrations.set(calibrationKey, { pxPerCm: distancePx / cm, calibratedAt: Date.now() });
+        savePhotoMeasureCalibrations();
+        state.mode = "measure";
+        setStatus("Kalibracja dokonana. Można mierzyć — dotknij dwóch punktów przedmiotu.");
+        return;
+      }
+      const calibration = getCalibration();
+      if (!calibration) {
+        state.mode = "calibrate";
+        refreshStatus();
+        return;
+      }
+      const cm = distancePx / calibration.pxPerCm;
+      drawLine(a, b, `${formatMeasureCm(cm)} cm`, "measure");
+      setStatus(`Wynik: ${formatMeasureCm(cm)} cm. Możesz zaznaczyć kolejny odcinek.`);
+    };
+    const setZoom = (nextZoom, centerX = viewport.clientWidth / 2, centerY = viewport.clientHeight / 2) => {
+      const oldZoom = state.zoom;
+      const zoom = Math.min(8, Math.max(1, nextZoom));
+      const baseX = (centerX - state.tx) / oldZoom;
+      const baseY = (centerY - state.ty) / oldZoom;
+      state.tx = centerX - baseX * zoom;
+      state.ty = centerY - baseY * zoom;
+      state.zoom = zoom;
+      applyTransform();
+    };
+
+    modal.addEventListener("click", (event) => {
+      const action = event.target.closest("button")?.dataset.action;
+      if (!action) return;
+      if (action === "close") modal.remove();
+      if (action === "zoom-in") setZoom(state.zoom * 1.25);
+      if (action === "zoom-out") setZoom(state.zoom / 1.25);
+      if (action === "calibrate") { state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; refreshStatus(); }
+      if (action === "measure") { state.mode = getCalibration() ? "measure" : "calibrate"; state.points = []; overlay.innerHTML = ""; refreshStatus(); }
+      if (action === "clear") { photoMeasureCalibrations.delete(calibrationKey); savePhotoMeasureCalibrations(); state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; setStatus("Kalibracja wyczyszczona dla tego zdjęcia. Wykonaj kalibrację ponownie."); }
+    });
+    viewport.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      setZoom(state.zoom * (event.deltaY < 0 ? 1.12 : 0.88), event.clientX - rect.left, event.clientY - rect.top);
+    }, { passive: false });
+    viewport.addEventListener("pointerdown", (event) => {
+      if (!state.loaded || event.target.closest("button")) return;
+      viewport.setPointerCapture(event.pointerId);
+      if (state.mode === "calibrate" || state.mode === "measure") {
+        state.activePointer = { id: event.pointerId, x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty, moved: false };
+      } else {
+        state.panStart = { id: event.pointerId, x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty };
+      }
+    });
+    viewport.addEventListener("pointermove", (event) => {
+      if (state.panStart?.id === event.pointerId) {
+        state.tx = state.panStart.tx + event.clientX - state.panStart.x;
+        state.ty = state.panStart.ty + event.clientY - state.panStart.y;
+        applyTransform();
+      }
+      if (state.activePointer?.id === event.pointerId) {
+        const dx = event.clientX - state.activePointer.x;
+        const dy = event.clientY - state.activePointer.y;
+        const moved = Math.hypot(dx, dy) > 8;
+        state.activePointer.moved = state.activePointer.moved || moved;
+        if (state.activePointer.moved) {
+          state.tx = state.activePointer.tx + dx;
+          state.ty = state.activePointer.ty + dy;
+          applyTransform();
+        }
+      }
+    });
+    viewport.addEventListener("pointerup", (event) => {
+      if (state.panStart?.id === event.pointerId) state.panStart = null;
+      if (state.activePointer?.id === event.pointerId) {
+        const pointer = state.activePointer;
+        state.activePointer = null;
+        if (!pointer.moved) finishSegment(basePointFromEvent(event));
+      }
+    });
+    img.addEventListener("load", () => { state.loaded = true; fitImage(); refreshStatus(); });
+    window.addEventListener("resize", fitImage, { once: true });
+    document.body.appendChild(modal);
+    img.src = src;
+  }
+
   function showReadonlyRecord(uid) {
     const record = getEntries().find((entry) => String(entry.uid) === String(uid));
     if (!record) return;
@@ -4223,7 +4443,27 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     ];
     return `<div class="readonly-carousel">${sections.map(([title, html], i) => `<section class="readonly-section${i===0?" active":""}"><h3>${title}</h3>${html}</section>`).join("")}</div><div class="readonly-nav"><button type="button" id="readonly-prev-section">Poprzednia karta</button><button type="button" id="readonly-next-section">Następna karta</button></div>`;
   }
-  function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $$("#record-readonly-content img[data-photo-ref]").forEach((img)=>{ resolvePhotoSrc(img.dataset.photoRef).then((src)=>{ if(src) img.src=src; });}); $("#record-readonly-content").addEventListener("click",(e)=>{ const img=e.target.closest("img[data-photo-ref]"); if(img?.src) window.open(img.src,"_blank","noopener");}); }
+  function initReadonlyCarousel() {
+    let i = 0;
+    const secs = $$("#record-readonly-content .readonly-section");
+    const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); };
+    $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1));
+    $("#readonly-next-section")?.addEventListener("click",()=>set(i+1));
+    let sx=0;
+    const wrap=$("#record-readonly-content .readonly-carousel");
+    wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true});
+    wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true});
+    $$("#record-readonly-content img[data-photo-ref]").forEach((img)=>{
+      resolvePhotoSrc(img.dataset.photoRef).then((src)=>{ if(src) img.src=src; });
+    });
+    const content = $("#record-readonly-content");
+    if (content) {
+      content.onclick = (e) => {
+        const img=e.target.closest("img[data-photo-ref]");
+        if(img?.src) showPhotoMeasureModal({ src: img.src, photoRef: img.dataset.photoRef });
+      };
+    }
+  }
 
 
   function isMapPointEditModeEnabled(mapId) {
