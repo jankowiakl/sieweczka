@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.11-photo-measure";
+  const APP_VERSION = "2026.05.11-photo-browse-measure";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -4187,7 +4187,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return value.toFixed(3);
   }
 
-  function showPhotoMeasureModal({ src, photoRef = "" }) {
+  function showPhotoMeasureModal({ src, photoRef = "", startMeasuring = false }) {
     if (!src) return;
     const calibrationKey = getPhotoMeasureKey(photoRef, src);
     const modal = document.createElement("div");
@@ -4228,11 +4228,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       panStart: null,
       pointers: new Map(),
       pinchStart: null,
-      measuringEnabled: false,
+      measuringEnabled: !!startMeasuring,
       loaded: false
     };
 
     const getCalibration = () => photoMeasureCalibrations.get(calibrationKey);
+    if (startMeasuring) state.mode = getCalibration() ? "measure" : "calibrate";
     const setStatus = (message) => { status.textContent = message; };
     const updateMeasureUi = () => {
       modal.classList.toggle("is-measuring", state.measuringEnabled);
@@ -4254,8 +4255,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       refreshMarkerSizes();
     };
     const fitImage = () => {
-      if (!img.naturalWidth || !img.naturalHeight) return;
+      if (!img.naturalWidth || !img.naturalHeight) return false;
       const rect = viewport.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return false;
       const fit = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight, 1);
       state.baseW = Math.max(1, img.naturalWidth * fit);
       state.baseH = Math.max(1, img.naturalHeight * fit);
@@ -4263,6 +4265,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       state.ty = (rect.height - state.baseH) / 2;
       state.zoom = 1;
       applyTransform();
+      return true;
     };
     const basePointFromEvent = (event) => {
       const rect = stage.getBoundingClientRect();
@@ -4346,10 +4349,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       return { x: ((a.clientX + b.clientX) / 2) - rect.left, y: ((a.clientY + b.clientY) / 2) - rect.top };
     };
 
+    const closeModal = () => {
+      window.removeEventListener("resize", fitImage);
+      modal.remove();
+    };
+
     modal.addEventListener("click", (event) => {
       const action = event.target.closest("button")?.dataset.action;
       if (!action) return;
-      if (action === "close") modal.remove();
+      if (action === "close") closeModal();
       if (action === "zoom-in") setZoom(state.zoom * 1.25);
       if (action === "zoom-out") setZoom(state.zoom / 1.25);
       if (action === "calibrate") { state.measuringEnabled = true; state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; updateMeasureUi(); refreshStatus(); }
@@ -4431,10 +4439,20 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     viewport.addEventListener("pointerup", finishPointer);
     viewport.addEventListener("pointercancel", finishPointer);
     updateMeasureUi();
-    img.addEventListener("load", () => { state.loaded = true; fitImage(); refreshStatus(); });
-    window.addEventListener("resize", fitImage, { once: true });
+    img.addEventListener("load", () => {
+      state.loaded = true;
+      const fitted = fitImage();
+      if (!fitted) requestAnimationFrame(() => fitImage());
+      refreshStatus();
+    });
+    img.addEventListener("error", () => setStatus("Nie udało się wczytać zdjęcia."));
+    window.addEventListener("resize", fitImage);
     document.body.appendChild(modal);
     img.src = src;
+    if (img.complete && img.naturalWidth) {
+      state.loaded = true;
+      requestAnimationFrame(() => { fitImage(); refreshStatus(); });
+    }
   }
 
   function showReadonlyRecord(uid) {
@@ -4483,7 +4501,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function buildReadonlySections(record) {
     const val = (v) => (v == null || String(v).trim() === "" ? "—" : String(v));
     const fld = (label, v) => `<div class="readonly-field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(val(v))}</div></div>`;
-    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>`<img src="" data-photo-ref="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="${alt}">`).join("") || "<p>—</p>"}</div>`;
+    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>{
+      const ref = escapeHtml(p.dataUrl || p);
+      const safeAlt = escapeHtml(alt);
+      return `<div class="readonly-photo-tile"><img src="" data-photo-ref="${ref}" class="readonly-thumb" alt="${safeAlt}"><button type="button" class="readonly-photo-measure" data-photo-measure aria-label="Pomiar zdjęcia">📏 Pomiar</button></div>`;
+    }).join("") || "<p>—</p>"}</div>`;
     const basicNotice = isBasicRecord(record) ? `<div class="basic-record-notice"><strong>Zapis podstawowy — bez pełnej kontroli.</strong><br>Ten rekord zapisano jako podstawowy, bez pełnego opisu siedliska.</div>` : "";
     const sections = [
       ["Identyfikacja", `${basicNotice}${renderRecordCompletenessBadge(record)}${fld("Kompletność", isBasicRecord(record) ? "basic — rekord niepełny" : "full")}${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
@@ -4513,9 +4535,19 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     const content = $("#record-readonly-content");
     if (content) {
-      content.onclick = (e) => {
+      content.onclick = async (e) => {
+        const measureButton = e.target.closest("button[data-photo-measure]");
+        if (measureButton) {
+          e.preventDefault();
+          e.stopPropagation();
+          const photoRef = measureButton.closest(".readonly-photo-tile")?.querySelector("img[data-photo-ref]")?.dataset.photoRef;
+          const src = await resolvePhotoSrc(photoRef);
+          if (!src) return alert("Nie udało się wczytać zdjęcia do pomiaru.");
+          showPhotoMeasureModal({ src, photoRef, startMeasuring: true });
+          return;
+        }
         const img=e.target.closest("img[data-photo-ref]");
-        if(img?.src) showPhotoMeasureModal({ src: img.src, photoRef: img.dataset.photoRef });
+        if(img?.src) window.open(img.src,"_blank","noopener");
       };
     }
   }
