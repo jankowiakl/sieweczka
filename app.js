@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.11-photo-measure";
+  const APP_VERSION = "2026.05.11-photo-polygon-measure";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -4187,7 +4187,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return value.toFixed(3);
   }
 
-  function showPhotoMeasureModal({ src, photoRef = "" }) {
+  function showPhotoMeasureModal({ src, photoRef = "", startMeasuring = false }) {
     if (!src) return;
     const calibrationKey = getPhotoMeasureKey(photoRef, src);
     const modal = document.createElement("div");
@@ -4199,6 +4199,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
           <button type="button" data-action="zoom-out" aria-label="Pomniejsz">−</button>
           <button type="button" data-action="zoom-in" aria-label="Powiększ">+</button>
           <button type="button" data-action="calibrate" data-measure-tool>Kalibracja</button>
+          <button type="button" data-action="measure-line" data-measure-tool>Odcinek</button>
+          <button type="button" data-action="measure-polygon" data-measure-tool>Poligon</button>
+          <button type="button" data-action="undo-point" data-measure-tool>Cofnij punkt</button>
+          <button type="button" data-action="confirm" data-measure-tool>Zatwierdź</button>
           <button type="button" data-action="clear" data-measure-tool>Wyczyść kalibrację</button>
         </div>
         <div class="photo-measure-status" data-status>Wczytuję zdjęcie…</div>
@@ -4225,14 +4229,16 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       baseH: 1,
       points: [],
       activePointer: null,
+      dragPoint: null,
       panStart: null,
       pointers: new Map(),
       pinchStart: null,
-      measuringEnabled: false,
+      measuringEnabled: !!startMeasuring,
       loaded: false
     };
 
     const getCalibration = () => photoMeasureCalibrations.get(calibrationKey);
+    if (startMeasuring) state.mode = getCalibration() ? "measure" : "calibrate";
     const setStatus = (message) => { status.textContent = message; };
     const updateMeasureUi = () => {
       modal.classList.toggle("is-measuring", state.measuringEnabled);
@@ -4254,8 +4260,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       refreshMarkerSizes();
     };
     const fitImage = () => {
-      if (!img.naturalWidth || !img.naturalHeight) return;
+      if (!img.naturalWidth || !img.naturalHeight) return false;
       const rect = viewport.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return false;
       const fit = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight, 1);
       state.baseW = Math.max(1, img.naturalWidth * fit);
       state.baseH = Math.max(1, img.naturalHeight * fit);
@@ -4263,6 +4270,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       state.ty = (rect.height - state.baseH) / 2;
       state.zoom = 1;
       applyTransform();
+      return true;
     };
     const basePointFromEvent = (event) => {
       const rect = stage.getBoundingClientRect();
@@ -4271,64 +4279,145 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         y: Math.min(state.baseH, Math.max(0, (event.clientY - rect.top) / state.zoom))
       };
     };
+    const naturalPoint = (point) => ({
+      x: point.x * (img.naturalWidth / state.baseW),
+      y: point.y * (img.naturalHeight / state.baseH)
+    });
     const naturalDistancePx = (a, b) => {
-      const dx = (b.x - a.x) * (img.naturalWidth / state.baseW);
-      const dy = (b.y - a.y) * (img.naturalHeight / state.baseH);
-      return Math.hypot(dx, dy);
+      const pa = naturalPoint(a);
+      const pb = naturalPoint(b);
+      return Math.hypot(pb.x - pa.x, pb.y - pa.y);
     };
+    const polygonStats = (points) => {
+      const calibration = getCalibration();
+      if (!calibration || points.length < 3) return null;
+      const naturalPoints = points.map(naturalPoint);
+      let perimeterPx = 0;
+      let areaPx2 = 0;
+      naturalPoints.forEach((point, index) => {
+        const next = naturalPoints[(index + 1) % naturalPoints.length];
+        perimeterPx += Math.hypot(next.x - point.x, next.y - point.y);
+        areaPx2 += point.x * next.y - next.x * point.y;
+      });
+      return {
+        perimeterCm: perimeterPx / calibration.pxPerCm,
+        areaCm2: Math.abs(areaPx2) / 2 / (calibration.pxPerCm ** 2)
+      };
+    };
+    const polygonLabel = (stats) => {
+      if (!stats) return "";
+      const area = stats.areaCm2 >= 10000 ? `${formatMeasureCm(stats.areaCm2 / 10000)} m²` : `${formatMeasureCm(stats.areaCm2)} cm²`;
+      return `obw. ${formatMeasureCm(stats.perimeterCm)} cm, pole ${area}`;
+    };
+    const drawPoints = (points) => points.map((point, index) => `<circle class="photo-measure-point" data-point-index="${index}" cx="${point.x}" cy="${point.y}" r="${markerRadius()}"></circle>`).join("");
     const drawLine = (a, b, label = "", kind = "measure") => {
       const cls = kind === "calibration" ? "photo-measure-calibration-line" : "photo-measure-line";
       overlay.innerHTML = `
         <line class="${cls}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"></line>
-        <circle class="photo-measure-point" cx="${a.x}" cy="${a.y}" r="${markerRadius()}"></circle>
-        <circle class="photo-measure-point" cx="${b.x}" cy="${b.y}" r="${markerRadius()}"></circle>
+        ${drawPoints([a, b])}
         ${label ? `<text class="photo-measure-label" x="${(a.x + b.x) / 2}" y="${Math.max(18, (a.y + b.y) / 2 - 10)}">${escapeHtml(label)}</text>` : ""}`;
+    };
+    const renderActiveShape = () => {
+      if (!state.points.length) {
+        overlay.innerHTML = "";
+        return;
+      }
+      if (state.mode === "measure-polygon") {
+        const pointsAttr = state.points.map((point) => `${point.x},${point.y}`).join(" ");
+        const stats = polygonStats(state.points);
+        const label = state.points.length >= 3 ? polygonLabel(stats) : "";
+        const labelPoint = state.points.reduce((acc, point) => ({ x: acc.x + point.x / state.points.length, y: acc.y + point.y / state.points.length }), { x: 0, y: 0 });
+        overlay.innerHTML = `
+          ${state.points.length >= 3 ? `<polygon class="photo-measure-polygon-fill" points="${pointsAttr}"></polygon>` : ""}
+          ${state.points.length >= 2 ? `<polyline class="photo-measure-line" points="${pointsAttr}"></polyline>` : ""}
+          ${state.points.length >= 3 ? `<line class="photo-measure-line" x1="${state.points[state.points.length - 1].x}" y1="${state.points[state.points.length - 1].y}" x2="${state.points[0].x}" y2="${state.points[0].y}"></line>` : ""}
+          ${drawPoints(state.points)}
+          ${label ? `<text class="photo-measure-label" x="${labelPoint.x}" y="${Math.max(18, labelPoint.y - 10)}">${escapeHtml(label)}</text>` : ""}`;
+        return;
+      }
+      if (state.points.length === 1) {
+        overlay.innerHTML = drawPoints(state.points);
+        return;
+      }
+      const [a, b] = state.points;
+      if (state.mode === "calibrate") return drawLine(a, b, "kalibracja", "calibration");
+      const calibration = getCalibration();
+      const label = calibration ? `${formatMeasureCm(naturalDistancePx(a, b) / calibration.pxPerCm)} cm` : "";
+      drawLine(a, b, label, "measure");
+    };
+    const setMode = (mode) => {
+      state.measuringEnabled = true;
+      state.mode = mode;
+      state.points = [];
+      state.dragPoint = null;
+      overlay.innerHTML = "";
+      updateMeasureUi();
+      refreshStatus();
     };
     const refreshStatus = () => {
       if (!state.loaded) return setStatus("Wczytuję zdjęcie…");
       if (!state.measuringEnabled) return setStatus("Oglądanie zdjęcia: przesuwaj i powiększaj jak zwykle. Naciśnij 📏, aby rozpocząć pomiar.");
       const calibration = getCalibration();
-      if (state.mode === "calibrate") return setStatus("Kalibracja: dotknij dwóch końców znanego odcinka miarki na zdjęciu.");
-      if (state.mode === "measure") {
-        if (!calibration) return setStatus("Najpierw wykonaj kalibrację: zmierz znany odcinek miarki i podaj jego długość w cm.");
-        return setStatus("Pomiar: dotknij dwóch punktów przedmiotu. Wynik pojawi się w centymetrach.");
+      if (state.mode === "calibrate") {
+        if (state.points.length >= 2) return setStatus("Kalibracja: sprawdź i przeciągnij punkty, jeśli trzeba. Potem naciśnij „Zatwierdź” i podaj długość odcinka.");
+        return setStatus("Kalibracja: dotknij dwóch końców znanego odcinka miarki na zdjęciu.");
       }
-      if (calibration) return setStatus(`Kalibracja dokonana (${formatMeasureCm(calibration.pxPerCm)} px/cm). Można mierzyć.`);
+      if (!calibration) return setStatus("Najpierw wykonaj kalibrację: zaznacz znany odcinek miarki, dopasuj punkty i naciśnij „Zatwierdź”.");
+      if (state.mode === "measure-polygon") {
+        if (state.points.length >= 3) return setStatus(`Poligon: możesz dodawać kolejne punkty albo przeciągać istniejące. ${polygonLabel(polygonStats(state.points))}.`);
+        return setStatus("Poligon: dotknij kolejnych wierzchołków obszaru. Minimum 3 punkty, potem możesz je przesuwać.");
+      }
+      if (state.mode === "measure") {
+        if (state.points.length >= 2) return setStatus("Pomiar odcinka: możesz przeciągnąć punkty, a wynik aktualizuje się na zdjęciu.");
+        return setStatus("Pomiar odcinka: dotknij dwóch punktów przedmiotu. Potem możesz je przesuwać.");
+      }
+      if (calibration) return setStatus(`Kalibracja dokonana (${formatMeasureCm(calibration.pxPerCm)} px/cm). Wybierz „Odcinek” albo „Poligon”.`);
       return setStatus("Naciśnij 📏 albo „Kalibracja”, aby przeliczyć piksele na centymetry dla tego zdjęcia.");
     };
-    const finishSegment = (point) => {
-      state.points.push(point);
-      if (state.points.length < 2) {
-        overlay.innerHTML = `<circle class="photo-measure-point" cx="${point.x}" cy="${point.y}" r="${markerRadius()}"></circle>`;
-        return;
+    const addPoint = (point) => {
+      if (state.mode === "calibrate" || state.mode === "measure") {
+        if (state.points.length >= 2) state.points = [];
+        state.points.push(point);
+      } else if (state.mode === "measure-polygon") {
+        state.points.push(point);
       }
-      const [a, b] = state.points;
-      const distancePx = naturalDistancePx(a, b);
-      state.points = [];
+      renderActiveShape();
+      refreshStatus();
+    };
+    const confirmActiveShape = () => {
       if (state.mode === "calibrate") {
-        drawLine(a, b, "kalibracja", "calibration");
+        if (state.points.length < 2) return setStatus("Zaznacz dwa punkty kalibracji, zanim zatwierdzisz.");
+        const [a, b] = state.points;
+        const distancePx = naturalDistancePx(a, b);
         const answer = prompt("Jaką długość ma zaznaczony odcinek miarki? Podaj wartość w centymetrach (np. 5 lub 10).", "10");
         const cm = Number(String(answer || "").replace(",", "."));
-        if (!Number.isFinite(cm) || cm <= 0) {
-          setStatus("Kalibracja przerwana — podaj dodatnią długość w centymetrach.");
-          state.mode = "idle";
-          return;
-        }
+        if (!Number.isFinite(cm) || cm <= 0) return setStatus("Kalibracja przerwana — podaj dodatnią długość w centymetrach.");
         photoMeasureCalibrations.set(calibrationKey, { pxPerCm: distancePx / cm, calibratedAt: Date.now() });
         savePhotoMeasureCalibrations();
         state.mode = "measure";
-        setStatus("Kalibracja dokonana. Można mierzyć — dotknij dwóch punktów przedmiotu.");
+        state.points = [];
+        overlay.innerHTML = "";
+        setStatus("Kalibracja dokonana. Wybierz odcinek albo poligon i dotknij punktów pomiaru.");
         return;
       }
-      const calibration = getCalibration();
-      if (!calibration) {
-        state.mode = "calibrate";
-        refreshStatus();
-        return;
+      if (state.mode === "measure-polygon") {
+        if (state.points.length < 3) return setStatus("Poligon wymaga minimum 3 punktów.");
+        renderActiveShape();
+        return setStatus(`Poligon zatwierdzony. ${polygonLabel(polygonStats(state.points))}. Punkty nadal możesz przeciągać do korekty.`);
       }
-      const cm = distancePx / calibration.pxPerCm;
-      drawLine(a, b, `${formatMeasureCm(cm)} cm`, "measure");
-      setStatus(`Wynik: ${formatMeasureCm(cm)} cm. Możesz zaznaczyć kolejny odcinek.`);
+      if (state.mode === "measure") {
+        if (state.points.length < 2) return setStatus("Zaznacz dwa punkty pomiaru odcinka.");
+        renderActiveShape();
+        const calibration = getCalibration();
+        if (calibration) return setStatus(`Pomiar zatwierdzony: ${formatMeasureCm(naturalDistancePx(state.points[0], state.points[1]) / calibration.pxPerCm)} cm. Punkty nadal możesz przeciągać do korekty.`);
+      }
+    };
+    const hitPointIndex = (point) => {
+      const tolerance = Math.max(14 / Math.max(state.zoom, 1), markerRadius() * 2.8);
+      for (let index = state.points.length - 1; index >= 0; index -= 1) {
+        if (Math.hypot(state.points[index].x - point.x, state.points[index].y - point.y) <= tolerance) return index;
+      }
+      return -1;
     };
     const setZoom = (nextZoom, centerX = viewport.clientWidth / 2, centerY = viewport.clientHeight / 2) => {
       const oldZoom = state.zoom;
@@ -4346,15 +4435,23 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       return { x: ((a.clientX + b.clientX) / 2) - rect.left, y: ((a.clientY + b.clientY) / 2) - rect.top };
     };
 
+    const closeModal = () => {
+      window.removeEventListener("resize", fitImage);
+      modal.remove();
+    };
+
     modal.addEventListener("click", (event) => {
       const action = event.target.closest("button")?.dataset.action;
       if (!action) return;
-      if (action === "close") modal.remove();
+      if (action === "close") closeModal();
       if (action === "zoom-in") setZoom(state.zoom * 1.25);
       if (action === "zoom-out") setZoom(state.zoom / 1.25);
-      if (action === "calibrate") { state.measuringEnabled = true; state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; updateMeasureUi(); refreshStatus(); }
-      if (action === "measure") { state.measuringEnabled = true; state.mode = getCalibration() ? "measure" : "calibrate"; state.points = []; overlay.innerHTML = ""; updateMeasureUi(); refreshStatus(); }
-      if (action === "clear") { photoMeasureCalibrations.delete(calibrationKey); savePhotoMeasureCalibrations(); state.measuringEnabled = true; state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; updateMeasureUi(); setStatus("Kalibracja wyczyszczona dla tego zdjęcia. Wykonaj kalibrację ponownie."); }
+      if (action === "calibrate") setMode("calibrate");
+      if (action === "measure" || action === "measure-line") setMode(getCalibration() ? "measure" : "calibrate");
+      if (action === "measure-polygon") setMode(getCalibration() ? "measure-polygon" : "calibrate");
+      if (action === "undo-point") { state.points.pop(); renderActiveShape(); refreshStatus(); }
+      if (action === "confirm") confirmActiveShape();
+      if (action === "clear") { photoMeasureCalibrations.delete(calibrationKey); savePhotoMeasureCalibrations(); setMode("calibrate"); setStatus("Kalibracja wyczyszczona dla tego zdjęcia. Wykonaj kalibrację ponownie."); }
     });
     viewport.addEventListener("wheel", (event) => {
       event.preventDefault();
@@ -4379,7 +4476,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         if (state.activePointer) state.activePointer.moved = true;
         return;
       }
-      if (state.mode === "calibrate" || state.mode === "measure") {
+      if (["calibrate", "measure", "measure-polygon"].includes(state.mode)) {
+        const point = basePointFromEvent(event);
+        const pointIndex = hitPointIndex(point);
+        if (pointIndex >= 0) {
+          state.dragPoint = { id: event.pointerId, index: pointIndex, moved: false };
+          return;
+        }
         state.activePointer = { id: event.pointerId, x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty, moved: false };
       } else {
         state.panStart = { id: event.pointerId, x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty };
@@ -4406,6 +4509,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         state.ty = state.panStart.ty + event.clientY - state.panStart.y;
         applyTransform();
       }
+      if (state.dragPoint?.id === event.pointerId) {
+        state.points[state.dragPoint.index] = basePointFromEvent(event);
+        state.dragPoint.moved = true;
+        renderActiveShape();
+        refreshStatus();
+        return;
+      }
       if (state.activePointer?.id === event.pointerId) {
         const dx = event.clientX - state.activePointer.x;
         const dy = event.clientY - state.activePointer.y;
@@ -4422,19 +4532,34 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       state.pointers.delete(event.pointerId);
       if (state.pointers.size < 2) state.pinchStart = null;
       if (state.panStart?.id === event.pointerId) state.panStart = null;
+      if (state.dragPoint?.id === event.pointerId) {
+        state.dragPoint = null;
+        renderActiveShape();
+        refreshStatus();
+      }
       if (state.activePointer?.id === event.pointerId) {
         const pointer = state.activePointer;
         state.activePointer = null;
-        if (!pointer.moved) finishSegment(basePointFromEvent(event));
+        if (!pointer.moved) addPoint(basePointFromEvent(event));
       }
     };
     viewport.addEventListener("pointerup", finishPointer);
     viewport.addEventListener("pointercancel", finishPointer);
     updateMeasureUi();
-    img.addEventListener("load", () => { state.loaded = true; fitImage(); refreshStatus(); });
-    window.addEventListener("resize", fitImage, { once: true });
+    img.addEventListener("load", () => {
+      state.loaded = true;
+      const fitted = fitImage();
+      if (!fitted) requestAnimationFrame(() => fitImage());
+      refreshStatus();
+    });
+    img.addEventListener("error", () => setStatus("Nie udało się wczytać zdjęcia."));
+    window.addEventListener("resize", fitImage);
     document.body.appendChild(modal);
     img.src = src;
+    if (img.complete && img.naturalWidth) {
+      state.loaded = true;
+      requestAnimationFrame(() => { fitImage(); refreshStatus(); });
+    }
   }
 
   function showReadonlyRecord(uid) {
@@ -4483,7 +4608,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function buildReadonlySections(record) {
     const val = (v) => (v == null || String(v).trim() === "" ? "—" : String(v));
     const fld = (label, v) => `<div class="readonly-field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(val(v))}</div></div>`;
-    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>`<img src="" data-photo-ref="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="${alt}">`).join("") || "<p>—</p>"}</div>`;
+    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>{
+      const ref = escapeHtml(p.dataUrl || p);
+      const safeAlt = escapeHtml(alt);
+      return `<div class="readonly-photo-tile"><img src="" data-photo-ref="${ref}" class="readonly-thumb" alt="${safeAlt}"><button type="button" class="readonly-photo-measure" data-photo-measure aria-label="Pomiar zdjęcia">📏 Pomiar</button></div>`;
+    }).join("") || "<p>—</p>"}</div>`;
     const basicNotice = isBasicRecord(record) ? `<div class="basic-record-notice"><strong>Zapis podstawowy — bez pełnej kontroli.</strong><br>Ten rekord zapisano jako podstawowy, bez pełnego opisu siedliska.</div>` : "";
     const sections = [
       ["Identyfikacja", `${basicNotice}${renderRecordCompletenessBadge(record)}${fld("Kompletność", isBasicRecord(record) ? "basic — rekord niepełny" : "full")}${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
@@ -4513,9 +4642,19 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     const content = $("#record-readonly-content");
     if (content) {
-      content.onclick = (e) => {
+      content.onclick = async (e) => {
+        const measureButton = e.target.closest("button[data-photo-measure]");
+        if (measureButton) {
+          e.preventDefault();
+          e.stopPropagation();
+          const photoRef = measureButton.closest(".readonly-photo-tile")?.querySelector("img[data-photo-ref]")?.dataset.photoRef;
+          const src = await resolvePhotoSrc(photoRef);
+          if (!src) return alert("Nie udało się wczytać zdjęcia do pomiaru.");
+          showPhotoMeasureModal({ src, photoRef, startMeasuring: true });
+          return;
+        }
         const img=e.target.closest("img[data-photo-ref]");
-        if(img?.src) showPhotoMeasureModal({ src: img.src, photoRef: img.dataset.photoRef });
+        if(img?.src) window.open(img.src,"_blank","noopener");
       };
     }
   }
