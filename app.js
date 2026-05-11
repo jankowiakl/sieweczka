@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.11-photo-measure";
+  const APP_VERSION = "2026.05.11-photo-viewer-fix";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -4254,8 +4254,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       refreshMarkerSizes();
     };
     const fitImage = () => {
-      if (!img.naturalWidth || !img.naturalHeight) return;
+      if (!img.naturalWidth || !img.naturalHeight) return false;
       const rect = viewport.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return false;
       const fit = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight, 1);
       state.baseW = Math.max(1, img.naturalWidth * fit);
       state.baseH = Math.max(1, img.naturalHeight * fit);
@@ -4263,6 +4264,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       state.ty = (rect.height - state.baseH) / 2;
       state.zoom = 1;
       applyTransform();
+      return true;
     };
     const basePointFromEvent = (event) => {
       const rect = stage.getBoundingClientRect();
@@ -4346,10 +4348,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       return { x: ((a.clientX + b.clientX) / 2) - rect.left, y: ((a.clientY + b.clientY) / 2) - rect.top };
     };
 
+    const closeModal = () => {
+      window.removeEventListener("resize", fitImage);
+      modal.remove();
+    };
+
     modal.addEventListener("click", (event) => {
       const action = event.target.closest("button")?.dataset.action;
       if (!action) return;
-      if (action === "close") modal.remove();
+      if (action === "close") closeModal();
       if (action === "zoom-in") setZoom(state.zoom * 1.25);
       if (action === "zoom-out") setZoom(state.zoom / 1.25);
       if (action === "calibrate") { state.measuringEnabled = true; state.mode = "calibrate"; state.points = []; overlay.innerHTML = ""; updateMeasureUi(); refreshStatus(); }
@@ -4431,10 +4438,20 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     viewport.addEventListener("pointerup", finishPointer);
     viewport.addEventListener("pointercancel", finishPointer);
     updateMeasureUi();
-    img.addEventListener("load", () => { state.loaded = true; fitImage(); refreshStatus(); });
-    window.addEventListener("resize", fitImage, { once: true });
+    img.addEventListener("load", () => {
+      state.loaded = true;
+      const fitted = fitImage();
+      if (!fitted) requestAnimationFrame(() => fitImage());
+      refreshStatus();
+    });
+    img.addEventListener("error", () => setStatus("Nie udało się wczytać zdjęcia."));
+    window.addEventListener("resize", fitImage);
     document.body.appendChild(modal);
     img.src = src;
+    if (img.complete && img.naturalWidth) {
+      state.loaded = true;
+      requestAnimationFrame(() => { fitImage(); refreshStatus(); });
+    }
   }
 
   function showReadonlyRecord(uid) {
