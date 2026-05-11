@@ -11,10 +11,11 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.11-gps-tracking-preserve-zoom";
+  const APP_VERSION = "2026.05.11-photo-pixel-zoom";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
+  const PHOTO_MEASURE_CALIBRATION_KEY = "sieweczka-photo-measure-calibrations-v1";
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
@@ -68,6 +69,7 @@
   function activeEntries() { return getEntries().filter((entry) => !isDeleted(entry)); }
   function activeWorkingNests() { return getWorkingNests().filter((nest) => !isDeleted(nest)); }
   function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
+  function readObjectSetting(key) { try { const parsed = JSON.parse(localStorage.getItem(key) || "{}"); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; } catch { return {}; } }
   function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
   const UI_CLASS_VALUES = {
     font: ["font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge"],
@@ -4162,6 +4164,413 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${pos[0]},${pos[1]}`, "_blank", "noopener");
   }
 
+  const photoMeasureCalibrations = new Map(Object.entries(readObjectSetting(PHOTO_MEASURE_CALIBRATION_KEY)));
+
+  function savePhotoMeasureCalibrations() {
+    const data = Object.fromEntries(photoMeasureCalibrations.entries());
+    localStorage.setItem(PHOTO_MEASURE_CALIBRATION_KEY, JSON.stringify(data));
+  }
+
+  function getPhotoMeasureKey(photoRef, src) {
+    const raw = String(photoRef || src || "");
+    let hash = 5381;
+    for (let index = 0; index < raw.length; index += 1) {
+      hash = ((hash << 5) + hash) ^ raw.charCodeAt(index);
+    }
+    return `photo:${(hash >>> 0).toString(36)}`;
+  }
+
+  function formatMeasureCm(value) {
+    if (!Number.isFinite(value)) return "—";
+    if (value >= 100) return value.toFixed(1);
+    if (value >= 10) return value.toFixed(2);
+    return value.toFixed(3);
+  }
+
+  function showPhotoMeasureModal({ src, photoRef = "", startMeasuring = false }) {
+    if (!src) return;
+    const calibrationKey = getPhotoMeasureKey(photoRef, src);
+    const modal = document.createElement("div");
+    modal.className = "photo-measure-modal";
+    modal.innerHTML = `
+      <div class="photo-measure-dialog" role="dialog" aria-modal="true" aria-label="Pomiar zdjęcia">
+        <div class="photo-measure-toolbar">
+          <button type="button" data-action="close">Zamknij</button>
+          <button type="button" data-action="zoom-out" aria-label="Pomniejsz">−</button>
+          <button type="button" data-action="zoom-in" aria-label="Powiększ">+</button>
+          <button type="button" data-action="calibrate" data-measure-tool>Kalibracja</button>
+          <button type="button" data-action="measure-line" data-measure-tool>Odcinek</button>
+          <button type="button" data-action="measure-polygon" data-measure-tool>Poligon</button>
+          <button type="button" data-action="undo-point" data-measure-tool>Cofnij punkt</button>
+          <button type="button" data-action="confirm" data-measure-tool>Zatwierdź</button>
+          <button type="button" data-action="clear" data-measure-tool>Wyczyść kalibrację</button>
+        </div>
+        <div class="photo-measure-status" data-status>Wczytuję zdjęcie…</div>
+        <div class="photo-measure-viewport" data-viewport>
+          <div class="photo-measure-stage" data-stage>
+            <img alt="Zdjęcie do pomiaru" draggable="false" data-img>
+            <svg class="photo-measure-overlay" data-overlay></svg>
+          </div>
+          <button type="button" class="photo-measure-ruler" data-action="measure" aria-label="Mierz na zdjęciu">📏</button>
+        </div>
+      </div>`;
+
+    const img = modal.querySelector("[data-img]");
+    const viewport = modal.querySelector("[data-viewport]");
+    const stage = modal.querySelector("[data-stage]");
+    const overlay = modal.querySelector("[data-overlay]");
+    const status = modal.querySelector("[data-status]");
+    const state = {
+      mode: "idle",
+      zoom: 1,
+      tx: 0,
+      ty: 0,
+      baseW: 1,
+      baseH: 1,
+      points: [],
+      activePointer: null,
+      dragPoint: null,
+      panStart: null,
+      pointers: new Map(),
+      pinchStart: null,
+      measuringEnabled: !!startMeasuring,
+      loaded: false
+    };
+
+    const getCalibration = () => photoMeasureCalibrations.get(calibrationKey);
+    if (startMeasuring) state.mode = getCalibration() ? "measure" : "calibrate";
+    const setStatus = (message) => { status.textContent = message; };
+    const updateMeasureUi = () => {
+      modal.classList.toggle("is-measuring", state.measuringEnabled);
+      viewport.classList.toggle("is-measuring", state.measuringEnabled);
+    };
+    const markerRadius = () => Math.max(0.35, 5 / Math.max(state.zoom, 1));
+    const measureStrokeWidth = () => Math.max(0.25, 4 / Math.max(state.zoom, 1));
+    const labelFontSize = () => Math.max(0.1, 18 / Math.max(state.zoom, 1));
+    const maxPhotoZoom = () => Math.min(64, Math.max(8, img.naturalWidth / state.baseW, img.naturalHeight / state.baseH));
+    const refreshMeasureScales = () => {
+      overlay.querySelectorAll(".photo-measure-point").forEach((point) => {
+        point.setAttribute("r", String(markerRadius()));
+      });
+      overlay.querySelectorAll(".photo-measure-line, .photo-measure-calibration-line, .photo-measure-polygon-fill").forEach((shape) => {
+        shape.setAttribute("stroke-width", String(measureStrokeWidth()));
+      });
+      overlay.querySelectorAll(".photo-measure-label").forEach((label) => {
+        label.setAttribute("font-size", String(labelFontSize()));
+      });
+    };
+    const applyTransform = () => {
+      stage.style.width = `${state.baseW}px`;
+      stage.style.height = `${state.baseH}px`;
+      stage.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.zoom})`;
+      overlay.setAttribute("viewBox", `0 0 ${state.baseW} ${state.baseH}`);
+      overlay.setAttribute("width", String(state.baseW));
+      overlay.setAttribute("height", String(state.baseH));
+      refreshMeasureScales();
+    };
+    const fitImage = () => {
+      if (!img.naturalWidth || !img.naturalHeight) return false;
+      const rect = viewport.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return false;
+      const fit = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight, 1);
+      state.baseW = Math.max(1, img.naturalWidth * fit);
+      state.baseH = Math.max(1, img.naturalHeight * fit);
+      state.tx = (rect.width - state.baseW) / 2;
+      state.ty = (rect.height - state.baseH) / 2;
+      state.zoom = 1;
+      applyTransform();
+      return true;
+    };
+    const basePointFromEvent = (event) => {
+      const rect = stage.getBoundingClientRect();
+      return {
+        x: Math.min(state.baseW, Math.max(0, (event.clientX - rect.left) / state.zoom)),
+        y: Math.min(state.baseH, Math.max(0, (event.clientY - rect.top) / state.zoom))
+      };
+    };
+    const naturalPoint = (point) => ({
+      x: point.x * (img.naturalWidth / state.baseW),
+      y: point.y * (img.naturalHeight / state.baseH)
+    });
+    const naturalDistancePx = (a, b) => {
+      const pa = naturalPoint(a);
+      const pb = naturalPoint(b);
+      return Math.hypot(pb.x - pa.x, pb.y - pa.y);
+    };
+    const polygonStats = (points) => {
+      const calibration = getCalibration();
+      if (!calibration || points.length < 3) return null;
+      const naturalPoints = points.map(naturalPoint);
+      let perimeterPx = 0;
+      let areaPx2 = 0;
+      naturalPoints.forEach((point, index) => {
+        const next = naturalPoints[(index + 1) % naturalPoints.length];
+        perimeterPx += Math.hypot(next.x - point.x, next.y - point.y);
+        areaPx2 += point.x * next.y - next.x * point.y;
+      });
+      return {
+        perimeterCm: perimeterPx / calibration.pxPerCm,
+        areaCm2: Math.abs(areaPx2) / 2 / (calibration.pxPerCm ** 2)
+      };
+    };
+    const polygonLabel = (stats) => {
+      if (!stats) return "";
+      const area = stats.areaCm2 >= 10000 ? `${formatMeasureCm(stats.areaCm2 / 10000)} m²` : `${formatMeasureCm(stats.areaCm2)} cm²`;
+      return `obw. ${formatMeasureCm(stats.perimeterCm)} cm, pole ${area}`;
+    };
+    const drawPoints = (points) => points.map((point, index) => `<circle class="photo-measure-point" data-point-index="${index}" cx="${point.x}" cy="${point.y}" r="${markerRadius()}"></circle>`).join("");
+    const drawLine = (a, b, label = "", kind = "measure") => {
+      const cls = kind === "calibration" ? "photo-measure-calibration-line" : "photo-measure-line";
+      overlay.innerHTML = `
+        <line class="${cls}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke-width="${measureStrokeWidth()}"></line>
+        ${drawPoints([a, b])}
+        ${label ? `<text class="photo-measure-label" x="${(a.x + b.x) / 2}" y="${Math.max(18, (a.y + b.y) / 2 - 10)}" font-size="${labelFontSize()}">${escapeHtml(label)}</text>` : ""}`;
+    };
+    const renderActiveShape = () => {
+      if (!state.points.length) {
+        overlay.innerHTML = "";
+        return;
+      }
+      if (state.mode === "measure-polygon") {
+        const pointsAttr = state.points.map((point) => `${point.x},${point.y}`).join(" ");
+        const stats = polygonStats(state.points);
+        const label = state.points.length >= 3 ? polygonLabel(stats) : "";
+        const labelPoint = state.points.reduce((acc, point) => ({ x: acc.x + point.x / state.points.length, y: acc.y + point.y / state.points.length }), { x: 0, y: 0 });
+        overlay.innerHTML = `
+          ${state.points.length >= 3 ? `<polygon class="photo-measure-polygon-fill" points="${pointsAttr}" stroke-width="${measureStrokeWidth()}"></polygon>` : ""}
+          ${state.points.length >= 2 ? `<polyline class="photo-measure-line" points="${pointsAttr}" stroke-width="${measureStrokeWidth()}"></polyline>` : ""}
+          ${state.points.length >= 3 ? `<line class="photo-measure-line" x1="${state.points[state.points.length - 1].x}" y1="${state.points[state.points.length - 1].y}" x2="${state.points[0].x}" y2="${state.points[0].y}" stroke-width="${measureStrokeWidth()}"></line>` : ""}
+          ${drawPoints(state.points)}
+          ${label ? `<text class="photo-measure-label" x="${labelPoint.x}" y="${Math.max(18, labelPoint.y - 10)}" font-size="${labelFontSize()}">${escapeHtml(label)}</text>` : ""}`;
+        return;
+      }
+      if (state.points.length === 1) {
+        overlay.innerHTML = drawPoints(state.points);
+        return;
+      }
+      const [a, b] = state.points;
+      if (state.mode === "calibrate") return drawLine(a, b, "kalibracja", "calibration");
+      const calibration = getCalibration();
+      const label = calibration ? `${formatMeasureCm(naturalDistancePx(a, b) / calibration.pxPerCm)} cm` : "";
+      drawLine(a, b, label, "measure");
+    };
+    const setMode = (mode) => {
+      state.measuringEnabled = true;
+      state.mode = mode;
+      state.points = [];
+      state.dragPoint = null;
+      overlay.innerHTML = "";
+      updateMeasureUi();
+      refreshStatus();
+    };
+    const refreshStatus = () => {
+      if (!state.loaded) return setStatus("Wczytuję zdjęcie…");
+      if (!state.measuringEnabled) return setStatus("Oglądanie zdjęcia: przesuwaj i powiększaj jak zwykle. Naciśnij 📏, aby rozpocząć pomiar.");
+      const calibration = getCalibration();
+      if (state.mode === "calibrate") {
+        if (state.points.length >= 2) return setStatus("Kalibracja: sprawdź i przeciągnij punkty, jeśli trzeba. Potem naciśnij „Zatwierdź” i podaj długość odcinka.");
+        return setStatus("Kalibracja: dotknij dwóch końców znanego odcinka miarki na zdjęciu.");
+      }
+      if (!calibration) return setStatus("Najpierw wykonaj kalibrację: zaznacz znany odcinek miarki, dopasuj punkty i naciśnij „Zatwierdź”.");
+      if (state.mode === "measure-polygon") {
+        if (state.points.length >= 3) return setStatus(`Poligon: możesz dodawać kolejne punkty albo przeciągać istniejące. ${polygonLabel(polygonStats(state.points))}.`);
+        return setStatus("Poligon: dotknij kolejnych wierzchołków obszaru. Minimum 3 punkty, potem możesz je przesuwać.");
+      }
+      if (state.mode === "measure") {
+        if (state.points.length >= 2) return setStatus("Pomiar odcinka: możesz przeciągnąć punkty, a wynik aktualizuje się na zdjęciu.");
+        return setStatus("Pomiar odcinka: dotknij dwóch punktów przedmiotu. Potem możesz je przesuwać.");
+      }
+      if (calibration) return setStatus(`Kalibracja dokonana (${formatMeasureCm(calibration.pxPerCm)} px/cm). Wybierz „Odcinek” albo „Poligon”.`);
+      return setStatus("Naciśnij 📏 albo „Kalibracja”, aby przeliczyć piksele na centymetry dla tego zdjęcia.");
+    };
+    const addPoint = (point) => {
+      if (state.mode === "calibrate" || state.mode === "measure") {
+        if (state.points.length >= 2) state.points = [];
+        state.points.push(point);
+      } else if (state.mode === "measure-polygon") {
+        state.points.push(point);
+      }
+      renderActiveShape();
+      refreshStatus();
+    };
+    const confirmActiveShape = () => {
+      if (state.mode === "calibrate") {
+        if (state.points.length < 2) return setStatus("Zaznacz dwa punkty kalibracji, zanim zatwierdzisz.");
+        const [a, b] = state.points;
+        const distancePx = naturalDistancePx(a, b);
+        const answer = prompt("Jaką długość ma zaznaczony odcinek miarki? Podaj wartość w centymetrach (np. 5 lub 10).", "10");
+        const cm = Number(String(answer || "").replace(",", "."));
+        if (!Number.isFinite(cm) || cm <= 0) return setStatus("Kalibracja przerwana — podaj dodatnią długość w centymetrach.");
+        photoMeasureCalibrations.set(calibrationKey, { pxPerCm: distancePx / cm, calibratedAt: Date.now() });
+        savePhotoMeasureCalibrations();
+        state.mode = "measure";
+        state.points = [];
+        overlay.innerHTML = "";
+        setStatus("Kalibracja dokonana. Wybierz odcinek albo poligon i dotknij punktów pomiaru.");
+        return;
+      }
+      if (state.mode === "measure-polygon") {
+        if (state.points.length < 3) return setStatus("Poligon wymaga minimum 3 punktów.");
+        renderActiveShape();
+        return setStatus(`Poligon zatwierdzony. ${polygonLabel(polygonStats(state.points))}. Punkty nadal możesz przeciągać do korekty.`);
+      }
+      if (state.mode === "measure") {
+        if (state.points.length < 2) return setStatus("Zaznacz dwa punkty pomiaru odcinka.");
+        renderActiveShape();
+        const calibration = getCalibration();
+        if (calibration) return setStatus(`Pomiar zatwierdzony: ${formatMeasureCm(naturalDistancePx(state.points[0], state.points[1]) / calibration.pxPerCm)} cm. Punkty nadal możesz przeciągać do korekty.`);
+      }
+    };
+    const hitPointIndex = (point) => {
+      const tolerance = Math.max(14 / Math.max(state.zoom, 1), markerRadius() * 2.8);
+      for (let index = state.points.length - 1; index >= 0; index -= 1) {
+        if (Math.hypot(state.points[index].x - point.x, state.points[index].y - point.y) <= tolerance) return index;
+      }
+      return -1;
+    };
+    const setZoom = (nextZoom, centerX = viewport.clientWidth / 2, centerY = viewport.clientHeight / 2) => {
+      const oldZoom = state.zoom;
+      const zoom = Math.min(maxPhotoZoom(), Math.max(1, nextZoom));
+      const baseX = (centerX - state.tx) / oldZoom;
+      const baseY = (centerY - state.ty) / oldZoom;
+      state.tx = centerX - baseX * zoom;
+      state.ty = centerY - baseY * zoom;
+      state.zoom = zoom;
+      applyTransform();
+    };
+    const distanceBetweenPointers = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const midpointBetweenPointers = (a, b) => {
+      const rect = viewport.getBoundingClientRect();
+      return { x: ((a.clientX + b.clientX) / 2) - rect.left, y: ((a.clientY + b.clientY) / 2) - rect.top };
+    };
+
+    const closeModal = () => {
+      window.removeEventListener("resize", fitImage);
+      modal.remove();
+    };
+
+    modal.addEventListener("click", (event) => {
+      const action = event.target.closest("button")?.dataset.action;
+      if (!action) return;
+      if (action === "close") closeModal();
+      if (action === "zoom-in") setZoom(state.zoom * 1.25);
+      if (action === "zoom-out") setZoom(state.zoom / 1.25);
+      if (action === "calibrate") setMode("calibrate");
+      if (action === "measure" || action === "measure-line") setMode(getCalibration() ? "measure" : "calibrate");
+      if (action === "measure-polygon") setMode(getCalibration() ? "measure-polygon" : "calibrate");
+      if (action === "undo-point") { state.points.pop(); renderActiveShape(); refreshStatus(); }
+      if (action === "confirm") confirmActiveShape();
+      if (action === "clear") { photoMeasureCalibrations.delete(calibrationKey); savePhotoMeasureCalibrations(); setMode("calibrate"); setStatus("Kalibracja wyczyszczona dla tego zdjęcia. Wykonaj kalibrację ponownie."); }
+    });
+    viewport.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      setZoom(state.zoom * (event.deltaY < 0 ? 1.12 : 0.88), event.clientX - rect.left, event.clientY - rect.top);
+    }, { passive: false });
+    viewport.addEventListener("pointerdown", (event) => {
+      if (!state.loaded || event.target.closest("button")) return;
+      event.preventDefault();
+      viewport.setPointerCapture(event.pointerId);
+      state.pointers.set(event.pointerId, event);
+      if (state.pointers.size === 2) {
+        const [first, second] = Array.from(state.pointers.values());
+        state.pinchStart = {
+          distance: Math.max(1, distanceBetweenPointers(first, second)),
+          zoom: state.zoom,
+          tx: state.tx,
+          ty: state.ty,
+          center: midpointBetweenPointers(first, second)
+        };
+        state.panStart = null;
+        if (state.activePointer) state.activePointer.moved = true;
+        return;
+      }
+      if (["calibrate", "measure", "measure-polygon"].includes(state.mode)) {
+        const point = basePointFromEvent(event);
+        const pointIndex = hitPointIndex(point);
+        if (pointIndex >= 0) {
+          state.dragPoint = { id: event.pointerId, index: pointIndex, moved: false };
+          return;
+        }
+        state.activePointer = { id: event.pointerId, x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty, moved: false };
+      } else {
+        state.panStart = { id: event.pointerId, x: event.clientX, y: event.clientY, tx: state.tx, ty: state.ty };
+      }
+    });
+    viewport.addEventListener("pointermove", (event) => {
+      if (!state.pointers.has(event.pointerId)) return;
+      event.preventDefault();
+      state.pointers.set(event.pointerId, event);
+      if (state.pointers.size >= 2 && state.pinchStart) {
+        const [first, second] = Array.from(state.pointers.values());
+        const center = midpointBetweenPointers(first, second);
+        const baseX = (state.pinchStart.center.x - state.pinchStart.tx) / state.pinchStart.zoom;
+        const baseY = (state.pinchStart.center.y - state.pinchStart.ty) / state.pinchStart.zoom;
+        const zoom = Math.min(maxPhotoZoom(), Math.max(1, state.pinchStart.zoom * (distanceBetweenPointers(first, second) / state.pinchStart.distance)));
+        state.tx = center.x - baseX * zoom;
+        state.ty = center.y - baseY * zoom;
+        state.zoom = zoom;
+        applyTransform();
+        return;
+      }
+      if (state.panStart?.id === event.pointerId) {
+        state.tx = state.panStart.tx + event.clientX - state.panStart.x;
+        state.ty = state.panStart.ty + event.clientY - state.panStart.y;
+        applyTransform();
+      }
+      if (state.dragPoint?.id === event.pointerId) {
+        state.points[state.dragPoint.index] = basePointFromEvent(event);
+        state.dragPoint.moved = true;
+        renderActiveShape();
+        refreshStatus();
+        return;
+      }
+      if (state.activePointer?.id === event.pointerId) {
+        const dx = event.clientX - state.activePointer.x;
+        const dy = event.clientY - state.activePointer.y;
+        const moved = Math.hypot(dx, dy) > 8;
+        state.activePointer.moved = state.activePointer.moved || moved;
+        if (state.activePointer.moved) {
+          state.tx = state.activePointer.tx + dx;
+          state.ty = state.activePointer.ty + dy;
+          applyTransform();
+        }
+      }
+    });
+    const finishPointer = (event) => {
+      state.pointers.delete(event.pointerId);
+      if (state.pointers.size < 2) state.pinchStart = null;
+      if (state.panStart?.id === event.pointerId) state.panStart = null;
+      if (state.dragPoint?.id === event.pointerId) {
+        state.dragPoint = null;
+        renderActiveShape();
+        refreshStatus();
+      }
+      if (state.activePointer?.id === event.pointerId) {
+        const pointer = state.activePointer;
+        state.activePointer = null;
+        if (!pointer.moved) addPoint(basePointFromEvent(event));
+      }
+    };
+    viewport.addEventListener("pointerup", finishPointer);
+    viewport.addEventListener("pointercancel", finishPointer);
+    updateMeasureUi();
+    img.addEventListener("load", () => {
+      state.loaded = true;
+      const fitted = fitImage();
+      if (!fitted) requestAnimationFrame(() => fitImage());
+      refreshStatus();
+    });
+    img.addEventListener("error", () => setStatus("Nie udało się wczytać zdjęcia."));
+    window.addEventListener("resize", fitImage);
+    document.body.appendChild(modal);
+    img.src = src;
+    if (img.complete && img.naturalWidth) {
+      state.loaded = true;
+      requestAnimationFrame(() => { fitImage(); refreshStatus(); });
+    }
+  }
+
   function showReadonlyRecord(uid) {
     const record = getEntries().find((entry) => String(entry.uid) === String(uid));
     if (!record) return;
@@ -4208,7 +4617,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function buildReadonlySections(record) {
     const val = (v) => (v == null || String(v).trim() === "" ? "—" : String(v));
     const fld = (label, v) => `<div class="readonly-field"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(val(v))}</div></div>`;
-    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>`<img src="" data-photo-ref="${escapeHtml(p.dataUrl || p)}" class="readonly-thumb" alt="${alt}">`).join("") || "<p>—</p>"}</div>`;
+    const photoGrid = (photos, alt) => `<div class="readonly-photo-grid">${(photos || []).map((p)=>{
+      const ref = escapeHtml(p.dataUrl || p);
+      const safeAlt = escapeHtml(alt);
+      return `<div class="readonly-photo-tile"><img src="" data-photo-ref="${ref}" class="readonly-thumb" alt="${safeAlt}"><button type="button" class="readonly-photo-measure" data-photo-measure aria-label="Pomiar zdjęcia">📏 Pomiar</button></div>`;
+    }).join("") || "<p>—</p>"}</div>`;
     const basicNotice = isBasicRecord(record) ? `<div class="basic-record-notice"><strong>Zapis podstawowy — bez pełnej kontroli.</strong><br>Ten rekord zapisano jako podstawowy, bez pełnego opisu siedliska.</div>` : "";
     const sections = [
       ["Identyfikacja", `${basicNotice}${renderRecordCompletenessBadge(record)}${fld("Kompletność", isBasicRecord(record) ? "basic — rekord niepełny" : "full")}${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
@@ -4223,7 +4636,37 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     ];
     return `<div class="readonly-carousel">${sections.map(([title, html], i) => `<section class="readonly-section${i===0?" active":""}"><h3>${title}</h3>${html}</section>`).join("")}</div><div class="readonly-nav"><button type="button" id="readonly-prev-section">Poprzednia karta</button><button type="button" id="readonly-next-section">Następna karta</button></div>`;
   }
-  function initReadonlyCarousel() { let i = 0; const secs = $$("#record-readonly-content .readonly-section"); const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); }; $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1)); $("#readonly-next-section")?.addEventListener("click",()=>set(i+1)); let sx=0; const wrap=$("#record-readonly-content .readonly-carousel"); wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true}); wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true}); $$("#record-readonly-content img[data-photo-ref]").forEach((img)=>{ resolvePhotoSrc(img.dataset.photoRef).then((src)=>{ if(src) img.src=src; });}); $("#record-readonly-content").addEventListener("click",(e)=>{ const img=e.target.closest("img[data-photo-ref]"); if(img?.src) window.open(img.src,"_blank","noopener");}); }
+  function initReadonlyCarousel() {
+    let i = 0;
+    const secs = $$("#record-readonly-content .readonly-section");
+    const set = (n) => { i=(n+secs.length)%secs.length; secs.forEach((s,idx)=>s.classList.toggle("active",idx===i)); };
+    $("#readonly-prev-section")?.addEventListener("click",()=>set(i-1));
+    $("#readonly-next-section")?.addEventListener("click",()=>set(i+1));
+    let sx=0;
+    const wrap=$("#record-readonly-content .readonly-carousel");
+    wrap?.addEventListener("touchstart",(e)=>{sx=e.changedTouches[0].screenX;},{passive:true});
+    wrap?.addEventListener("touchend",(e)=>{const dx=e.changedTouches[0].screenX-sx; if (Math.abs(dx)>40) set(i+(dx<0?1:-1));},{passive:true});
+    $$("#record-readonly-content img[data-photo-ref]").forEach((img)=>{
+      resolvePhotoSrc(img.dataset.photoRef).then((src)=>{ if(src) img.src=src; });
+    });
+    const content = $("#record-readonly-content");
+    if (content) {
+      content.onclick = async (e) => {
+        const measureButton = e.target.closest("button[data-photo-measure]");
+        if (measureButton) {
+          e.preventDefault();
+          e.stopPropagation();
+          const photoRef = measureButton.closest(".readonly-photo-tile")?.querySelector("img[data-photo-ref]")?.dataset.photoRef;
+          const src = await resolvePhotoSrc(photoRef);
+          if (!src) return alert("Nie udało się wczytać zdjęcia do pomiaru.");
+          showPhotoMeasureModal({ src, photoRef, startMeasuring: true });
+          return;
+        }
+        const img=e.target.closest("img[data-photo-ref]");
+        if(img?.src) window.open(img.src,"_blank","noopener");
+      };
+    }
+  }
 
 
   function isMapPointEditModeEnabled(mapId) {
