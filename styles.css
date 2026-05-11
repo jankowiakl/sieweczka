@@ -3118,7 +3118,8 @@ body {
 }
 
 .photo-measure-polygon-fill {
-  fill: rgba(250, 204, 21, .08);
+  fill: transparent;
+  fill-opacity: 0;
   stroke: #facc15;
 }
 

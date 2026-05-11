@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.11-photo-pixel-zoom";
+  const APP_VERSION = "2026.05.11-photo-measure-transparent-polygon";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -4247,7 +4247,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const markerRadius = () => Math.max(0.35, 5 / Math.max(state.zoom, 1));
     const measureStrokeWidth = () => Math.max(0.25, 4 / Math.max(state.zoom, 1));
     const labelFontSize = () => Math.max(0.1, 18 / Math.max(state.zoom, 1));
-    const maxPhotoZoom = () => Math.min(64, Math.max(8, img.naturalWidth / state.baseW, img.naturalHeight / state.baseH));
+    const nativePhotoZoom = () => {
+      const zoomX = img.naturalWidth && state.baseW ? img.naturalWidth / state.baseW : 1;
+      const zoomY = img.naturalHeight && state.baseH ? img.naturalHeight / state.baseH : 1;
+      const zoom = Math.max(zoomX, zoomY, 1);
+      return Number.isFinite(zoom) ? zoom : 1;
+    };
+    const maxPhotoZoom = () => Math.max(8, nativePhotoZoom());
     const refreshMeasureScales = () => {
       overlay.querySelectorAll(".photo-measure-point").forEach((point) => {
         point.setAttribute("r", String(markerRadius()));
