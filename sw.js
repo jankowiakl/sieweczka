@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-08-egg-measurements-cm-2dec";
+const CACHE_NAME = "sieweczka-app-v2026-05-11-gps-tracking-preserve-zoom";
 const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
 const DOMINIK_OFFLINE_CACHE = "sieweczka-dominik-view-cache-v1";
 const GEOPORTAL_ORTO_WMS_HOST = "mapy.geoportal.gov.pl";
