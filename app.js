@@ -1133,48 +1133,84 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return LABELS.species[normalized] || findOtherSpecies(normalized)?.polishName || normalized || "Nieokreślony";
   }
 
-  function speciesMatchesQuery(item, query) {
+  function speciesSearchFields(item = {}) {
+    return [
+      item.polishName,
+      item.latinName,
+      item.englishName,
+      item.code,
+      ...(item.aliases || []),
+      ...(item.legacyValues || []),
+      item.id
+    ].filter(Boolean);
+  }
+
+  function speciesSearchRank(item, query) {
     const q = normalizeSearchText(query);
-    if (!q) return true;
-    return [item.id, item.polishName, item.latinName, item.englishName, item.code, item.status, ...(item.aliases || []), ...(item.legacyValues || [])]
-      .some((value) => normalizeSearchText(value).includes(q));
+    if (!q) return null;
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const fields = speciesSearchFields(item).map((field) => normalizeSearchText(field));
+    const haystack = fields.join(" ");
+    if (!tokens.every((token) => haystack.includes(token))) return null;
+
+    const polish = normalizeSearchText(item.polishName);
+    const latin = normalizeSearchText(item.latinName);
+    const english = normalizeSearchText(item.englishName);
+    const code = normalizeSearchText(item.code);
+    if (polish === q) return 0;
+    if (polish.startsWith(q)) return 1;
+    if (polish.includes(q)) return 2;
+    if (latin === q || english === q || code === q) return 3;
+    if (latin.startsWith(q) || english.startsWith(q) || code.startsWith(q)) return 4;
+    if (latin.includes(q) || english.includes(q) || code.includes(q)) return 5;
+    if ([...(item.aliases || []), ...(item.legacyValues || [])].some((value) => normalizeSearchText(value) === q)) return 6;
+    return 7;
   }
 
-  function getOtherSpeciesUsage() {
-    const counts = new Map();
-    activeEntries().forEach((entry) => {
-      const item = findOtherSpecies(entry.species);
-      if (!item) return;
-      const key = otherSpeciesCanonicalValue(item);
-      counts.set(key, (counts.get(key) || 0) + 1);
-    });
-    return counts;
+  function searchOtherSpecies(query, limit = 25) {
+    const q = normalizeSearchText(query);
+    if (!q) return [];
+    return otherSpeciesState.species
+      .map((item) => ({ item, rank: speciesSearchRank(item, q) }))
+      .filter((row) => row.rank != null)
+      .sort((a, b) => a.rank - b.rank || (a.item.polishName || a.item.latinName).localeCompare(b.item.polishName || b.item.latinName, "pl"))
+      .slice(0, limit)
+      .map((row) => row.item);
   }
 
-  function renderSpeciesItemButton(item, usage = 0) {
+
+  function renderSpeciesItemButton(item, action = "choose-other-species") {
     const value = otherSpeciesCanonicalValue(item);
-    const details = [item.latinName, item.englishName, item.code, item.status].filter(Boolean).join(" • ");
-    return `<button type="button" class="other-species-item" data-other-species-value="${escapeHtml(value)}" title="Wybierz: ${escapeHtml(value)}">
-      <strong>${escapeHtml(item.polishName || value)}</strong>
-      ${details ? `<span>${escapeHtml(details)}</span>` : ""}
-      ${usage ? `<small>Użycia lokalne: ${usage}</small>` : ""}
-    </button>`;
+    const latin = item.latinName ? `<span class="species-latin">${escapeHtml(item.latinName)}</span>` : "";
+    const english = item.englishName ? `<span class="species-english">${escapeHtml(item.englishName)}</span>` : "";
+    const code = item.code ? `<small class="species-code">${escapeHtml(item.code)}</small>` : "";
+    const content = `<strong class="species-polish">${escapeHtml(item.polishName || value)}</strong>
+      ${latin || english ? `<span class="species-secondary">${latin}${latin && english ? " • " : ""}${english}</span>` : ""}
+      ${code}`;
+    if (action === "preview-other-species") return `<article class="commission-species-row">${content}</article>`;
+    return `<button type="button" class="other-species-item" data-species-search-action="${escapeHtml(action)}" data-other-species-value="${escapeHtml(value)}" title="Wybierz: ${escapeHtml(item.polishName || value)}">${content}</button>`;
+  }
+
+  function renderSpeciesSearchResults({ resultsSelector, searchSelector, action = "choose-other-species" }) {
+    const list = $(resultsSelector);
+    if (!list) return;
+    const query = value(searchSelector);
+    if (!normalizeSearchText(query)) {
+      list.innerHTML = `<p class="muted species-search-hint">Wpisz fragment nazwy gatunku.</p>`;
+      return;
+    }
+    const items = searchOtherSpecies(query, 25);
+    list.innerHTML = items.length
+      ? items.map((item) => renderSpeciesItemButton(item, action)).join("")
+      : `<p class="muted species-search-empty">Brak gatunku na liście.</p><p class="muted species-manual-fallback">Gatunek spoza listy – wpisz ręcznie tylko w wyjątkowej sytuacji.</p>`;
   }
 
   function renderOtherSpeciesPicker() {
-    const list = $("#other-species-results");
-    if (!list) return;
-    const query = value("#other-species-search");
-    const usage = getOtherSpeciesUsage();
-    const all = otherSpeciesState.species.filter((item) => speciesMatchesQuery(item, query));
-    const frequent = !query ? all.filter((item) => usage.get(otherSpeciesCanonicalValue(item)) > 0)
-      .sort((a, b) => (usage.get(otherSpeciesCanonicalValue(b)) || 0) - (usage.get(otherSpeciesCanonicalValue(a)) || 0)).slice(0, 5) : [];
-    const frequentKeys = new Set(frequent.map(otherSpeciesCanonicalValue));
-    const az = all.filter((item) => !frequentKeys.has(otherSpeciesCanonicalValue(item)));
-    list.innerHTML = `${frequent.length ? `<h4>Najczęściej używane</h4>${frequent.map((item) => renderSpeciesItemButton(item, usage.get(otherSpeciesCanonicalValue(item)) || 0)).join("")}` : ""}
-      <h4>Lista A–Z</h4>${az.map((item) => renderSpeciesItemButton(item)).join("") || `<p class="muted">Brak gatunków dla podanej frazy.</p>`}`;
-    const meta = $("#other-species-picker-meta");
-    if (meta) meta.textContent = `${otherSpeciesState.species.length} gatunków • źródło: ${otherSpeciesState.source.sourceType || "—"}`;
+    renderSpeciesSearchResults({ resultsSelector: "#other-species-results", searchSelector: "#other-species-search", action: "choose-other-species" });
+  }
+
+  function renderQuickOtherSpeciesPicker() {
+    renderSpeciesSearchResults({ resultsSelector: "#quick-other-species-results", searchSelector: "#quick-other-species-search", action: "choose-quick-other-species" });
   }
 
   function applySpeciesCatalogFields(record, item, originalLabel) {
@@ -1207,12 +1243,51 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     autoFillNearestDistances();
   }
 
+  function chooseQuickOtherSpecies(value) {
+    const item = findOtherSpecies(value);
+    if (!item) return;
+    setValue("#quick-species", "custom:other");
+    setValue("#quick-species-catalog-value", item.polishName || otherSpeciesCanonicalValue(item));
+    updateSelectedQuickOtherSpecies();
+    setValue("#quick-nest-id", buildQuickNestId());
+  }
+
   function updateSelectedOtherSpecies() {
     const selected = $("#other-species-selected");
     if (!selected) return;
     const current = value("#species", "unknown");
     const item = findOtherSpecies(current);
     selected.textContent = item ? `Wybrano: ${item.polishName}${item.latinName ? ` (${item.latinName})` : ""}` : "Nie wybrano gatunku z listy Komisji.";
+  }
+
+  function selectedQuickSpeciesValue() {
+    const quickSpecies = quickValue("#quick-species", "unknown");
+    return quickSpecies === "custom:other" ? quickValue("#quick-species-catalog-value", "") : quickSpecies;
+  }
+
+  function selectedQuickSpeciesCatalogItem() {
+    return findOtherSpecies(selectedQuickSpeciesValue());
+  }
+
+  function updateSelectedQuickOtherSpecies() {
+    const selected = $("#quick-other-species-selected");
+    if (!selected) return;
+    const item = selectedQuickSpeciesCatalogItem();
+    selected.textContent = item ? `Wybrano: ${item.polishName}${item.latinName ? ` (${item.latinName})` : ""}` : "Nie wybrano gatunku z listy Komisji.";
+  }
+
+  function toggleQuickOtherSpeciesPicker() {
+    const panel = $("#quick-other-species-picker");
+    if (!panel) return;
+    const show = quickValue("#quick-species", "unknown") === "custom:other";
+    panel.hidden = !show;
+    if (show) {
+      renderQuickOtherSpeciesPicker();
+      updateSelectedQuickOtherSpecies();
+    } else {
+      setValue("#quick-species-catalog-value", "");
+      updateSelectedQuickOtherSpecies();
+    }
   }
 
   function setupOtherSpeciesPicker() {
@@ -1233,7 +1308,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         showPicker();
       }
       const btn = event.target.closest("[data-other-species-value]");
-      if (btn) chooseOtherSpecies(btn.dataset.otherSpeciesValue);
+      if (btn?.dataset.speciesSearchAction === "choose-other-species") chooseOtherSpecies(btn.dataset.otherSpeciesValue);
+      if (btn?.dataset.speciesSearchAction === "choose-quick-other-species") chooseQuickOtherSpecies(btn.dataset.otherSpeciesValue);
     });
     document.addEventListener("click", (event) => {
       const tile = event.target.closest('.tile-group[data-target="species"] .tile');
@@ -1243,7 +1319,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       }
     });
     $("#other-species-search")?.addEventListener("input", renderOtherSpeciesPicker);
+    $("#quick-other-species-search")?.addEventListener("input", renderQuickOtherSpeciesPicker);
     updateSelectedOtherSpecies();
+    updateSelectedQuickOtherSpecies();
   }
 
   function updateOtherSpeciesStatus(message, isError = false) {
@@ -1260,22 +1338,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function renderOtherSpeciesPanel() {
-    const count = $("#commission-species-count");
-    const fetched = $("#commission-species-fetched");
-    const source = $("#commission-species-source");
     const list = $("#commission-species-list");
-    if (count) count.textContent = String(otherSpeciesState.species.length);
-    if (fetched) fetched.textContent = formatSpeciesDate(otherSpeciesState.source.lastSuccessfulFetchAt || otherSpeciesState.source.lastFetchedAt);
     const adminStatus = $("#admin-species-catalog-status");
     if (adminStatus) adminStatus.textContent = `${otherSpeciesState.species.length} gatunków • ostatnia udana aktualizacja: ${formatSpeciesDate(otherSpeciesState.source.lastSuccessfulFetchAt || otherSpeciesState.source.lastFetchedAt)} • źródło: ${otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL}`;
-    if (source) source.textContent = otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL;
     if (!list) return;
-    const query = value("#commission-species-search");
-    const items = otherSpeciesState.species.filter((item) => speciesMatchesQuery(item, query));
-    list.innerHTML = items.map((item) => {
-      const details = [item.latinName, item.englishName, item.code, item.status].filter(Boolean).join(" • ");
-      return `<article class="commission-species-row"><strong>${escapeHtml(item.polishName || otherSpeciesCanonicalValue(item))}</strong>${details ? `<span>${escapeHtml(details)}</span>` : ""}</article>`;
-    }).join("") || `<p class="muted">Brak gatunków dla podanej frazy.</p>`;
+    renderSpeciesSearchResults({ resultsSelector: "#commission-species-list", searchSelector: "#commission-species-search", action: "preview-other-species" });
   }
 
   async function refreshOtherSpeciesFromCommission() {
@@ -3134,7 +3201,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function buildQuickNestId() {
-    const species = quickValue("#quick-species", "unknown");
+    const species = selectedQuickSpeciesValue() || "unknown";
     const dateText = quickValue("#quick-obs-date") || new Date().toISOString().slice(0, 10);
     return `${speciesCode(species)}-${ymdFromDateText(dateText)}-${nextNestDailyNumber(species, dateText, null)}`;
   }
@@ -3148,6 +3215,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setValue("#quick-obs-date", now.toISOString().slice(0, 10));
     setValue("#quick-obs-time", now.toTimeString().slice(0, 5));
     setValue("#quick-species", "unknown");
+    setValue("#quick-species-catalog-value", "");
+    toggleQuickOtherSpeciesPicker();
     setValue("#quick-nest-id", buildQuickNestId());
     setValue("#quick-gps-accuracy", "");
     const status = $("#quick-gps-status");
@@ -3168,6 +3237,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         : "GPS: pozycja ustawiona";
     }
     showView("quick-nest");
+    toggleQuickOtherSpeciesPicker();
     setTimeout(() => $("#quick-species")?.focus(), 100);
   }
 
@@ -3175,7 +3245,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const now = new Date().toISOString();
     const user = getCurrentUser();
     const eggCount = quickNumber("#quick-egg-count", null);
-    const quickSpeciesItem = findOtherSpecies(quickValue("#quick-species", "unknown"));
+    const quickSpeciesValue = selectedQuickSpeciesValue() || "unknown";
+    const quickSpeciesItem = findOtherSpecies(quickSpeciesValue);
     let record = {
       uid: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       protocolVersion: PROTOCOL_VERSION,
@@ -3193,7 +3264,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       obsDate: quickValue("#quick-obs-date"),
       obsTime: quickValue("#quick-obs-time"),
       observer: quickTrim("#quick-observer") || currentUserDisplayName(),
-      species: normalizeSpeciesValue(quickValue("#quick-species", "unknown")),
+      species: normalizeSpeciesValue(quickSpeciesValue),
       sector: quickTrim("#quick-sector"),
       lat: quickNumber("#quick-lat", null),
       lon: quickNumber("#quick-lon", null),
@@ -3213,7 +3284,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       moduleNotes: { identification: quickNestCreationSource === "quick_map_entry" ? "Szybki wpis z mapy — bez pełnej kontroli." : "Szybki wpis — bez pełnej kontroli.", nestMicro: "", randomMicro: "", meso: "" },
       notes: quickTrim("#quick-notes")
     };
-    record = applySpeciesCatalogFields(record, quickSpeciesItem, quickValue("#quick-species", "unknown"));
+    record = applySpeciesCatalogFields(record, quickSpeciesItem, quickSpeciesValue);
     if (quickNestCreationSource === "quick_map_entry") {
       record.quickSaveReason = "quick_map_entry";
     }
@@ -5683,7 +5754,6 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     $("#commission-species-back")?.addEventListener("click", () => showView("home"));
     $("#commission-species-search")?.addEventListener("input", renderOtherSpeciesPanel);
-    $("#commission-species-refresh")?.addEventListener("click", () => refreshOtherSpeciesFromCommission());
     $("#commission-species-refresh-admin")?.addEventListener("click", () => refreshOtherSpeciesFromCommission());
     $("#admin-open-species-catalog")?.addEventListener("click", () => { showView("commission-species"); renderOtherSpeciesPanel(); });
     $("#resume-draft")?.addEventListener("click", () => {
@@ -5694,6 +5764,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#quick-nest-back")?.addEventListener("click", () => showView(quickNestReturnView === "map" ? "map" : "home"));
     $("#quick-nest-id-generate")?.addEventListener("click", () => setValue("#quick-nest-id", buildQuickNestId()));
     $("#quick-species")?.addEventListener("change", () => {
+      toggleQuickOtherSpeciesPicker();
       const idEl = $("#quick-nest-id");
       if (idEl && !String(idEl.value || "").trim()) idEl.value = buildQuickNestId();
     });

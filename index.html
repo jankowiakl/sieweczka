@@ -129,8 +129,17 @@
               <option value="tringa-totanus">Krwawodziób</option>
               <option value="sternula-albifrons">Rybitwa białoczelna</option>
               <option value="chroicocephalus-ridibundus">Śmieszka</option>
+              <option value="custom:other">Inny gatunek z katalogu Komisji</option>
             </select>
           </label>
+          <div id="quick-other-species-picker" class="other-species-picker" hidden>
+            <label>Wyszukaj gatunek z listy Komisji
+              <input id="quick-other-species-search" type="search" autocomplete="off" placeholder="Nazwa polska, łacińska, angielska, kod lub legacy" aria-label="Wyszukaj gatunek z listy Komisji dla szybkiego wpisu" />
+            </label>
+            <p id="quick-other-species-selected" class="muted">Nie wybrano gatunku z listy Komisji.</p>
+            <input id="quick-species-catalog-value" type="hidden" value="" />
+            <div id="quick-other-species-results" class="other-species-results" aria-live="polite"></div>
+          </div>
           <label>Liczba jaj
             <input id="quick-egg-count" type="number" min="0" step="1" inputmode="numeric" />
           </label>
@@ -175,15 +184,7 @@
 
     <section id="commission-species-screen" class="screen card" hidden>
       <div class="screen-head"><button type="button" id="commission-species-back">← Menu</button><h2>Katalog gatunków Komisji</h2></div>
-      <p class="lead">Lista gatunków oparta na wykazie Komisji Faunistycznej PTZool.</p>
-      <div class="commission-species-meta">
-        <p>Źródło: <a id="commission-species-source" href="https://komisjafaunistyczna.pl/lista/" target="_blank" rel="noopener">https://komisjafaunistyczna.pl/lista/</a></p>
-        <p>Ostatnie pobranie / odświeżenie: <strong id="commission-species-fetched">—</strong></p>
-        <p>Liczba gatunków: <strong id="commission-species-count">0</strong></p>
-      </div>
-      <div class="row-actions">
-        <button id="commission-species-refresh" type="button" class="primary" aria-label="Odśwież listę gatunków z Komisji Faunistycznej" title="Odśwież listę gatunków z Komisji Faunistycznej">Odśwież z Komisji Faunistycznej</button>
-      </div>
+      <p class="lead">Wpisz fragment nazwy, aby zawęzić wyniki. Polska nazwa jest główną etykietą wyniku.</p>
       <p id="commission-species-status" class="muted"></p>
       <label>Szukaj gatunku
         <input id="commission-species-search" type="search" autocomplete="off" placeholder="Polska, łacińska, angielska nazwa, kod lub legacy" />
@@ -633,7 +634,6 @@
                   <input id="other-species-search" type="search" autocomplete="off" placeholder="Nazwa polska, łacińska, angielska, kod lub legacy" aria-label="Wyszukaj gatunek z listy Komisji" />
                 </label>
                 <p id="other-species-selected" class="muted">Nie wybrano gatunku z listy Komisji.</p>
-                <p id="other-species-picker-meta" class="muted"></p>
                 <div id="other-species-results" class="other-species-results" aria-live="polite"></div>
               </div>
             </div>
