@@ -1093,6 +1093,33 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return await response.json();
   }
 
+  async function loadAdminSpeciesCatalog({ includeInactive = true, force = false } = {}) {
+    if (!isAdmin()) throw new Error("Brak uprawnień administratora.");
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    const speciesRes = await fetch(`${apiBase}/api/species${includeInactive ? "?includeInactive=1" : ""}`, {
+      cache: "no-store",
+      headers: getSyncAuthHeaders(cfg)
+    });
+    if (!speciesRes.ok) throw new Error(await readApiError(speciesRes, `Species HTTP ${speciesRes.status}`));
+    const payload = await speciesRes.json();
+    const metaRes = await fetch(`${apiBase}/api/admin/species/meta`, {
+      cache: "no-store",
+      headers: getSyncAuthHeaders(cfg)
+    });
+    let meta = null;
+    if (metaRes.ok) meta = await metaRes.json();
+    const normalized = normalizeOtherSpeciesPayload(payload, force ? "admin-api-force" : "admin-api");
+    otherSpeciesState = normalized;
+    localStorage.removeItem(OTHER_SPECIES_CACHE_KEY);
+    localStorage.setItem(OTHER_SPECIES_CACHE_KEY, JSON.stringify(normalized));
+    otherSpeciesAdminMeta = meta;
+    renderAdminSpeciesCatalogTable(normalized, meta);
+    renderOtherSpeciesPicker();
+    renderQuickOtherSpeciesPicker();
+    return { normalized, meta };
+  }
+
   async function loadBundledOtherSpecies() {
     const response = await fetch(`${OTHER_SPECIES_DATA_URL}?v=${encodeURIComponent(APP_VERSION)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1398,6 +1425,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }).join("") : `<p class="muted species-search-empty">Brak gatunków dla wybranego filtra.</p>`;
   }
 
+  function renderAdminSpeciesCatalogTable(normalized, meta) {
+    if (normalized) otherSpeciesState = normalized;
+    if (meta) otherSpeciesAdminMeta = meta;
+    renderOtherSpeciesPanel();
+  }
+
   async function refreshOtherSpeciesFromCommission() {
     if (!isAdmin()) {
       updateOtherSpeciesStatus("Odświeżanie katalogu jest dostępne tylko dla administratora.", true);
@@ -1406,9 +1439,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     updateOtherSpeciesStatus("Odświeżam katalog...");
     try {
       const result = await adminPost("admin/species/refresh", {});
-      const fromApi = await loadApiOtherSpecies(true);
-      saveOtherSpeciesCache(fromApi);
-      try { otherSpeciesAdminMeta = await loadAdminSpeciesMeta(); } catch {}
+      await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
       renderOtherSpeciesPicker();
       renderOtherSpeciesPanel();
       updateOtherSpeciesStatus(`Odświeżono katalog: ${result.speciesCount} gatunków, dodano ${result.added}, zaktualizowano ${result.updated}, dezaktywowano ${result.deactivated ?? 0}, do weryfikacji ${result.needsReview}.`);
@@ -5808,14 +5839,23 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#commission-species-search")?.addEventListener("input", renderOtherSpeciesPanel);
     $("#commission-species-filter")?.addEventListener("change", renderOtherSpeciesPanel);
     $("#commission-species-refresh-admin")?.addEventListener("click", async () => {
+      if (!isAdmin()) return;
       await refreshOtherSpeciesFromCommission();
-      await initOtherSpecies();
+      await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
       renderOtherSpeciesPanel();
     });
     $("#admin-open-species-catalog")?.addEventListener("click", async () => {
-      await initOtherSpecies();
+      if (!isAdmin()) return;
+      await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
       renderOtherSpeciesPanel();
       showView("commission-species");
+    });
+    $("#commission-species-clear-cache-admin")?.addEventListener("click", async () => {
+      if (!isAdmin()) return;
+      localStorage.removeItem(OTHER_SPECIES_CACHE_KEY);
+      await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
+      updateOtherSpeciesStatus("Wyczyszczono lokalny cache gatunków i pobrano świeże dane z API.");
+      renderOtherSpeciesPanel();
     });
     $("#resume-draft")?.addEventListener("click", () => {
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");

@@ -583,6 +583,46 @@ app.get('/api/admin/species/meta', authenticateUser, requireRole('admin'), async
   }
 });
 
+app.get('/api/admin/species/diagnostics', authenticateUser, requireRole('admin'), async (_req, res, next) => {
+  try {
+    const countsQ = await db.query(`SELECT
+      COUNT(*)::int AS all,
+      COUNT(*) FILTER (WHERE is_active = true)::int AS active,
+      COUNT(*) FILTER (WHERE polish_name IS NULL OR btrim(polish_name) = '')::int AS "missingPolishName",
+      COUNT(*) FILTER (WHERE polish_name ~ '^[0-9]+$')::int AS "numericPolishName",
+      COUNT(*) FILTER (WHERE polish_name ~* 'wymaga poprawy')::int AS "needsPolishNameFix"
+    FROM species_catalog`);
+    const problemsQ = await db.query(`SELECT id, polish_name, latin_name, source_payload, is_active
+      FROM species_catalog
+      WHERE is_active = true
+        AND (
+          polish_name IS NULL
+          OR btrim(polish_name) = ''
+          OR polish_name ~ '^[0-9]+$'
+          OR polish_name ~* 'wymaga poprawy'
+        )
+      ORDER BY latin_name ASC
+      LIMIT 25`);
+    const keySpecies = ['Calidris canutus', 'Vanellus gregarius', 'Vanellus leucurus', 'Anarhynchus alexandrinus', 'Charadrius alexandrinus'];
+    const keyQ = await db.query(`SELECT id, polish_name, latin_name, source_payload, legacy_values, is_active
+      FROM species_catalog
+      WHERE latin_name = ANY($1::text[])
+         OR legacy_values ? 'custom:sieweczka-morska'`, [keySpecies]);
+    const keyMap = {};
+    keyQ.rows.forEach((row) => {
+      if (row.latin_name) keyMap[row.latin_name] = speciesCatalog.rowToApi(row);
+    });
+    res.json({
+      ok: true,
+      counts: countsQ.rows[0],
+      problemExamples: problemsQ.rows.map((row) => speciesCatalog.rowToApi(row)),
+      keySpecies: keyMap
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/admin/species/refresh', authenticateUser, requireRole('admin'), async (req, res, next) => {
   try {
     const result = await speciesCatalog.refreshSpeciesCatalog(db, req.user);

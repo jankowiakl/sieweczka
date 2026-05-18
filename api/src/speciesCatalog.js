@@ -182,6 +182,7 @@ function ensureKentishLegacy(species) {
 }
 
 function rowToApi(row) {
+  const sourcePayload = row.source_payload && typeof row.source_payload === 'object' ? row.source_payload : {};
   return {
     id: row.id,
     code: row.code || '',
@@ -195,7 +196,10 @@ function rowToApi(row) {
     sourceUrl: row.source_url || SOURCE_URL,
     isActive: !!row.is_active,
     needsReview: !!row.needs_review,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    sourcePayload,
+    category: sourcePayload.category || '',
+    lp: sourcePayload.lp || ''
   };
 }
 
@@ -259,6 +263,18 @@ async function refreshSpeciesCatalog(db, user) {
       await client.query('UPDATE species_catalog SET is_active=false, needs_review=true, updated_at=now() WHERE id=$1', [row.id]);
       deactivated += 1;
       changes.push({ type: 'taxonomyReviewNeeded', id: row.id, oldValue: row.polish_name, newValue: null });
+    }
+    const invalidRowsQuery = await client.query(`SELECT id, polish_name, latin_name
+      FROM species_catalog
+      WHERE is_active = true
+        AND (
+          polish_name IS NULL
+          OR btrim(polish_name) = ''
+          OR polish_name ~ '^[0-9]+$'
+          OR polish_name ~* 'wymaga poprawy'
+        )`);
+    if (invalidRowsQuery.rows.length) {
+      throw new Error('Refresh zakończony walidacją negatywną: w katalogu nadal są aktywne gatunki bez poprawnej polskiej nazwy.');
     }
     await client.query(`UPDATE species_catalog_meta SET last_successful_fetch_at=now(), species_count=$1, parser_version=$2, changes=$3, last_error=NULL, updated_by=$4, updated_at=now() WHERE id='kf'`, [parsed.length, PARSER_VERSION, JSON.stringify(changes.slice(-100)), user?.id || null]);
     await client.query('COMMIT');
