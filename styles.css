@@ -2828,7 +2828,7 @@ body {
 
 .egg-measurement-inputs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: .55rem;
 }
 
@@ -2874,7 +2874,7 @@ body {
   }
 }
 
-@media (max-width: 340px) {
+@media (max-width: 520px) {
   .egg-measurement-inputs {
     grid-template-columns: 1fr;
   }
@@ -3118,7 +3118,8 @@ body {
 }
 
 .photo-measure-polygon-fill {
-  fill: rgba(250, 204, 21, .08);
+  fill: transparent;
+  fill-opacity: 0;
   stroke: #facc15;
 }
 
@@ -3138,4 +3139,43 @@ body {
   font-weight: 900;
   text-anchor: middle;
   vector-effect: non-scaling-stroke;
+}
+
+.quick-map-entry-control {
+  margin-bottom: 3.45rem !important;
+}
+.quick-map-entry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  min-height: 44px;
+  max-width: min(220px, 72vw);
+  white-space: nowrap;
+}
+.quick-map-entry-button .quick-map-icon,
+.map-marker.quick-nest-draft .quick-map-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.quick-map-entry-button .quick-map-icon svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+.quick-map-entry-button.active {
+  background: #f59e0b;
+  border-color: #b45309;
+  color: #1f2937;
+}
+.map-marker.quick-nest-draft .pin {
+  background: #f59e0b;
+  color: #111827;
+}
+.map-marker.quick-nest-draft .pin span {
+  display: flex;
+  transform: rotate(-45deg);
+}
+.map-marker.quick-nest-draft .quick-map-icon svg {
+  width: 20px;
+  height: 20px;
 }
