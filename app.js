@@ -1531,6 +1531,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let mapHeadingOrientationHandler = null;
   let recordSpeciesLabelsVisible = true;
   let workingMap = null;
+  let mesoMeasureMap = null;
+  let mesoMeasureTargetSelector = "";
   let workingLayer = null;
   let activeMapFullscreen = null;
   let recordsGridLayer = null;
@@ -1557,7 +1559,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   };
   const measureStates = {
     records: { mode: "off", points: [], markers: [], line: null, polygon: null, finished: false, map: null, bound: false },
-    working: { mode: "off", points: [], markers: [], line: null, polygon: null, finished: false, map: null, bound: false }
+    working: { mode: "off", points: [], markers: [], line: null, polygon: null, finished: false, map: null, bound: false },
+    meso: { mode: "off", points: [], markers: [], line: null, polygon: null, finished: false, map: null, bound: false }
   };
 
   function getCachedPhotoUrl(ref) {
@@ -2371,6 +2374,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#record-readonly-screen").hidden = name !== "readonly";
     $("#map-screen").hidden = name !== "map";
     $("#working-map-screen").hidden = name !== "working-map";
+    $("#meso-measure-screen").hidden = name !== "meso-measure";
     $("#form-screen").hidden = name !== "form";
     $("#user-screen").hidden = name !== "user";
     $("#export-screen").hidden = name !== "export";
@@ -5610,6 +5614,48 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     syncUserLocationLayers("records"); bringMeasureToFront("records");
   }
 
+
+
+  function renderMesoMeasureMap() {
+    const mapEl = $("#meso-measure-map");
+    if (!mapEl || typeof L === "undefined") return;
+    if (!mesoMeasureMap) {
+      const base = createBaseLayers();
+      mesoMeasureMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: MAP_MAX_ZOOM });
+      mesoMeasureMap.attributionControl.setPrefix("");
+      initMeasureTools(mesoMeasureMap, "meso");
+      mesoMeasureMap.setView([52, 19], 15);
+    }
+    const lat = getNumber("#lat", null);
+    const lon = getNumber("#lon", null);
+    if (hasValidCoords(lat, lon)) mesoMeasureMap.setView([lat, lon], 18);
+    mesoMeasureMap.invalidateSize();
+    setMeasureMode("meso", "line");
+  }
+
+  function openMesoMeasureForField(targetSelector) {
+    mesoMeasureTargetSelector = String(targetSelector || "");
+    const input = $(mesoMeasureTargetSelector);
+    const label = input?.closest("label")?.childNodes?.[0]?.textContent?.trim() || "Pole";
+    const targetLabel = $("#meso-measure-target-label");
+    if (targetLabel) targetLabel.textContent = `Pole docelowe: ${label}`;
+    showView("meso-measure");
+    setTimeout(renderMesoMeasureMap, 0);
+  }
+
+  function applyMesoMeasureToField() {
+    const state = measureStates.meso;
+    const input = $(mesoMeasureTargetSelector);
+    if (!state?.map || !input || state.mode !== "line" || state.points.length < 2) {
+      alert("Aby wstawić wynik, wykonaj pomiar liniowy co najmniej na 2 punktach.");
+      return;
+    }
+    const meters = state.points.slice(1).reduce((sum, point, index) => sum + state.map.distance(state.points[index], point), 0);
+    input.value = (Math.round(meters * 10) / 10).toFixed(1);
+    input.dataset.manual = "1";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    showView("form");
+  }
   function ensureUserLocationTracking(points, focusUid) {
     if (!navigator.geolocation) {
       $("#map-user-status").textContent = "Twoja pozycja: niedostępna";
@@ -5883,6 +5929,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     $("#open-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
     $("#open-working-map").addEventListener("click", () => showView("working-map"));
+    $("#meso-measure-back")?.addEventListener("click", () => showView("form"));
+    $("#meso-measure-apply")?.addEventListener("click", applyMesoMeasureToField);
+    $$(".measure-map-button").forEach((btn) => btn.addEventListener("click", () => openMesoMeasureForField(btn.dataset.measureTarget)));
     $("#records-show-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
     $("#step-back").addEventListener("click", () => showStep(currentStep - 1));
     $("#step-next").addEventListener("click", () => showStep(currentStep + 1));
