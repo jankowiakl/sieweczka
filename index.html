@@ -461,7 +461,27 @@
     <section id="meso-measure-screen" class="screen card" hidden>
       <div class="screen-head"><button type="button" id="meso-measure-back">← Wróć do formularza</button><h2>Mapka pomiarowa mezohabitatu</h2></div>
       <p id="meso-measure-target-label" class="muted">Pole docelowe: —</p>
+      <div class="map-primary-actions">
+        <label class="inline-field map-base-layer-field">Podkład mapy
+          <select id="meso-base-layer">
+            <option value="Ortofotomapa Geoportal">Ortofotomapa Geoportal</option>
+            <option value="Ortofotomapa offline">Ortofotomapa offline</option>
+            <option value="OpenStreetMap">OpenStreetMap</option>
+            <option value="Dominik Layer">Dominik Layer</option>
+            <option value="Dominik Layer offline">Dominik Layer offline</option>
+            <option value="Esri Imagery + Labels">Esri Imagery + Labels</option>
+            <option value="ArcGIS Terrain with Labels">ArcGIS Terrain with Labels</option>
+            <option value="Esri World Imagery">Esri World Imagery</option>
+            <option value="OSM Standard">OSM Standard</option>
+            <option value="OSM DE">OSM DE</option>
+            <option value="CARTO Positron">CARTO Positron</option>
+            <option value="CARTO Voyager">CARTO Voyager</option>
+            <option value="OpenTopoMap">OpenTopoMap</option>
+          </select>
+        </label>
+      </div>
       <div id="meso-measure-map" class="map-canvas"></div>
+      <p id="meso-orto-cache-status" class="map-offline-status info" hidden></p>
       <details id="meso-measure-panel" class="map-measure-panel" open>
         <summary>Pomiar odległości i powierzchni</summary>
         <div id="meso-measure-toolbar" class="measure-toolbar" aria-label="Narzędzia pomiarowe mapki mezohabitatu">
@@ -1008,12 +1028,15 @@
               </label>
               <label>Najbliższe gniazdo s. obrożnej [m]
                 <input id="dist-nearest-hiaticula" type="number" min="0" step="0.1" inputmode="decimal" />
-                <small class="hint">Odległość może być wyliczona automatycznie z zapisanych gniazd tego samego gatunku.</small>
+                <small id="dist-nearest-hiaticula-meta" class="hint">Odległość do najbliższej sieweczki obrożnej: brak danych.</small>
               </label>
               <label>Najbliższe gniazdo s. rzecznej [m]
                 <input id="dist-nearest-dubius" type="number" min="0" step="0.1" inputmode="decimal" />
-                <small class="hint">Odległość może być wyliczona automatycznie z zapisanych gniazd tego samego gatunku.</small>
+                <small id="dist-nearest-dubius-meta" class="hint">Odległość do najbliższej sieweczki rzecznej: brak danych.</small>
               </label>
+              <div class="inline-field">
+                <button id="recalculate-plover-distances" type="button">Przelicz odległości</button>
+              </div>
               <label>Duże obiekty w 15 m?
                 <select id="meso-big-objects">
                   <option value="unknown">Nieokreślone</option>
