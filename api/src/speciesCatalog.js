@@ -1,23 +1,10 @@
 const SOURCE = 'Komisja Faunistyczna PTZool';
 const SOURCE_URL = 'https://komisjafaunistyczna.pl/lista/';
-const PARSER_VERSION = 'server-kf-table-parser-v2';
+const PARSER_VERSION = 'kf-text-line-parser-v2';
 const MIN_SPECIES_COUNT = 100;
 const KENTISH_ID = 'kf-charadrius-alexandrinus';
 
-function stripTags(value) {
-  return String(value || '')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+const STATUS_TOKEN_RE = /^(?:[ABC](?:\([lz]\))?|[LPZlz])$/;
 
 function normalizeSearchText(text) {
   return String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -41,12 +28,33 @@ function stableId(item) {
   return `kf-polish-${slugify(item.polishName)}`;
 }
 
-function extractItalicText(html) {
-  return [...String(html || '').matchAll(/<(?:i|em)\b[^>]*>([\s\S]*?)<\/(?:i|em)>/gi)].map((match) => stripTags(match[1])).filter(Boolean);
+function isStatusToken(token) {
+  return STATUS_TOKEN_RE.test(String(token || '').trim());
 }
 
-function isLikelyLatinName(value) {
-  return /^[A-Z][a-z-]+\s+[a-z-]+(?:\s+[a-z-]+)*$/.test(String(value || '').trim());
+function normalizeLine(value) {
+  return String(value || '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function htmlToSpeciesLines(html) {
+  const text = String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<\/?(tr|p|div|li|br)\b[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\r/g, '\n');
+
+  return text.split(/\n+/).map(normalizeLine).filter((line) => /^\d+\s+/.test(line));
+}
+
+function isValidLatinName(latinName) {
+  return /^[A-Z][A-Za-z-]+\s+[a-z][a-z-]+(?:\s+forma\s+[a-z][a-z-]+)?$/.test(String(latinName || '').trim());
 }
 
 function isNumericOnly(value) {
@@ -59,37 +67,64 @@ function isInvalidPolishName(polishName, latinName, lp) {
   if (isNumericOnly(value)) return true;
   if (lp && value === String(lp).trim()) return true;
   if (latinName && normalizeSearchText(value) === normalizeSearchText(latinName)) return true;
-  if (isLikelyLatinName(value)) return true;
+  if (isValidLatinName(value)) return true;
   return false;
 }
 
-function parseSpeciesFromHtml(html) {
-  const rows = [...String(html || '').matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)];
+function parseSpeciesLine(line) {
+  const normalized = normalizeLine(line);
+  const match = normalized.match(/^(\d+)\s+(.+)$/);
+  if (!match) return null;
+  const lp = match[1];
+  const tokens = match[2].split(/\s+/).filter(Boolean);
+  const statusTokens = [];
+  while (tokens.length && isStatusToken(tokens[tokens.length - 1])) statusTokens.unshift(tokens.pop());
+  if (tokens.length < 3) return null;
+
+  let latinTokens;
+  let polishTokens;
+  if (tokens.length >= 5 && tokens[2] === 'forma') {
+    latinTokens = tokens.slice(0, 4);
+    polishTokens = tokens.slice(4);
+  } else {
+    latinTokens = tokens.slice(0, 2);
+    polishTokens = tokens.slice(2);
+  }
+  const latinName = latinTokens.join(' ');
+  const polishName = polishTokens.join(' ');
+  const status = statusTokens.join(' ');
+  const category = statusTokens[0] || '';
+  if (!isValidLatinName(latinName)) return null;
+  if (isInvalidPolishName(polishName, latinName, lp)) {
+    throw new Error(`Nie udało się poprawnie odczytać polskiej nazwy dla lp. ${lp}, ${latinName}`);
+  }
+  const item = { id: stableId({ latinName, polishName }), code: makeCode(latinName, polishName), polishName, latinName, englishName: '', category, status, aliases: [], legacyValues: [], needsReview: false };
+  item.sourcePayload = { lp, category, status, parser: PARSER_VERSION, rawLine: normalized };
+  return item;
+}
+
+function validateParsedSpecies(species) {
+  if (!Array.isArray(species)) throw new Error('Parser listy Komisji nie zwrócił tablicy gatunków.');
+  if (species.length < MIN_SPECIES_COUNT) throw new Error(`Parser znalazł tylko ${species.length} pozycji; katalog nie został nadpisany.`);
+  const invalid = species.filter((item) => isInvalidPolishName(item.polishName, item.latinName, item.sourcePayload?.lp));
+  if (invalid.length) throw new Error(`Parser listy Komisji zwrócił ${invalid.length} gatunków bez poprawnej polskiej nazwy. Przykład: ${invalid[0].latinName || invalid[0].id}`);
+}
+
+function parseSpeciesFromHtml(html, { validateMinimum = true } = {}) {
+  const lines = htmlToSpeciesLines(html);
   const parsed = [];
-  for (const rowMatch of rows) {
-    const rowHtml = rowMatch[1];
-    const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((match) => ({ html: match[1], text: stripTags(match[1]) })).filter((cell) => cell.text);
-    if (cells.length < 5) continue;
-    const lp = cells[0]?.text || '';
-    if (!isNumericOnly(lp)) continue;
-    const latinName = cells[1]?.text || extractItalicText(rowHtml).find((name) => isLikelyLatinName(name)) || '';
-    const polishNameRaw = cells[2]?.text || '';
-    const category = cells[3]?.text || '';
-    const status = cells[4]?.text || '';
-    if (!latinName) continue;
-    const invalidPolish = isInvalidPolishName(polishNameRaw, latinName, lp);
-    const polishName = invalidPolish ? '' : polishNameRaw;
-    const item = { polishName, latinName, englishName: '', status, aliases: [], legacyValues: [], code: makeCode(latinName, polishName || latinName), needsReview: invalidPolish };
-    item.id = stableId(item);
-    item.sourcePayload = { lp, category, rowText: cells.map((cell) => cell.text).join(' | ') };
-    parsed.push(item);
+  for (const line of lines) {
+    const item = parseSpeciesLine(line);
+    if (item) parsed.push(item);
   }
   const unique = new Map();
   for (const item of parsed) {
-    const key = item.id || `${normalizeSearchText(item.polishName)}|${normalizeSearchText(item.latinName)}`;
+    const key = item.id || `${item.latinName}|${item.polishName}`.toLowerCase();
     if (!unique.has(key)) unique.set(key, item);
   }
-  return ensureKentishLegacy([...unique.values()]).sort((a, b) => (a.polishName || a.latinName).localeCompare(b.polishName || b.latinName, 'pl'));
+  const species = ensureKentishLegacy([...unique.values()]).sort((a, b) => (a.polishName || a.latinName).localeCompare(b.polishName || b.latinName, 'pl'));
+  if (validateMinimum) validateParsedSpecies(species);
+  return species;
 }
 
 function ensureKentishLegacy(species) {
@@ -105,9 +140,9 @@ function ensureKentishLegacy(species) {
   }
   kentish.id = KENTISH_ID;
   kentish.code = kentish.code || 'CHAALE';
-  kentish.polishName = kentish.polishName || 'Sieweczka morska';
+  kentish.polishName = kentish.polishName || 'sieweczka morska';
   kentish.englishName = kentish.englishName || 'Kentish Plover';
-  kentish.latinName = kentish.latinName || 'Charadrius alexandrinus';
+  kentish.latinName = 'Anarhynchus alexandrinus';
   kentish.aliases = mergeUnique(kentish.aliases || [], ['Charadrius alexandrinus', 'Anarhynchus alexandrinus']);
   kentish.legacyValues = Array.from(new Set([...(kentish.legacyValues || []), 'custom:sieweczka-morska', 'sieweczka-morska', 'Sieweczka morska']));
   return list;
@@ -147,11 +182,6 @@ async function refreshSpeciesCatalog(db, user) {
     throw error;
   }
   const parsed = parseSpeciesFromHtml(html);
-  if (parsed.length < MIN_SPECIES_COUNT) {
-    const message = `Parser znalazł tylko ${parsed.length} pozycji; katalog nie został nadpisany.`;
-    await db.query(`UPDATE species_catalog_meta SET last_error=$1, updated_by=$2, updated_at=now() WHERE id='kf'`, [message, user?.id || null]);
-    const error = new Error(message); error.status = 422; throw error;
-  }
 
   const client = await db.pool.connect();
   try {
@@ -168,7 +198,7 @@ async function refreshSpeciesCatalog(db, user) {
       const id = match?.id || item.id;
       seen.add(id);
       const isMatchNumericName = isNumericOnly(match?.polish_name || '');
-      const aliases = mergeUnique(match?.aliases || [], match && match.polish_name !== item.polishName && !isMatchNumericName ? [match.polish_name] : [], item.aliases || []).filter((value) => !isNumericOnly(value));
+      const aliases = mergeUnique(match?.aliases || [], match && match.polish_name !== item.polishName && !isMatchNumericName && !/wymaga poprawy/i.test(match.polish_name || '') ? [match.polish_name] : [], item.aliases || []).filter((value) => !isNumericOnly(value) && !/wymaga poprawy/i.test(value));
       const legacyValues = mergeUnique(match?.legacy_values || [], item.legacyValues || []);
       let review = !!(match?.needs_review || item.needsReview);
       if (match && match.polish_name && item.polishName && match.polish_name !== item.polishName) {
@@ -209,4 +239,4 @@ async function refreshSpeciesCatalog(db, user) {
   }
 }
 
-module.exports = { SOURCE, SOURCE_URL, PARSER_VERSION, rowToApi, refreshSpeciesCatalog, parseSpeciesFromHtml, isInvalidPolishName, ensureKentishLegacy };
+module.exports = { SOURCE, SOURCE_URL, PARSER_VERSION, rowToApi, refreshSpeciesCatalog, parseSpeciesFromHtml, parseSpeciesLine, isInvalidPolishName, ensureKentishLegacy };
