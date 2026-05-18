@@ -1555,7 +1555,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   const photoUrlCache = new Map();
   const ortoCacheState = {
     records: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, dominikEnabled: false, dominikRunning: false, dominikPending: false, dominikTimer: 0, dominikSavedSession: 0, dominikSkippedSession: 0, lastZoom: null, dominikLastZoom: null, lastError: "", dominikLastError: "", bound: false, dominikBound: false, map: null, onlineLayer: null, offlineLayer: null, dominikOnlineLayer: null, dominikOfflineLayer: null, viewRestored: false, stateBound: false },
-    working: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, dominikEnabled: false, dominikRunning: false, dominikPending: false, dominikTimer: 0, dominikSavedSession: 0, dominikSkippedSession: 0, lastZoom: null, dominikLastZoom: null, lastError: "", dominikLastError: "", bound: false, dominikBound: false, map: null, onlineLayer: null, offlineLayer: null, dominikOnlineLayer: null, dominikOfflineLayer: null, viewRestored: false, stateBound: false }
+    working: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, dominikEnabled: false, dominikRunning: false, dominikPending: false, dominikTimer: 0, dominikSavedSession: 0, dominikSkippedSession: 0, lastZoom: null, dominikLastZoom: null, lastError: "", dominikLastError: "", bound: false, dominikBound: false, map: null, onlineLayer: null, offlineLayer: null, dominikOnlineLayer: null, dominikOfflineLayer: null, viewRestored: false, stateBound: false },
+    meso: { enabled: false, running: false, pending: false, timer: 0, stateTimer: 0, savedSession: 0, skippedSession: 0, dominikEnabled: false, dominikRunning: false, dominikPending: false, dominikTimer: 0, dominikSavedSession: 0, dominikSkippedSession: 0, lastZoom: null, dominikLastZoom: null, lastError: "", dominikLastError: "", bound: false, dominikBound: false, map: null, onlineLayer: null, offlineLayer: null, dominikOnlineLayer: null, dominikOfflineLayer: null, viewRestored: false, stateBound: false }
   };
   const measureStates = {
     records: { mode: "off", points: [], markers: [], line: null, polygon: null, finished: false, map: null, bound: false },
@@ -2340,16 +2341,32 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
     return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
+  function formatDistanceLabel(distanceM) {
+    if (!Number.isFinite(distanceM)) return "brak danych";
+    if (distanceM >= 1000) return `${(distanceM / 1000).toFixed(2).replace(".", ",")} km`;
+    return `${Math.round(distanceM)} m`;
+  }
   function autoFillNearestDistances() {
     const lat = getNumber("#lat", null), lon = getNumber("#lon", null);
     if (lat == null || lon == null) return;
     const entries = activeEntries();
     const nearest = (sp) => entries
       .filter((e) => e.species === sp && e.uid !== editingUid && hasValidCoords(e.lat, e.lon))
-      .reduce((best, e) => Math.min(best, haversineM(lat, lon, Number(e.lat), Number(e.lon))), Infinity);
+      .reduce((best, e) => {
+        const distanceM = haversineM(lat, lon, Number(e.lat), Number(e.lon));
+        return !best || distanceM < best.distanceM ? { distanceM, nestId: e.nestId || "" } : best;
+      }, null);
     const hiEl = $("#dist-nearest-hiaticula"), duEl = $("#dist-nearest-dubius");
-    if (hiEl && !hiEl.dataset.manual) { const d = nearest("charadrius-hiaticula"); hiEl.value = Number.isFinite(d) ? d.toFixed(1) : ""; }
-    if (duEl && !duEl.dataset.manual) { const d = nearest("charadrius-dubius"); duEl.value = Number.isFinite(d) ? d.toFixed(1) : ""; }
+    const hi = nearest("charadrius-hiaticula");
+    const du = nearest("charadrius-dubius");
+    if (hiEl && !hiEl.dataset.manual) hiEl.value = Number.isFinite(hi?.distanceM) ? hi.distanceM.toFixed(1) : "";
+    if (duEl && !duEl.dataset.manual) duEl.value = Number.isFinite(du?.distanceM) ? du.distanceM.toFixed(1) : "";
+    const hiMeta = $("#dist-nearest-hiaticula-meta");
+    const duMeta = $("#dist-nearest-dubius-meta");
+    if (hiMeta) hiMeta.textContent = `Odległość do najbliższej sieweczki obrożnej: ${formatDistanceLabel(hi?.distanceM)}${hi?.nestId ? ` (ID: ${hi.nestId})` : ""}.`;
+    if (duMeta) duMeta.textContent = `Odległość do najbliższej sieweczki rzecznej: ${formatDistanceLabel(du?.distanceM)}${du?.nestId ? ` (ID: ${du.nestId})` : ""}.`;
+    if (hiEl) hiEl.dataset.nearestNestId = hi?.nestId || "";
+    if (duEl) duEl.dataset.nearestNestId = du?.nestId || "";
   }
 
   function showView(name) {
@@ -2822,6 +2839,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         distVerticalStructureM: getNumber("#dist-vertical-structure", null),
         distNearestHiaticulaM: getNumber("#dist-nearest-hiaticula", null),
         distNearestDubiusM: getNumber("#dist-nearest-dubius", null),
+        nearestHiaticulaNestId: $("#dist-nearest-hiaticula")?.dataset.nearestNestId || "",
+        nearestDubiusNestId: $("#dist-nearest-dubius")?.dataset.nearestNestId || "",
         bigObjects: value("#meso-big-objects", "unknown"),
         distFineGravelPatchM: getNumber("#dist-fine-gravel-patch", null),
         distCoarseGravelPatchM: getNumber("#dist-coarse-gravel-patch", null),
@@ -3490,6 +3509,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setValue("#dist-vertical-structure", record.meso?.distVerticalStructureM ?? "");
     setValue("#dist-nearest-hiaticula", record.meso?.distNearestHiaticulaM ?? "");
     setValue("#dist-nearest-dubius", record.meso?.distNearestDubiusM ?? "");
+    const hiEl = $("#dist-nearest-hiaticula");
+    const duEl = $("#dist-nearest-dubius");
+    if (hiEl) hiEl.dataset.nearestNestId = record.meso?.nearestHiaticulaNestId || "";
+    if (duEl) duEl.dataset.nearestNestId = record.meso?.nearestDubiusNestId || "";
     setValue("#meso-big-objects", record.meso?.bigObjects || "unknown");
     setValue("#dist-fine-gravel-patch", record.meso?.distFineGravelPatchM ?? "");
     setValue("#dist-coarse-gravel-patch", record.meso?.distCoarseGravelPatchM ?? "");
@@ -5623,8 +5646,17 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const base = createBaseLayers();
       mesoMeasureMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: MAP_MAX_ZOOM });
       mesoMeasureMap.attributionControl.setPrefix("");
+      initMapBaseLayerSelect(mesoMeasureMap, "meso", base);
+      ortoCacheState.meso.map = mesoMeasureMap;
+      ortoCacheState.meso.onlineLayer = base.onlineLayer;
+      ortoCacheState.meso.offlineLayer = base.offlineLayer;
+      ortoCacheState.meso.dominikOnlineLayer = base.layers["Dominik Layer"];
+      ortoCacheState.meso.dominikOfflineLayer = base.layers["Dominik Layer offline"];
+      restoreMapViewState(mesoMeasureMap, "meso");
+      initMapViewStatePersistence(mesoMeasureMap, "meso");
+      switchToOfflineOrtoIfNeeded(mesoMeasureMap, "meso");
       initMeasureTools(mesoMeasureMap, "meso");
-      mesoMeasureMap.setView([52, 19], 15);
+      if (!ortoCacheState.meso.viewRestored) mesoMeasureMap.setView([52, 19], 15);
     }
     const lat = getNumber("#lat", null);
     const lon = getNumber("#lon", null);
@@ -5931,6 +5963,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#open-working-map").addEventListener("click", () => showView("working-map"));
     $("#meso-measure-back")?.addEventListener("click", () => showView("form"));
     $("#meso-measure-apply")?.addEventListener("click", applyMesoMeasureToField);
+    $("#recalculate-plover-distances")?.addEventListener("click", () => {
+      ["#dist-nearest-hiaticula", "#dist-nearest-dubius"].forEach((sel) => { const el = $(sel); if (el) delete el.dataset.manual; });
+      autoFillNearestDistances();
+    });
     $$(".measure-map-button").forEach((btn) => btn.addEventListener("click", () => openMesoMeasureForField(btn.dataset.measureTarget)));
     $("#records-show-map").addEventListener("click", () => { mapFocusUid = null; showView("map"); });
     $("#step-back").addEventListener("click", () => showStep(currentStep - 1));
