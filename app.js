@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.18-quick-nest-egg-weight";
+  const APP_VERSION = "2026.05.18-quick-nest-map-entry";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -1012,6 +1012,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   let recordsMap = null;
   let mapMarkersLayer = null;
   let mapFocusUid = null;
+  let quickMapDraftMarker = null;
+  let quickMapEntryMode = false;
+  let quickNestCreationSource = "quick_menu_entry";
+  let quickNestReturnView = "home";
   const mapPointEditMode = { records: false, working: false };
   const mapPointEditControls = { records: null, working: null };
   const mapUserState = {
@@ -1628,6 +1632,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       recordCompleteness: entry.recordCompleteness || (entry.quickSave ? "basic" : "full"),
       quickSave: !!entry.quickSave,
       quickSaveReason: entry.quickSaveReason || entry.quick_save_reason || "",
+      creationSource: entry.creationSource || entry.creation_source || "",
       habitatDescriptionSkipped: !!(entry.habitatDescriptionSkipped || entry.habitat_description_skipped),
       savedFromStep: entry.savedFromStep ?? entry.saved_from_step ?? null,
       eggMeasurements: normalizeEggMeasurements(entry.eggMeasurements || []),
@@ -1843,6 +1848,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (getCurrentUser() && mustChangePassword() && !["change-password", "login"].includes(name)) name = "change-password";
     if (name === "admin" && !isAdmin()) name = "home";
     if (name !== "map") {
+      removeQuickMapDraftMarker();
+      if (quickMapEntryMode) setQuickMapEntryMode(false);
       if (recordsMap) captureMapViewState(recordsMap, "records");
       setMapFullscreen("records", false);
     }
@@ -2466,7 +2473,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function markRecordAsBasic(record) {
     record.recordCompleteness = "basic";
     record.quickSave = true;
-    record.quickSaveReason = "basic_without_full_control";
+    record.quickSaveReason = record.quickSaveReason || "basic_without_full_control";
     record.habitatDescriptionSkipped = true;
     record.savedFromStep = 2;
     return record;
@@ -2787,8 +2794,19 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (status) status.textContent = "GPS: brak";
   }
 
-  function startQuickNestRecord() {
+  function startQuickNestRecord(options = {}) {
     resetQuickNestForm();
+    quickNestCreationSource = options.source || "quick_menu_entry";
+    quickNestReturnView = options.returnView || "home";
+    if (hasValidCoords(options.lat, options.lon)) {
+      setValue("#quick-lat", roundMapCoordinate(options.lat));
+      setValue("#quick-lon", roundMapCoordinate(options.lon));
+      setValue("#quick-gps-accuracy", options.accuracyM ?? "");
+      const status = $("#quick-gps-status");
+      if (status) status.textContent = options.source === "quick_map_entry"
+        ? "GPS: pozycja wskazana ręcznie na mapie"
+        : "GPS: pozycja ustawiona";
+    }
     showView("quick-nest");
     setTimeout(() => $("#quick-species")?.focus(), 100);
   }
@@ -2826,13 +2844,17 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       docPhotoDone: "unknown",
       nestOneMPhotoDone: "unknown",
       randomPointDone: "unknown",
+      creationSource: quickNestCreationSource,
       nestMicro: { photos: [], substrate: "", coverage: {}, distPlantCm: null, heightPlantCm: null, distObjectCm: null, heightObjectCm: null, slope: "", microrelief: "" },
       randomMicro: { photos: [], azimuthDeg: null, wasRerolled: "unknown", rerollReason: "none", lat: null, lon: null, gpsAccuracyM: null, substrate: "", coverage: {}, distPlantCm: null, heightPlantCm: null, distObjectCm: null, heightObjectCm: null, slope: "", microrelief: "" },
       meso: {},
       qualityControl: {},
-      moduleNotes: { identification: "Szybki wpis — bez pełnej kontroli.", nestMicro: "", randomMicro: "", meso: "" },
+      moduleNotes: { identification: quickNestCreationSource === "quick_map_entry" ? "Szybki wpis z mapy — bez pełnej kontroli." : "Szybki wpis — bez pełnej kontroli.", nestMicro: "", randomMicro: "", meso: "" },
       notes: quickTrim("#quick-notes")
     };
+    if (quickNestCreationSource === "quick_map_entry") {
+      record.quickSaveReason = "quick_map_entry";
+    }
     return markRecordAsBasic(record);
   }
 
@@ -2857,8 +2879,17 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       return;
     }
     if (!saveBasicRecord(record)) return;
+    const returnToMap = record.creationSource === "quick_map_entry";
+    const savedUid = record.uid;
     resetQuickNestForm();
-    showView("records");
+    quickNestCreationSource = "quick_menu_entry";
+    quickNestReturnView = "home";
+    if (returnToMap) {
+      mapFocusUid = savedUid;
+      showView("map");
+    } else {
+      showView("records");
+    }
     alert("Szybki wpis gniazda zapisany jako rekord podstawowy — bez pełnej kontroli.");
   }
 
@@ -4846,6 +4877,93 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     control.addTo(map);
   }
 
+
+
+  function quickNestMapIconHtml() {
+    return `<span class="quick-map-icon" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false"><path d="M10 28c4-8 22-8 28 0 3 4-1 10-14 10S7 32 10 28Z" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="18" cy="27" r="4" fill="currentColor"/><circle cx="26" cy="25" r="4" fill="currentColor"/><path d="M36 8v12M30 14h12" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></span>`;
+  }
+
+  function updateQuickMapEntryControl() {
+    const button = mapPointEditControls.recordsQuickNest?.button;
+    if (!button) return;
+    button.classList.toggle("active", quickMapEntryMode);
+    button.setAttribute("aria-pressed", quickMapEntryMode ? "true" : "false");
+    button.title = quickMapEntryMode
+      ? "Tryb szybkiego gniazda: dotknij mapy, aby wskazać lokalizację"
+      : "Dodaj szybkie gniazdo, ręcznie wskazując miejsce na mapie";
+    button.setAttribute("aria-label", button.title);
+    button.innerHTML = `${quickNestMapIconHtml()}<span>+ szybkie gniazdo</span>`;
+  }
+
+  function setQuickMapEntryMode(enabled) {
+    quickMapEntryMode = !!enabled;
+    updateQuickMapEntryControl();
+    const message = quickMapEntryMode
+      ? "Tryb szybkiego gniazda: dotknij mapy w miejscu gniazda. Marker można przeciągnąć przed otwarciem formularza."
+      : "Tryb szybkiego gniazda wyłączony.";
+    setMapInfo("records", message);
+  }
+
+  function initQuickMapEntryControl(map) {
+    if (!map || mapPointEditControls.recordsQuickNest) return;
+    const control = L.control({ position: "bottomright" });
+    control.onAdd = () => {
+      const wrap = L.DomUtil.create("div", "leaflet-control map-point-edit-control quick-map-entry-control");
+      const button = L.DomUtil.create("button", "map-point-edit-button quick-map-entry-button", wrap);
+      button.type = "button";
+      button.setAttribute("aria-pressed", "false");
+      L.DomEvent.disableClickPropagation(wrap);
+      L.DomEvent.disableScrollPropagation(wrap);
+      L.DomEvent.on(button, "click", (event) => {
+        L.DomEvent.stop(event);
+        setQuickMapEntryMode(!quickMapEntryMode);
+      });
+      mapPointEditControls.recordsQuickNest = { control, button };
+      updateQuickMapEntryControl();
+      return wrap;
+    };
+    control.addTo(map);
+  }
+
+  function removeQuickMapDraftMarker() {
+    if (quickMapDraftMarker && recordsMap?.hasLayer(quickMapDraftMarker)) recordsMap.removeLayer(quickMapDraftMarker);
+    quickMapDraftMarker = null;
+  }
+
+  function quickMapDraftPopupHtml(latLng) {
+    const lat = roundMapCoordinate(latLng.lat);
+    const lon = roundMapCoordinate(latLng.lng);
+    return `<strong>Szybkie gniazdo</strong><br>Wskazana pozycja: ${lat}, ${lon}<br><span class='muted'>Możesz przeciągnąć marker przed zapisem.</span><br><button type='button' data-map-action='quick-nest-form'>Otwórz szybki formularz</button> <button type='button' data-map-action='quick-nest-cancel'>Anuluj</button>`;
+  }
+
+  function placeQuickMapDraftMarker(latLng) {
+    if (!recordsMap || typeof L === "undefined") return;
+    removeQuickMapDraftMarker();
+    const rounded = L.latLng(roundMapCoordinate(latLng.lat), roundMapCoordinate(latLng.lng));
+    const icon = L.divIcon({ className: "map-marker quick-nest-draft", html: `<div class="pin"><span>${quickNestMapIconHtml()}</span></div>` });
+    quickMapDraftMarker = L.marker(rounded, { icon, draggable: true, autoPan: true, zIndexOffset: 1000 }).addTo(recordsMap);
+    quickMapDraftMarker.bindPopup(quickMapDraftPopupHtml(rounded)).openPopup();
+    quickMapDraftMarker.on("dragend", () => {
+      const next = quickMapDraftMarker.getLatLng();
+      quickMapDraftMarker.setPopupContent(quickMapDraftPopupHtml(next)).openPopup();
+      setMapInfo("records", `Pozycja szybkiego gniazda: ${roundMapCoordinate(next.lat)}, ${roundMapCoordinate(next.lng)}. Otwórz formularz z popupu markera.`);
+    });
+    setMapInfo("records", "Marker szybkiego gniazda ustawiony. Przeciągnij go, jeśli trzeba, a potem otwórz szybki formularz.");
+  }
+
+  function openQuickNestFormFromMap() {
+    if (!quickMapDraftMarker) {
+      alert("Najpierw dotknij mapy w miejscu gniazda.");
+      return;
+    }
+    const pos = quickMapDraftMarker.getLatLng();
+    const lat = roundMapCoordinate(pos.lat);
+    const lon = roundMapCoordinate(pos.lng);
+    removeQuickMapDraftMarker();
+    setQuickMapEntryMode(false);
+    startQuickNestRecord({ lat, lon, source: "quick_map_entry", returnView: "map" });
+  }
+
   function roundMapCoordinate(value) {
     return Math.round(Number(value) * 1e6) / 1e6;
   }
@@ -4920,6 +5038,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       initBrysnaSmieckLayer(recordsMap, "records");
       switchToOfflineOrtoIfNeeded(recordsMap, "records");
       initMapPointEditControl(recordsMap, "records");
+      initQuickMapEntryControl(recordsMap);
+      recordsMap.on("click", (event) => {
+        if (!quickMapEntryMode) return;
+        placeQuickMapDraftMarker(event.latlng);
+      });
     }
     if ($("#records-grid-toggle")?.checked) {
       if (!recordsGridLayer) void addGridToMap(recordsMap, "records");
@@ -5194,7 +5317,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     $("#start-new").addEventListener("click", () => { editReturnToReadonly = false; startNewRecord(); });
     $("#start-quick-nest")?.addEventListener("click", () => { editReturnToReadonly = false; startQuickNestRecord(); });
-    $("#quick-nest-back")?.addEventListener("click", () => showView("home"));
+    $("#quick-nest-back")?.addEventListener("click", () => showView(quickNestReturnView === "map" ? "map" : "home"));
     $("#quick-nest-id-generate")?.addEventListener("click", () => setValue("#quick-nest-id", buildQuickNestId()));
     $("#quick-species")?.addEventListener("change", () => {
       const idEl = $("#quick-nest-id");
@@ -5292,6 +5415,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         if (target) target.hidden = true;
         return;
       }
+      if (action === "quick-nest-form") { openQuickNestFormFromMap(); return; }
+      if (action === "quick-nest-cancel") { removeQuickMapDraftMarker(); setQuickMapEntryMode(false); return; }
       if (action === "view") showReadonlyRecord(btn.dataset.uid);
       if (action === "share") void shareRecord(btn.dataset.uid);
       if (action === "edit") editRecord(btn.dataset.uid);
@@ -5505,6 +5630,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       recordCompleteness: entry.recordCompleteness || (entry.quickSave ? "basic" : "full"),
       quickSave: !!entry.quickSave,
       quickSaveReason: entry.quickSaveReason || "",
+      creationSource: entry.creationSource || "",
       habitatDescriptionSkipped: !!entry.habitatDescriptionSkipped,
       savedFromStep: entry.savedFromStep ?? "",
       nestId: entry.nestId,
