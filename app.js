@@ -4441,14 +4441,19 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }
   }
 
+  function resolveMapViewStateKey(mapId) {
+    if (mapId && ortoCacheState[mapId]) return mapId;
+    return mapId === "working" ? "working" : "records";
+  }
+
   function getMapViewState(mapId) {
-    const key = mapId === "working" ? "working" : "records";
+    const key = resolveMapViewStateKey(mapId);
     const state = getMapViewStates()[key];
     return state && typeof state === "object" ? state : {};
   }
 
   function saveMapViewState(mapId, patch = {}) {
-    const key = mapId === "working" ? "working" : "records";
+    const key = resolveMapViewStateKey(mapId);
     const states = getMapViewStates();
     states[key] = {
       ...(states[key] || {}),
@@ -4515,7 +4520,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const speciesToggle = $("#records-species-labels-toggle");
       if (speciesToggle && typeof overlays.speciesLabels === "boolean") speciesToggle.checked = overlays.speciesLabels;
       recordSpeciesLabelsVisible = !!speciesToggle?.checked;
-    } else {
+    } else if (mapId === "working") {
       const notesToggle = $("#working-notes-toggle");
       if (notesToggle && typeof overlays.notes === "boolean") notesToggle.checked = overlays.notes;
       workingNotesVisible = !!notesToggle?.checked;
