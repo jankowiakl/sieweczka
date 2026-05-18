@@ -1179,16 +1179,26 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
 
+
+  function isInvalidDisplayPolishName(value) {
+    const text = String(value || "").trim();
+    return !text || /^\d+$/.test(text);
+  }
+
   function renderSpeciesItemButton(item, action = "choose-other-species") {
     const value = otherSpeciesCanonicalValue(item);
+    const hasInvalidPolishName = isInvalidDisplayPolishName(item.polishName);
+    const primaryLabel = hasInvalidPolishName ? (item.latinName || value) : (item.polishName || value);
     const latin = item.latinName ? `<span class="species-latin">${escapeHtml(item.latinName)}</span>` : "";
     const english = item.englishName ? `<span class="species-english">${escapeHtml(item.englishName)}</span>` : "";
     const code = item.code ? `<small class="species-code">${escapeHtml(item.code)}</small>` : "";
-    const content = `<strong class="species-polish">${escapeHtml(item.polishName || value)}</strong>
+    const reviewNotice = hasInvalidPolishName ? `<small class="species-warning">wymaga poprawy nazwy polskiej</small>` : "";
+    const content = `<strong class="species-polish">${escapeHtml(primaryLabel)}</strong>
       ${latin || english ? `<span class="species-secondary">${latin}${latin && english ? " • " : ""}${english}</span>` : ""}
+      ${reviewNotice}
       ${code}`;
     if (action === "preview-other-species") return `<article class="commission-species-row">${content}</article>`;
-    return `<button type="button" class="other-species-item" data-species-search-action="${escapeHtml(action)}" data-other-species-value="${escapeHtml(value)}" title="Wybierz: ${escapeHtml(item.polishName || value)}">${content}</button>`;
+    return `<button type="button" class="other-species-item" data-species-search-action="${escapeHtml(action)}" data-other-species-value="${escapeHtml(value)}" title="Wybierz: ${escapeHtml(primaryLabel)}">${content}</button>`;
   }
 
   function renderSpeciesSearchResults({ resultsSelector, searchSelector, action = "choose-other-species" }) {
