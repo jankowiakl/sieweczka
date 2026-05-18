@@ -184,10 +184,23 @@
 
     <section id="commission-species-screen" class="screen card" hidden>
       <div class="screen-head"><button type="button" id="commission-species-back">← Menu</button><h2>Katalog gatunków Komisji</h2></div>
-      <p class="lead">Wpisz fragment nazwy, aby zawęzić wyniki. Polska nazwa jest główną etykietą wyniku.</p>
+      <p class="lead">Panel administratora katalogu gatunków Komisji Faunistycznej.</p>
       <p id="commission-species-status" class="muted"></p>
+      <div id="commission-species-admin-tools" hidden>
+        <div id="commission-species-meta" class="commission-species-meta"></div>
+        <p id="commission-species-counter" class="muted"></p>
+      </div>
       <label>Szukaj gatunku
         <input id="commission-species-search" type="search" autocomplete="off" placeholder="Polska, łacińska, angielska nazwa, kod lub legacy" />
+      </label>
+      <label id="commission-species-filter-wrap">Filtr widoku
+        <select id="commission-species-filter">
+          <option value="all">Wszystkie</option>
+          <option value="active">Aktywne</option>
+          <option value="inactive">Nieaktywne</option>
+          <option value="needs-review">Wymagające weryfikacji</option>
+          <option value="legacy">Z legacy values</option>
+        </select>
       </label>
       <div id="commission-species-list" class="commission-species-list" aria-live="polite"></div>
     </section>

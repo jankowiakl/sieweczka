@@ -3217,6 +3217,18 @@ body {
   color: var(--text, #111827);
 }
 
+.species-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(13, minmax(8rem, 1fr));
+  gap: .35rem .65rem;
+  align-items: start;
+  font-size: .85rem;
+}
+
+.species-admin-grid span {
+  overflow-wrap: anywhere;
+}
+
 .other-species-item {
   cursor: pointer;
   min-height: 3.25rem;
