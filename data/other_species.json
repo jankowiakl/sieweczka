@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "primaryName": "Komisja Faunistyczna PTZool — lista awifauny krajowej",
+    "primaryUrl": "https://komisjafaunistyczna.pl/lista/",
+    "lastFetchedAt": null,
+    "lastSuccessfulFetchAt": null,
+    "updateMethod": "tools/update-other-species-from-kf.mjs",
+    "notes": [
+      "Ten plik ma być aktualizowany z oficjalnej strony Komisji Faunistycznej, a nie uzupełniany z pamięci.",
+      "Wpis sieweczki morskiej jest minimalnym seedem zgodności ze starymi rekordami aplikacji do czasu pierwszej automatycznej aktualizacji pełnej listy ze źródła."
+    ]
+  },
+  "species": [
+    {
+      "code": "CHAALE",
+      "polishName": "Sieweczka morska",
+      "englishName": "Kentish Plover",
+      "latinName": "Charadrius alexandrinus",
+      "status": "",
+      "legacyValues": [
+        "custom:sieweczka-morska",
+        "sieweczka-morska",
+        "Sieweczka morska"
+      ],
+      "needsSourceVerification": true
+    }
+  ]
+}

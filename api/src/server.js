@@ -9,6 +9,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const db = require('./db');
+const speciesCatalog = require('./speciesCatalog');
 
 const app = express();
 app.use(express.json({ limit: '5mb' }));
@@ -35,6 +36,50 @@ const uploadPhoto = multer({
 });
 
 const userPublicFields = 'id,email,name,role,is_active,created_at,updated_at,last_login_at,invite_sent_at,must_change_password';
+
+async function runStartupMigrations() {
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  const sql = fs.readFileSync(schemaPath, 'utf8');
+  try {
+    await db.query(sql);
+    console.log(`Database schema/migrations applied from ${schemaPath}`);
+  } catch (error) {
+    console.error(`Database schema/migration failed from ${schemaPath}:`, error);
+    throw error;
+  }
+}
+
+function speciesMetaToApi(row, needsReviewCount = 0, aliasesCount = 0, legacyValuesCount = 0) {
+  return {
+    source: row?.source || speciesCatalog.SOURCE,
+    sourceUrl: row?.source_url || speciesCatalog.SOURCE_URL,
+    lastFetchAttemptAt: row?.last_fetch_attempt_at || null,
+    lastSuccessfulFetchAt: row?.last_successful_fetch_at || null,
+    speciesCount: row?.species_count == null ? 0 : Number(row.species_count),
+    parserVersion: row?.parser_version || speciesCatalog.PARSER_VERSION,
+    changes: Array.isArray(row?.changes) ? row.changes : [],
+    lastError: row?.last_error || null,
+    needsReviewCount: Number(needsReviewCount || 0),
+    aliasesCount: Number(aliasesCount || 0),
+    legacyValuesCount: Number(legacyValuesCount || 0),
+    updatedBy: row?.updated_by || null,
+    updatedAt: row?.updated_at || null
+  };
+}
+
+async function getSpeciesMeta() {
+  const meta = (await db.query("SELECT * FROM species_catalog_meta WHERE id='kf'")).rows[0] || null;
+  const counts = (await db.query(`SELECT
+    count(*) FILTER (WHERE needs_review = true)::int AS needs_review_count,
+    COALESCE(sum(jsonb_array_length(aliases)),0)::int AS aliases_count,
+    COALESCE(sum(jsonb_array_length(legacy_values)),0)::int AS legacy_values_count,
+    count(*) FILTER (WHERE is_active = true)::int AS active_count
+    FROM species_catalog`)).rows[0] || {};
+  const api = speciesMetaToApi(meta, counts.needs_review_count, counts.aliases_count, counts.legacy_values_count);
+  if (!api.speciesCount) api.speciesCount = Number(counts.active_count || 0);
+  return api;
+}
+
 
 function randomId(prefix) {
   return `${prefix}_${crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`}`;
@@ -510,6 +555,84 @@ app.post('/api/users/:id/activate', authenticateUser, requireRole('admin'), asyn
   res.json({ ok: true });
 });
 
+
+app.get('/api/species', authenticateUser, async (req, res, next) => {
+  try {
+    const includeInactive = req.user?.role === 'admin' && String(req.query.includeInactive || '') === '1';
+    const q = await db.query(`SELECT * FROM species_catalog ${includeInactive ? '' : 'WHERE is_active = true'} ORDER BY polish_name ASC`);
+    const meta = await getSpeciesMeta();
+    res.json({
+      meta: {
+        source: meta.source,
+        sourceUrl: meta.sourceUrl,
+        lastSuccessfulFetchAt: meta.lastSuccessfulFetchAt,
+        speciesCount: q.rows.length
+      },
+      species: q.rows.map(speciesCatalog.rowToApi)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/species/meta', authenticateUser, requireRole('admin'), async (_req, res, next) => {
+  try {
+    res.json(await getSpeciesMeta());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/species/diagnostics', authenticateUser, requireRole('admin'), async (_req, res, next) => {
+  try {
+    const countsQ = await db.query(`SELECT
+      COUNT(*)::int AS all,
+      COUNT(*) FILTER (WHERE is_active = true)::int AS active,
+      COUNT(*) FILTER (WHERE polish_name IS NULL OR btrim(polish_name) = '')::int AS "missingPolishName",
+      COUNT(*) FILTER (WHERE polish_name ~ '^[0-9]+$')::int AS "numericPolishName",
+      COUNT(*) FILTER (WHERE polish_name ~* 'wymaga poprawy')::int AS "needsPolishNameFix"
+    FROM species_catalog`);
+    const problemsQ = await db.query(`SELECT id, polish_name, latin_name, source_payload, is_active
+      FROM species_catalog
+      WHERE is_active = true
+        AND (
+          polish_name IS NULL
+          OR btrim(polish_name) = ''
+          OR polish_name ~ '^[0-9]+$'
+          OR polish_name ~* 'wymaga poprawy'
+        )
+      ORDER BY latin_name ASC
+      LIMIT 25`);
+    const keySpecies = ['Calidris canutus', 'Vanellus gregarius', 'Vanellus leucurus', 'Anarhynchus alexandrinus', 'Charadrius alexandrinus'];
+    const keyQ = await db.query(`SELECT id, polish_name, latin_name, source_payload, legacy_values, is_active
+      FROM species_catalog
+      WHERE latin_name = ANY($1::text[])
+         OR legacy_values ? 'custom:sieweczka-morska'`, [keySpecies]);
+    const keyMap = {};
+    keyQ.rows.forEach((row) => {
+      if (row.latin_name) keyMap[row.latin_name] = speciesCatalog.rowToApi(row);
+    });
+    res.json({
+      ok: true,
+      counts: countsQ.rows[0],
+      problemExamples: problemsQ.rows.map((row) => speciesCatalog.rowToApi(row)),
+      keySpecies: keyMap
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/species/refresh', authenticateUser, requireRole('admin'), async (req, res, next) => {
+  try {
+    const result = await speciesCatalog.refreshSpeciesCatalog(db, req.user);
+    await audit(req.user, 'species_catalog_refresh', 'species_catalog', 'kf', result);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/records', authenticateUser, async (req, res) => {
   const after = req.query.updated_after || '1970-01-01T00:00:00Z';
   const q = await db.query('SELECT payload FROM records WHERE server_updated_at > $1 ORDER BY server_updated_at ASC', [after]);
@@ -703,4 +826,6 @@ app.use((error, _req, res, _next) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`API listening on ${port}`));
+runStartupMigrations()
+  .then(() => app.listen(port, () => console.log(`API listening on ${port}`)))
+  .catch(() => process.exit(1));

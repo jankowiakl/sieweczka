@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=2026.05.18-quick-nest-map-entry" />
+  <link rel="stylesheet" href="styles.css?v=2026.05.18-commission-species" />
 </head>
 <body>
   <noscript>
@@ -117,7 +117,7 @@
               <input id="quick-obs-time" type="time" />
             </label>
           </div>
-          <label>Sektor / część wyspy *
+          <label>Sektor / część wyspy
             <input id="quick-sector" type="text" list="sector-list" autocomplete="off" />
           </label>
           <label>Gatunek *
@@ -129,8 +129,17 @@
               <option value="tringa-totanus">Krwawodziób</option>
               <option value="sternula-albifrons">Rybitwa białoczelna</option>
               <option value="chroicocephalus-ridibundus">Śmieszka</option>
+              <option value="custom:other">Inny gatunek z katalogu Komisji</option>
             </select>
           </label>
+          <div id="quick-other-species-picker" class="other-species-picker" hidden>
+            <label>Wyszukaj gatunek z listy Komisji
+              <input id="quick-other-species-search" type="search" autocomplete="off" placeholder="Nazwa polska, łacińska, angielska, kod lub legacy" aria-label="Wyszukaj gatunek z listy Komisji dla szybkiego wpisu" />
+            </label>
+            <p id="quick-other-species-selected" class="muted">Nie wybrano gatunku z listy Komisji.</p>
+            <input id="quick-species-catalog-value" type="hidden" value="" />
+            <div id="quick-other-species-results" class="other-species-results" aria-live="polite"></div>
+          </div>
           <label>Liczba jaj
             <input id="quick-egg-count" type="number" min="0" step="1" inputmode="numeric" />
           </label>
@@ -171,6 +180,32 @@
         <button id="export-kml" type="button">Eksport KML</button>
       </div>
       <p id="export-screen-status" class="muted"></p>
+    </section>
+
+    <section id="commission-species-screen" class="screen card" hidden>
+      <div class="screen-head"><button type="button" id="commission-species-back">← Menu</button><h2>Katalog gatunków Komisji</h2></div>
+      <p class="lead">Panel administratora katalogu gatunków Komisji Faunistycznej.</p>
+      <p id="commission-species-status" class="muted"></p>
+      <div id="commission-species-admin-tools" hidden>
+        <div class="row-actions">
+          <button id="commission-species-clear-cache-admin" type="button">Wyczyść lokalny cache gatunków</button>
+        </div>
+        <div id="commission-species-meta" class="commission-species-meta"></div>
+        <p id="commission-species-counter" class="muted"></p>
+      </div>
+      <label>Szukaj gatunku
+        <input id="commission-species-search" type="search" autocomplete="off" placeholder="Polska, łacińska, angielska nazwa, kod lub legacy" />
+      </label>
+      <label id="commission-species-filter-wrap">Filtr widoku
+        <select id="commission-species-filter">
+          <option value="all">Wszystkie</option>
+          <option value="active">Aktywne</option>
+          <option value="inactive">Nieaktywne</option>
+          <option value="needs-review">Wymagające weryfikacji</option>
+          <option value="legacy">Z legacy values</option>
+        </select>
+      </label>
+      <div id="commission-species-list" class="commission-species-list" aria-live="polite"></div>
     </section>
 
     <section id="user-screen" class="screen card" hidden>
@@ -308,6 +343,15 @@
       <p class="muted">Dane użytkowników są pobierane bezpośrednio z serwera.</p>
       <button id="admin-refresh-users" type="button">Odśwież użytkowników</button>
       <div id="admin-users-list" class="entries-list"></div>
+      <section id="admin-species-catalog-section" class="card">
+        <h3>Katalog gatunków Komisji</h3>
+        <p class="muted">Katalog jest przechowywany w istniejącej bazie PostgreSQL aplikacji i odświeżany wyłącznie przez backend.</p>
+        <div class="row-actions">
+          <button id="admin-open-species-catalog" type="button">Podgląd katalogu</button>
+          <button id="commission-species-refresh-admin" type="button" class="primary">Odśwież listę z Komisji Faunistycznej</button>
+        </div>
+        <p id="admin-species-catalog-status" class="muted"></p>
+      </section>
       <section id="admin-deleted-records-section" class="card">
         <h3>Ukryte wpisy</h3>
         <p class="muted">Rekordy oznaczone jako ukryte/usunięte miękko pozostają w bazie i mogą zostać przywrócone przez administratora.</p>
@@ -409,6 +453,52 @@
           <button id="records-measure-clear" type="button">Wyczyść</button>
           <button id="records-measure-finish" type="button">Zakończ</button>
           <strong id="records-measure-result" class="measure-result">Pomiar wyłączony</strong>
+        </div>
+      </details>
+    </section>
+
+
+    <section id="meso-measure-screen" class="screen card" hidden>
+      <div class="screen-head"><button type="button" id="meso-measure-back">← Wróć do formularza</button><h2>Mapka pomiarowa mezohabitatu</h2></div>
+      <p id="meso-measure-target-label" class="muted">Pole docelowe: —</p>
+      <div class="map-primary-actions">
+        <label class="inline-field map-base-layer-field">Podkład mapy
+          <select id="meso-base-layer">
+            <option value="Ortofotomapa Geoportal">Ortofotomapa Geoportal</option>
+            <option value="Ortofotomapa offline">Ortofotomapa offline</option>
+            <option value="OpenStreetMap">OpenStreetMap</option>
+            <option value="Dominik Layer">Dominik Layer</option>
+            <option value="Dominik Layer offline">Dominik Layer offline</option>
+            <option value="Esri Imagery + Labels">Esri Imagery + Labels</option>
+            <option value="ArcGIS Terrain with Labels">ArcGIS Terrain with Labels</option>
+            <option value="Esri World Imagery">Esri World Imagery</option>
+            <option value="OSM Standard">OSM Standard</option>
+            <option value="OSM DE">OSM DE</option>
+            <option value="CARTO Positron">CARTO Positron</option>
+            <option value="CARTO Voyager">CARTO Voyager</option>
+            <option value="OpenTopoMap">OpenTopoMap</option>
+          </select>
+        </label>
+      </div>
+      <div id="meso-measure-map" class="map-canvas"></div>
+      <p id="meso-orto-cache-status" class="map-offline-status info" hidden></p>
+      <details id="meso-measure-panel" class="map-measure-panel" open>
+        <summary>Pomiar odległości i powierzchni</summary>
+        <div id="meso-measure-toolbar" class="measure-toolbar" aria-label="Narzędzia pomiarowe mapki mezohabitatu">
+          <button id="meso-center-user" type="button">Pokaż moją pozycję</button>
+          <span id="meso-user-status" class="muted">Twoja pozycja: oczekiwanie…</span>
+          <label>Pomiar
+            <select id="meso-measure-mode">
+              <option value="off">Wyłączony</option>
+              <option value="line">Linijka</option>
+              <option value="polygon">Poligon</option>
+            </select>
+          </label>
+          <button id="meso-measure-undo" type="button">Cofnij punkt</button>
+          <button id="meso-measure-clear" type="button">Wyczyść</button>
+          <button id="meso-measure-finish" type="button">Zakończ</button>
+          <button id="meso-measure-apply" type="button" class="primary">Wstaw do pola</button>
+          <strong id="meso-measure-result" class="measure-result">Pomiar wyłączony</strong>
         </div>
       </details>
     </section>
@@ -580,7 +670,7 @@
               </label>
             </div>
 
-            <label>Sektor / część wyspy *
+            <label>Sektor / część wyspy
               <input id="sector" type="text" list="sector-list" autocomplete="off" />
             </label>
             <datalist id="observer-list"></datalist>
@@ -601,6 +691,13 @@
               <input id="species" type="hidden" value="unknown" />
               <input id="species-custom-input" type="text" list="species-custom-list" placeholder="Wpisz nazwę własnego gatunku" hidden />
               <datalist id="species-custom-list"></datalist>
+              <div id="other-species-picker" class="other-species-picker" hidden>
+                <label>Wyszukaj gatunek z listy Komisji
+                  <input id="other-species-search" type="search" autocomplete="off" placeholder="Nazwa polska, łacińska, angielska, kod lub legacy" aria-label="Wyszukaj gatunek z listy Komisji" />
+                </label>
+                <p id="other-species-selected" class="muted">Nie wybrano gatunku z listy Komisji.</p>
+                <div id="other-species-results" class="other-species-results" aria-live="polite"></div>
+              </div>
             </div>
 
             <div class="field-block">
@@ -908,22 +1005,40 @@
 
             <div class="row-2">
               <label>Odległość do najbliższej linii wody [m]
-                <input id="dist-water" type="number" min="0" step="0.1" inputmode="decimal" />
+                <div class="inline-field measure-field-inline">
+                  <input id="dist-water" type="number" min="0" step="0.1" inputmode="decimal" />
+                  <button type="button" class="measure-map-button" data-measure-target="#dist-water" title="Zmierz na mapie" aria-label="Zmierz na mapie dla odległości do najbliższej linii wody">
+                    <span aria-hidden="true">🗺️</span>
+                  </button>
+                </div>
               </label>
               <label>Odległość do krawędzi zwartej roślinności [m]
-                <input id="dist-veg-edge" type="number" min="0" step="0.1" inputmode="decimal" />
+                <div class="inline-field measure-field-inline">
+                  <input id="dist-veg-edge" type="number" min="0" step="0.1" inputmode="decimal" />
+                  <button type="button" class="measure-map-button" data-measure-target="#dist-veg-edge" title="Zmierz na mapie" aria-label="Zmierz na mapie dla odległości do krawędzi zwartej roślinności">
+                    <span aria-hidden="true">🗺️</span>
+                  </button>
+                </div>
               </label>
               <label>Odległość do najbliższego wyższego obiektu [m]
-                <input id="dist-vertical-structure" type="number" min="0" step="0.1" inputmode="decimal" />
+                <div class="inline-field measure-field-inline">
+                  <input id="dist-vertical-structure" type="number" min="0" step="0.1" inputmode="decimal" />
+                  <button type="button" class="measure-map-button" data-measure-target="#dist-vertical-structure" title="Zmierz na mapie" aria-label="Zmierz na mapie dla odległości do najbliższego wyższego obiektu">
+                    <span aria-hidden="true">🗺️</span>
+                  </button>
+                </div>
               </label>
               <label>Najbliższe gniazdo s. obrożnej [m]
                 <input id="dist-nearest-hiaticula" type="number" min="0" step="0.1" inputmode="decimal" />
-                <small class="hint">Odległość może być wyliczona automatycznie z zapisanych gniazd tego samego gatunku.</small>
+                <small id="dist-nearest-hiaticula-meta" class="hint">Odległość do najbliższej sieweczki obrożnej: brak danych.</small>
               </label>
               <label>Najbliższe gniazdo s. rzecznej [m]
                 <input id="dist-nearest-dubius" type="number" min="0" step="0.1" inputmode="decimal" />
-                <small class="hint">Odległość może być wyliczona automatycznie z zapisanych gniazd tego samego gatunku.</small>
+                <small id="dist-nearest-dubius-meta" class="hint">Odległość do najbliższej sieweczki rzecznej: brak danych.</small>
               </label>
+              <div class="inline-field">
+                <button id="recalculate-plover-distances" type="button">Przelicz odległości</button>
+              </div>
               <label>Duże obiekty w 15 m?
                 <select id="meso-big-objects">
                   <option value="unknown">Nieokreślone</option>

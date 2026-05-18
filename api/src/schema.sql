@@ -100,3 +100,51 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+
+CREATE TABLE IF NOT EXISTS species_catalog (
+  id TEXT PRIMARY KEY,
+  code TEXT,
+  polish_name TEXT NOT NULL,
+  latin_name TEXT,
+  english_name TEXT,
+  status TEXT,
+  aliases JSONB NOT NULL DEFAULT '[]'::jsonb,
+  legacy_values JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source TEXT NOT NULL DEFAULT 'Komisja Faunistyczna PTZool',
+  source_url TEXT NOT NULL DEFAULT 'https://komisjafaunistyczna.pl/lista/',
+  source_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  needs_review BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_species_catalog_polish_name ON species_catalog(polish_name);
+CREATE INDEX IF NOT EXISTS idx_species_catalog_latin_name ON species_catalog(latin_name);
+CREATE INDEX IF NOT EXISTS idx_species_catalog_code ON species_catalog(code);
+CREATE INDEX IF NOT EXISTS idx_species_catalog_aliases ON species_catalog USING GIN(aliases);
+CREATE INDEX IF NOT EXISTS idx_species_catalog_legacy_values ON species_catalog USING GIN(legacy_values);
+
+CREATE TABLE IF NOT EXISTS species_catalog_meta (
+  id TEXT PRIMARY KEY DEFAULT 'kf',
+  source TEXT NOT NULL DEFAULT 'Komisja Faunistyczna PTZool',
+  source_url TEXT NOT NULL DEFAULT 'https://komisjafaunistyczna.pl/lista/',
+  last_fetch_attempt_at TIMESTAMPTZ,
+  last_successful_fetch_at TIMESTAMPTZ,
+  species_count INTEGER NOT NULL DEFAULT 0,
+  parser_version TEXT,
+  changes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  last_error TEXT,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO species_catalog (id, code, polish_name, latin_name, english_name, status, aliases, legacy_values, source_payload)
+SELECT 'kf-charadrius-alexandrinus', 'CHAALE', 'Sieweczka morska', 'Charadrius alexandrinus', 'Kentish Plover', '', '[]'::jsonb,
+       '["custom:sieweczka-morska", "sieweczka-morska", "Sieweczka morska"]'::jsonb,
+       '{"seed": true}'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM species_catalog WHERE id = 'kf-charadrius-alexandrinus')
+  AND NOT EXISTS (SELECT 1 FROM species_catalog WHERE latin_name = 'Charadrius alexandrinus');
+
+INSERT INTO species_catalog_meta (id, species_count, parser_version)
+VALUES ('kf', (SELECT count(*)::int FROM species_catalog WHERE is_active = true), 'seed-v1')
+ON CONFLICT (id) DO NOTHING;

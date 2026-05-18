@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-05-18-quick-nest-egg-weight";
+const CACHE_NAME = "sieweczka-app-v2026-05-18-commission-species";
 const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
 const DOMINIK_OFFLINE_CACHE = "sieweczka-dominik-view-cache-v1";
 const GEOPORTAL_ORTO_WMS_HOST = "mapy.geoportal.gov.pl";
@@ -15,6 +15,7 @@ const APP_SHELL = [
   "./manifest.webmanifest",
   "./data/points_brysna_smieck.geojson",
   "./data/grid_vanvan_wgs84.geojson",
+  "./data/other_species.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
