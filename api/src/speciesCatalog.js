@@ -1,6 +1,8 @@
+const cheerio = require('cheerio');
+
 const SOURCE = 'Komisja Faunistyczna PTZool';
 const SOURCE_URL = 'https://komisjafaunistyczna.pl/lista/';
-const PARSER_VERSION = 'kf-text-line-parser-v2';
+const PARSER_VERSION = 'kf-html-table-header-parser-v3';
 const MIN_SPECIES_COUNT = 100;
 const KENTISH_ID = 'kf-charadrius-alexandrinus';
 
@@ -40,17 +42,34 @@ function normalizeLine(value) {
     .trim();
 }
 
-function htmlToSpeciesLines(html) {
-  const text = String(html || '')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<\/?(tr|p|div|li|br)\b[^>]*>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/\r/g, '\n');
+function normalizeCellText(value) {
+  return String(value || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
-  return text.split(/\n+/).map(normalizeLine).filter((line) => /^\d+\s+/.test(line));
+function normalizeHeader(value) {
+  return normalizeSearchText(normalizeCellText(value));
+}
+
+function extractTables($) {
+  return $('table').toArray();
+}
+
+function getTableRows($, table) {
+  return $(table).find('tr').toArray().map((tr) => $(tr).find('th,td').toArray().map((cell) => normalizeCellText($(cell).text()))).filter((cells) => cells.some(Boolean));
+}
+
+function findHeaderRow(rows) {
+  for (let i = 0; i < rows.length; i += 1) {
+    const headers = rows[i].map(normalizeHeader);
+    const hasScientific = headers.some((header) => header.includes('nazwa naukowa'));
+    const hasPolish = headers.some((header) => header.includes('nazwa polska'));
+    if (hasScientific && hasPolish) return { index: i, headers };
+  }
+  return null;
+}
+
+function findColumnIndex(headers, variants) {
+  return headers.findIndex((header) => variants.some((variant) => header.includes(variant)));
 }
 
 function isValidLatinName(latinName) {
@@ -68,39 +87,13 @@ function isInvalidPolishName(polishName, latinName, lp) {
   if (lp && value === String(lp).trim()) return true;
   if (latinName && normalizeSearchText(value) === normalizeSearchText(latinName)) return true;
   if (isValidLatinName(value)) return true;
+  if (/wymaga poprawy/i.test(value)) return true;
+  if (/needs review/i.test(value)) return true;
   return false;
 }
 
 function parseSpeciesLine(line) {
-  const normalized = normalizeLine(line);
-  const match = normalized.match(/^(\d+)\s+(.+)$/);
-  if (!match) return null;
-  const lp = match[1];
-  const tokens = match[2].split(/\s+/).filter(Boolean);
-  const statusTokens = [];
-  while (tokens.length && isStatusToken(tokens[tokens.length - 1])) statusTokens.unshift(tokens.pop());
-  if (tokens.length < 3) return null;
-
-  let latinTokens;
-  let polishTokens;
-  if (tokens.length >= 5 && tokens[2] === 'forma') {
-    latinTokens = tokens.slice(0, 4);
-    polishTokens = tokens.slice(4);
-  } else {
-    latinTokens = tokens.slice(0, 2);
-    polishTokens = tokens.slice(2);
-  }
-  const latinName = latinTokens.join(' ');
-  const polishName = polishTokens.join(' ');
-  const status = statusTokens.join(' ');
-  const category = statusTokens[0] || '';
-  if (!isValidLatinName(latinName)) return null;
-  if (isInvalidPolishName(polishName, latinName, lp)) {
-    throw new Error(`Nie udało się poprawnie odczytać polskiej nazwy dla lp. ${lp}, ${latinName}`);
-  }
-  const item = { id: stableId({ latinName, polishName }), code: makeCode(latinName, polishName), polishName, latinName, englishName: '', category, status, aliases: [], legacyValues: [], needsReview: false };
-  item.sourcePayload = { lp, category, status, parser: PARSER_VERSION, rawLine: normalized };
-  return item;
+  return null;
 }
 
 function validateParsedSpecies(species) {
@@ -108,15 +101,54 @@ function validateParsedSpecies(species) {
   if (species.length < MIN_SPECIES_COUNT) throw new Error(`Parser znalazł tylko ${species.length} pozycji; katalog nie został nadpisany.`);
   const invalid = species.filter((item) => isInvalidPolishName(item.polishName, item.latinName, item.sourcePayload?.lp));
   if (invalid.length) throw new Error(`Parser listy Komisji zwrócił ${invalid.length} gatunków bez poprawnej polskiej nazwy. Przykład: ${invalid[0].latinName || invalid[0].id}`);
+  const numericPolishNames = species.filter((item) => isNumericOnly(item.polishName));
+  if (numericPolishNames.length) throw new Error(`Parser błędnie zapisał numery jako polskie nazwy. Przykład: ${numericPolishNames[0].latinName} -> ${numericPolishNames[0].polishName}`);
 }
 
 function parseSpeciesFromHtml(html, { validateMinimum = true } = {}) {
-  const lines = htmlToSpeciesLines(html);
+  const $ = cheerio.load(String(html || ''));
+  const tables = extractTables($);
   const parsed = [];
-  for (const line of lines) {
-    const item = parseSpeciesLine(line);
-    if (item) parsed.push(item);
+  let selected = null;
+
+  for (const table of tables) {
+    const rows = getTableRows($, table);
+    const header = findHeaderRow(rows);
+    if (!header) continue;
+
+    const lpIndex = findColumnIndex(header.headers, ['lp', 'l p']);
+    const latinIndex = findColumnIndex(header.headers, ['nazwa naukowa']);
+    const polishIndex = findColumnIndex(header.headers, ['nazwa polska']);
+    const categoryIndex = findColumnIndex(header.headers, ['kategoria']);
+    const statusIndex = findColumnIndex(header.headers, ['status']);
+
+    if (latinIndex >= 0 && polishIndex >= 0) {
+      selected = { rows, headerIndex: header.index, lpIndex, latinIndex, polishIndex, categoryIndex, statusIndex };
+      break;
+    }
   }
+
+  if (!selected) throw new Error("Nie znaleziono tabeli Komisji z kolumnami 'nazwa naukowa' i 'nazwa polska'.");
+
+  for (const cells of selected.rows.slice(selected.headerIndex + 1)) {
+    const lp = selected.lpIndex >= 0 ? normalizeCellText(cells[selected.lpIndex]) : '';
+    const latinName = normalizeCellText(cells[selected.latinIndex]);
+    const polishName = normalizeCellText(cells[selected.polishIndex]);
+    const category = selected.categoryIndex >= 0 ? normalizeCellText(cells[selected.categoryIndex]) : '';
+    const status = selected.statusIndex >= 0 ? normalizeCellText(cells[selected.statusIndex]) : '';
+
+    if (!latinName && !polishName) continue;
+    if (!isValidLatinName(latinName)) continue;
+
+    if (isInvalidPolishName(polishName, latinName, lp)) {
+      throw new Error(`Błędna polska nazwa w tabeli Komisji: lp=${lp}, latinName=${latinName}, polishName=${polishName}`);
+    }
+
+    const item = { id: stableId({ latinName, polishName }), code: makeCode(latinName, polishName), polishName, latinName, englishName: '', category, status, aliases: [], legacyValues: [], needsReview: false };
+    item.sourcePayload = { lp, category, status, parser: PARSER_VERSION };
+    parsed.push(item);
+  }
+
   const unique = new Map();
   for (const item of parsed) {
     const key = item.id || `${item.latinName}|${item.polishName}`.toLowerCase();
@@ -126,6 +158,7 @@ function parseSpeciesFromHtml(html, { validateMinimum = true } = {}) {
   if (validateMinimum) validateParsedSpecies(species);
   return species;
 }
+
 
 function ensureKentishLegacy(species) {
   const list = Array.isArray(species) ? species : [];
