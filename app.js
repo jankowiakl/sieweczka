@@ -5,17 +5,22 @@
   const LEGACY_STORAGE_KEY = "sieweczka-field-data-v2";
   const DRAFT_KEY = "sieweczka-field-draft-v3";
   const CUSTOM_SPECIES_KEY = "sieweczka-custom-species-v1";
+  const OTHER_SPECIES_CACHE_KEY = "sieweczka-other-species-cache-v1";
   const OBSERVERS_KEY = "sieweczka-observers-v1";
   const SECTORS_KEY = "sieweczka-sectors-v1";
   const WORKING_NESTS_KEY = "sieweczka-working-nests-v1";
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.18-quick-nest-map-entry";
+  const APP_VERSION = "2026.05.18-commission-species";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
   const PHOTO_MEASURE_CALIBRATION_KEY = "sieweczka-photo-measure-calibrations-v1";
+  const OTHER_SPECIES_SOURCE_URL = "https://komisjafaunistyczna.pl/lista/";
+  const OTHER_SPECIES_DATA_URL = "data/other_species.json";
+  const OTHER_SPECIES_MIN_REFRESH_COUNT = 100;
+  const OTHER_SPECIES_PARSER_VERSION = "app-kf-table-parser-v1";
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
   const SYNC_STATE_KEY = "sieweczka-sync-state-v1";
@@ -514,6 +519,7 @@
         <button type="button" data-menu-action="sync">Synchronizacja</button>
         ${canExport ? `<button type="button" data-menu-action="export">Eksport</button>` : ""}
         ${isAdmin() ? `<button type="button" data-menu-action="admin">Administrator</button>` : ""}
+        <button type="button" data-menu-action="commission-species">Lista gatunków Komisja</button>
         <button type="button" data-menu-action="settings">Ustawienia</button>
         <button type="button" data-menu-action="install">Zainstaluj aplikację</button>
         <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
@@ -539,7 +545,7 @@
       const action = actionButton?.dataset.menuAction;
       if (!action) return;
       if (action === "close") { document.removeEventListener("keydown", onKey); closeAppMenu(); return; }
-      const needsFormExit = ["home", "settings", "admin", "export", "install"].includes(action);
+      const needsFormExit = ["home", "settings", "admin", "export", "install", "commission-species"].includes(action);
       if (needsFormExit && !$("#form-screen")?.hidden) {
         const leftForm = await goHomeFromMaybeForm();
         if (!leftForm) return;
@@ -570,6 +576,11 @@
         closeForNavigation();
         exportPanelReturnToMenu = true;
         showView("export");
+      }
+      if (action === "commission-species") {
+        closeForNavigation();
+        showView("commission-species");
+        renderOtherSpeciesPanel();
       }
       if (action === "install") { closeForNavigation(); userPanelReturnToMenu = true; renderUserPanel(); showView("user"); await installApp(); }
       if (action === "refresh") $("#refresh-app-version")?.click();
@@ -627,7 +638,7 @@
       <article class="entry-card">
         <div class="entry-main">
           <h3>${escapeHtml(record.nestId || "(bez ID)")}</h3>
-          <p>${escapeHtml(LABELS.species?.[record.species] || record.species || "—")} • ${escapeHtml(record.obsDate || "—")} • obserwator: ${escapeHtml(record.observer || "—")}</p>
+          <p>${escapeHtml(speciesLabel(record.species) || "—")} • ${escapeHtml(record.obsDate || "—")} • obserwator: ${escapeHtml(record.observer || "—")}</p>
           <p>Sektor: ${escapeHtml(record.sector || record.payload?.sector || "—")} • UID: ${escapeHtml(record.uid || "—")}</p>
           <p class="muted">Ukryto: ${escapeHtml(record.deletedAt || "—")} • przez: ${escapeHtml(record.deletedBy || "—")}</p>
           <p class="muted">Powód: ${escapeHtml(record.deleteReason || "—")}</p>
@@ -902,6 +913,28 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     unknown: "SN",
   };
 
+  const OTHER_SPECIES_FALLBACK = {
+    schemaVersion: 1,
+    source: {
+      primaryName: "Komisja Faunistyczna PTZool — lista awifauny krajowej",
+      primaryUrl: OTHER_SPECIES_SOURCE_URL,
+      lastFetchedAt: null,
+      lastSuccessfulFetchAt: null,
+      parserVersion: OTHER_SPECIES_PARSER_VERSION,
+      fallback: true
+    },
+    species: [{
+      code: "CHAALE",
+      polishName: "Sieweczka morska",
+      englishName: "Kentish Plover",
+      latinName: "Charadrius alexandrinus",
+      status: "",
+      legacyValues: ["custom:sieweczka-morska", "sieweczka-morska", "Sieweczka morska"],
+      needsSourceVerification: true
+    }]
+  };
+  let otherSpeciesState = normalizeOtherSpeciesPayload(OTHER_SPECIES_FALLBACK, "fallback");
+
   const LABELS = {
     species: {
       "charadrius-hiaticula": "Sieweczka obrożna",
@@ -948,6 +981,315 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     qcReaction: { weak: "Słaba", moderate: "Umiarkowana", strong: "Silna" },
     qcTime: { lt1: "< 1 min", "1to3": "1–3 min", gt3: "> 3 min" },
   };
+
+
+  function normalizeSearchText(text) {
+    return String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ł/g, "l").replace(/[^a-z0-9]+/g, " ").trim();
+  }
+
+  function otherSpeciesCanonicalValue(item = {}) {
+    return String(item.polishName || item.latinName || item.code || "").trim();
+  }
+
+  function ensureKentishLegacy(species = []) {
+    const list = Array.isArray(species) ? species : [];
+    let kentish = list.find((item) =>
+      item?.latinName === "Charadrius alexandrinus" ||
+      normalizeSearchText(item?.polishName) === "sieweczka morska" ||
+      (Array.isArray(item?.legacyValues) && item.legacyValues.includes("custom:sieweczka-morska"))
+    );
+    if (!kentish) {
+      kentish = { ...OTHER_SPECIES_FALLBACK.species[0] };
+      list.push(kentish);
+    }
+    kentish.polishName = kentish.polishName || "Sieweczka morska";
+    kentish.englishName = kentish.englishName || "Kentish Plover";
+    kentish.latinName = kentish.latinName || "Charadrius alexandrinus";
+    kentish.code = kentish.code || "CHAALE";
+    kentish.legacyValues = Array.from(new Set([...(kentish.legacyValues || []), "custom:sieweczka-morska", "sieweczka-morska", "Sieweczka morska"]));
+    return list;
+  }
+
+  function normalizeOtherSpeciesItem(item = {}) {
+    const polishName = String(item.polishName || item.namePl || item.name || "").trim();
+    const latinName = String(item.latinName || item.scientificName || "").trim();
+    const englishName = String(item.englishName || item.nameEn || "").trim();
+    const code = String(item.code || "").trim();
+    return {
+      ...item,
+      code,
+      polishName,
+      englishName,
+      latinName,
+      status: String(item.status || "").trim(),
+      legacyValues: Array.isArray(item.legacyValues) ? item.legacyValues.map((v) => String(v || "").trim()).filter(Boolean) : []
+    };
+  }
+
+  function normalizeOtherSpeciesPayload(payload, sourceType = "unknown") {
+    const rawSpecies = Array.isArray(payload?.species) ? payload.species : (Array.isArray(payload) ? payload : []);
+    const unique = new Map();
+    ensureKentishLegacy(rawSpecies.map(normalizeOtherSpeciesItem)).forEach((item) => {
+      const canonical = otherSpeciesCanonicalValue(item);
+      if (!canonical) return;
+      const key = `${normalizeSearchText(canonical)}|${normalizeSearchText(item.latinName)}`;
+      const prev = unique.get(key);
+      unique.set(key, prev ? { ...prev, ...item, legacyValues: Array.from(new Set([...(prev.legacyValues || []), ...(item.legacyValues || [])])) } : item);
+    });
+    const species = Array.from(unique.values()).sort((a, b) => (a.polishName || a.latinName).localeCompare(b.polishName || b.latinName, "pl"));
+    const source = payload?.source && typeof payload.source === "object" ? payload.source : {};
+    return {
+      schemaVersion: payload?.schemaVersion || 1,
+      source: {
+        primaryName: source.primaryName || "Komisja Faunistyczna PTZool — lista awifauny krajowej",
+        primaryUrl: source.primaryUrl || OTHER_SPECIES_SOURCE_URL,
+        lastFetchedAt: source.lastFetchedAt || source.fetchedAt || null,
+        lastSuccessfulFetchAt: source.lastSuccessfulFetchAt || source.lastFetchedAt || source.fetchedAt || null,
+        parserVersion: source.parserVersion || payload?.parserVersion || OTHER_SPECIES_PARSER_VERSION,
+        sourceType
+      },
+      species
+    };
+  }
+
+  function saveOtherSpeciesCache(payload) {
+    const normalized = normalizeOtherSpeciesPayload(payload, "local-cache");
+    localStorage.setItem(OTHER_SPECIES_CACHE_KEY, JSON.stringify(normalized));
+    otherSpeciesState = normalized;
+    return normalized;
+  }
+
+  function readOtherSpeciesCache() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(OTHER_SPECIES_CACHE_KEY) || "null");
+      return parsed ? normalizeOtherSpeciesPayload(parsed, "local-cache") : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function loadBundledOtherSpecies() {
+    const response = await fetch(`${OTHER_SPECIES_DATA_URL}?v=${encodeURIComponent(APP_VERSION)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return normalizeOtherSpeciesPayload(await response.json(), "bundled-file");
+  }
+
+  async function initOtherSpecies() {
+    const cached = readOtherSpeciesCache();
+    if (cached?.species?.length) otherSpeciesState = cached;
+    try {
+      const bundled = await loadBundledOtherSpecies();
+      const cachedDate = cached?.source?.lastSuccessfulFetchAt || cached?.source?.lastFetchedAt || "";
+      const bundledDate = bundled?.source?.lastSuccessfulFetchAt || bundled?.source?.lastFetchedAt || "";
+      if (!cached || (bundledDate && bundledDate > cachedDate) || (bundled.species.length > cached.species.length && !cachedDate)) {
+        otherSpeciesState = bundled;
+        try { localStorage.setItem(OTHER_SPECIES_CACHE_KEY, JSON.stringify(bundled)); } catch { /* cache best effort */ }
+      }
+      updateOtherSpeciesStatus("Lista Komisji wczytana z pliku aplikacji.");
+    } catch (error) {
+      otherSpeciesState = cached || normalizeOtherSpeciesPayload(OTHER_SPECIES_FALLBACK, "fallback");
+      updateOtherSpeciesStatus(cached ? "Plik aplikacji niedostępny offline — używam ostatniej zapisanej listy." : "Brak zapisanej listy offline — używam minimalnego fallbacku z Sieweczką morską.");
+    }
+    renderOtherSpeciesPicker();
+    renderOtherSpeciesPanel();
+  }
+
+  function findOtherSpecies(value) {
+    const normalized = normalizeSearchText(value);
+    if (!normalized) return null;
+    return otherSpeciesState.species.find((item) => [
+      item.polishName, item.latinName, item.englishName, item.code, ...(item.legacyValues || [])
+    ].some((candidate) => normalizeSearchText(candidate) === normalized)) || null;
+  }
+
+  function normalizeSpeciesValue(speciesValue) {
+    const item = findOtherSpecies(speciesValue);
+    return item ? otherSpeciesCanonicalValue(item) : (speciesValue || "unknown");
+  }
+
+  function speciesLabel(speciesValue) {
+    const normalized = normalizeSpeciesValue(speciesValue);
+    return LABELS.species[normalized] || findOtherSpecies(normalized)?.polishName || normalized || "Nieokreślony";
+  }
+
+  function speciesMatchesQuery(item, query) {
+    const q = normalizeSearchText(query);
+    if (!q) return true;
+    return [item.polishName, item.latinName, item.englishName, item.code, item.status, ...(item.legacyValues || [])]
+      .some((value) => normalizeSearchText(value).includes(q));
+  }
+
+  function getOtherSpeciesUsage() {
+    const counts = new Map();
+    activeEntries().forEach((entry) => {
+      const item = findOtherSpecies(entry.species);
+      if (!item) return;
+      const key = otherSpeciesCanonicalValue(item);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return counts;
+  }
+
+  function renderSpeciesItemButton(item, usage = 0) {
+    const value = otherSpeciesCanonicalValue(item);
+    const details = [item.latinName, item.englishName, item.code, item.status].filter(Boolean).join(" • ");
+    return `<button type="button" class="other-species-item" data-other-species-value="${escapeHtml(value)}" title="Wybierz: ${escapeHtml(value)}">
+      <strong>${escapeHtml(item.polishName || value)}</strong>
+      ${details ? `<span>${escapeHtml(details)}</span>` : ""}
+      ${usage ? `<small>Użycia lokalne: ${usage}</small>` : ""}
+    </button>`;
+  }
+
+  function renderOtherSpeciesPicker() {
+    const list = $("#other-species-results");
+    if (!list) return;
+    const query = value("#other-species-search");
+    const usage = getOtherSpeciesUsage();
+    const all = otherSpeciesState.species.filter((item) => speciesMatchesQuery(item, query));
+    const frequent = !query ? all.filter((item) => usage.get(otherSpeciesCanonicalValue(item)) > 0)
+      .sort((a, b) => (usage.get(otherSpeciesCanonicalValue(b)) || 0) - (usage.get(otherSpeciesCanonicalValue(a)) || 0)).slice(0, 5) : [];
+    const frequentKeys = new Set(frequent.map(otherSpeciesCanonicalValue));
+    const az = all.filter((item) => !frequentKeys.has(otherSpeciesCanonicalValue(item)));
+    list.innerHTML = `${frequent.length ? `<h4>Najczęściej używane</h4>${frequent.map((item) => renderSpeciesItemButton(item, usage.get(otherSpeciesCanonicalValue(item)) || 0)).join("")}` : ""}
+      <h4>Lista A–Z</h4>${az.map((item) => renderSpeciesItemButton(item)).join("") || `<p class="muted">Brak gatunków dla podanej frazy.</p>`}`;
+    const meta = $("#other-species-picker-meta");
+    if (meta) meta.textContent = `${otherSpeciesState.species.length} gatunków • źródło: ${otherSpeciesState.source.sourceType || "—"}`;
+  }
+
+  function chooseOtherSpecies(value) {
+    const item = findOtherSpecies(value);
+    if (!item) return;
+    setValue("#species", otherSpeciesCanonicalValue(item));
+    const input = $("#species-custom-input");
+    if (input) input.value = item.polishName || otherSpeciesCanonicalValue(item);
+    syncTilesFromInputs();
+    updateSelectedOtherSpecies();
+    autoFillNearestDistances();
+  }
+
+  function updateSelectedOtherSpecies() {
+    const selected = $("#other-species-selected");
+    if (!selected) return;
+    const current = value("#species", "unknown");
+    const item = findOtherSpecies(current);
+    selected.textContent = item ? `Wybrano: ${item.polishName}${item.latinName ? ` (${item.latinName})` : ""}` : "Nie wybrano gatunku z listy Komisji.";
+  }
+
+  function setupOtherSpeciesPicker() {
+    const hidden = $("#species");
+    const panel = $("#other-species-picker");
+    const input = $("#species-custom-input");
+    if (!hidden || !panel) return;
+    const showPicker = () => {
+      panel.hidden = false;
+      if (input) input.hidden = true;
+      renderOtherSpeciesPicker();
+      updateSelectedOtherSpecies();
+      setTimeout(() => $("#other-species-search")?.focus(), 0);
+    };
+    document.addEventListener("click", (event) => {
+      if (event.target.closest('.tile-group[data-target="species"] .tile[data-value="custom:other"]')) {
+        hidden.value = findOtherSpecies("Sieweczka morska") ? "Sieweczka morska" : "unknown";
+        showPicker();
+      }
+      const btn = event.target.closest("[data-other-species-value]");
+      if (btn) chooseOtherSpecies(btn.dataset.otherSpeciesValue);
+    });
+    document.addEventListener("click", (event) => {
+      const tile = event.target.closest('.tile-group[data-target="species"] .tile');
+      if (tile && tile.dataset.value !== "custom:other") {
+        panel.hidden = true;
+        if (input) input.hidden = true;
+      }
+    });
+    $("#other-species-search")?.addEventListener("input", renderOtherSpeciesPicker);
+    updateSelectedOtherSpecies();
+  }
+
+  function stripTags(value) {
+    const div = document.createElement("div");
+    div.innerHTML = String(value || "");
+    return (div.textContent || div.innerText || "").replace(/\s+/g, " ").trim();
+  }
+
+  function makeOtherSpeciesCode(latinName, polishName) {
+    const words = String(latinName || polishName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z\s-]/g, " ").split(/[\s-]+/).filter(Boolean);
+    if (words.length >= 2) return `${words[0].slice(0, 3)}${words[1].slice(0, 3)}`.toUpperCase();
+    return words.join("").slice(0, 6).toUpperCase();
+  }
+
+  function parseOtherSpeciesFromHtml(html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const rows = Array.from(doc.querySelectorAll("tr"));
+    const species = [];
+    rows.forEach((row) => {
+      const cells = Array.from(row.querySelectorAll("th,td")).map((cell) => ({ html: cell.innerHTML, text: stripTags(cell.innerHTML) })).filter((cell) => cell.text);
+      if (cells.length < 2) return;
+      const latinName = Array.from(row.querySelectorAll("i,em")).map((el) => stripTags(el.innerHTML)).find((name) => /^[A-Z][a-z]+\s+[a-z-]+/.test(name)) || "";
+      const joined = cells.map((cell) => cell.text).join(" | ");
+      if (!latinName && !/[A-Z][a-z]+\s+[a-z-]+/.test(joined)) return;
+      const polishCell = cells.find((cell) => cell.text !== latinName && /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(cell.text)) || cells.find((cell) => cell.text !== latinName && !/^[A-Z][a-z]+\s+[a-z-]+/.test(cell.text));
+      const polishName = polishCell?.text || "";
+      const status = cells.map((cell) => cell.text).filter((text) => text !== polishName && text !== latinName).slice(-1)[0] || "";
+      if (polishName || latinName) species.push({ code: makeOtherSpeciesCode(latinName, polishName), polishName, englishName: "", latinName, status, legacyValues: [] });
+    });
+    return normalizeOtherSpeciesPayload({ source: { primaryUrl: OTHER_SPECIES_SOURCE_URL }, species }, "refreshed-browser");
+  }
+
+  function updateOtherSpeciesStatus(message, isError = false) {
+    const status = $("#commission-species-status");
+    if (status) {
+      status.textContent = message || "";
+      status.classList.toggle("error", !!isError);
+    }
+  }
+
+  function formatSpeciesDate(text) {
+    if (!text) return "—";
+    try { return new Date(text).toLocaleString("pl-PL"); } catch { return text; }
+  }
+
+  function renderOtherSpeciesPanel() {
+    const count = $("#commission-species-count");
+    const fetched = $("#commission-species-fetched");
+    const source = $("#commission-species-source");
+    const list = $("#commission-species-list");
+    if (count) count.textContent = String(otherSpeciesState.species.length);
+    if (fetched) fetched.textContent = formatSpeciesDate(otherSpeciesState.source.lastSuccessfulFetchAt || otherSpeciesState.source.lastFetchedAt);
+    if (source) source.textContent = otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL;
+    if (!list) return;
+    const query = value("#commission-species-search");
+    const items = otherSpeciesState.species.filter((item) => speciesMatchesQuery(item, query));
+    list.innerHTML = items.map((item) => {
+      const details = [item.latinName, item.englishName, item.code, item.status].filter(Boolean).join(" • ");
+      return `<article class="commission-species-row"><strong>${escapeHtml(item.polishName || otherSpeciesCanonicalValue(item))}</strong>${details ? `<span>${escapeHtml(details)}</span>` : ""}</article>`;
+    }).join("") || `<p class="muted">Brak gatunków dla podanej frazy.</p>`;
+  }
+
+  async function refreshOtherSpeciesFromCommission() {
+    updateOtherSpeciesStatus("Pobieram listę z Komisji Faunistycznej...");
+    try {
+      const response = await fetch(OTHER_SPECIES_SOURCE_URL, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const parsed = parseOtherSpeciesFromHtml(await response.text());
+      if (parsed.species.length < OTHER_SPECIES_MIN_REFRESH_COUNT) throw new Error(`Parser znalazł tylko ${parsed.species.length} gatunków — nie zapisuję podejrzanie krótkiej listy.`);
+      parsed.source = {
+        ...parsed.source,
+        primaryName: "Komisja Faunistyczna PTZool — lista awifauny krajowej",
+        primaryUrl: OTHER_SPECIES_SOURCE_URL,
+        lastFetchedAt: new Date().toISOString(),
+        lastSuccessfulFetchAt: new Date().toISOString(),
+        parserVersion: OTHER_SPECIES_PARSER_VERSION,
+        speciesCount: parsed.species.length
+      };
+      saveOtherSpeciesCache(parsed);
+      renderOtherSpeciesPicker();
+      renderOtherSpeciesPanel();
+      updateOtherSpeciesStatus(`Odświeżono listę Komisji: ${parsed.species.length} gatunków.`);
+    } catch (error) {
+      updateOtherSpeciesStatus(`Nie udało się odświeżyć automatycznie. Przeglądarka może blokować CORS albo brak internetu. Dobra lokalna lista nie została skasowana. Aktualizacja developerska: npm run update:other-species. Szczegóły: ${error.message || error}`, true);
+    }
+  }
 
   const PERCENT_GROUPS = {
     nest: {
@@ -1629,6 +1971,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       deleteReason: entry.deleteReason || entry.delete_reason || "",
       season: entry.season || "",
       observer: entry.observer || "",
+      species: normalizeSpeciesValue(entry.species || "unknown"),
       recordCompleteness: entry.recordCompleteness || (entry.quickSave ? "basic" : "full"),
       quickSave: !!entry.quickSave,
       quickSaveReason: entry.quickSaveReason || entry.quick_save_reason || "",
@@ -1728,9 +2071,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function speciesCode(speciesValue) {
-    const existing = SPECIES_CODE_MAP[speciesValue];
+    const normalizedSpecies = normalizeSpeciesValue(speciesValue);
+    const existing = SPECIES_CODE_MAP[normalizedSpecies];
     if (existing) return existing;
-    const normalized = String(speciesValue || "").trim().toLowerCase().replace(/^custom:/, "");
+    const other = findOtherSpecies(normalizedSpecies);
+    if (other?.code) return other.code.replace(/[^A-Za-z0-9]/g, "").slice(0, 8) || "SX";
+    const normalized = String(normalizedSpecies || "").trim().toLowerCase().replace(/^custom:/, "");
     const fallback = normalized.split("-").filter(Boolean).slice(0, 3).map((part) => part[0]?.toUpperCase() || "").join("");
     return fallback || "SX";
   }
@@ -1868,10 +2214,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#form-screen").hidden = name !== "form";
     $("#user-screen").hidden = name !== "user";
     $("#export-screen").hidden = name !== "export";
+    $("#commission-species-screen").hidden = name !== "commission-species";
     $("#admin-screen").hidden = name !== "admin";
     if (name === "map") setTimeout(() => renderRecordsMap(mapFocusUid), 0);
     if (name === "working-map") setTimeout(() => renderWorkingMap(), 0);
     if (name === "user") renderUserPanel();
+    if (name === "commission-species") renderOtherSpeciesPanel();
     if (name === "home") renderHomeSummary();
     updateCounts();
   }
@@ -1950,7 +2298,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $$(".tile-group").forEach((group) => {
       const target = $(`#${group.dataset.target}`);
       if (!target) return;
-      $$(".tile", group).forEach((tile) => tile.classList.toggle("selected", tile.dataset.value === target.value));
+      $$(".tile", group).forEach((tile) => {
+        const selected = tile.dataset.value === target.value || (group.dataset.target === "species" && tile.dataset.value === "custom:other" && !!findOtherSpecies(target.value));
+        tile.classList.toggle("selected", selected);
+      });
     });
   }
 
@@ -2250,7 +2601,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       obsDate: value("#obs-date"),
       obsTime: value("#obs-time"),
       observer: trim("#observer"),
-      species: value("#species", "unknown"),
+      species: normalizeSpeciesValue(value("#species", "unknown")),
       sector: trim("#sector"),
       lat: getNumber("#lat", null),
       lon: getNumber("#lon", null),
@@ -2439,7 +2790,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (preview) {
         preview.innerHTML = `
           <h3>Podgląd rekordu</h3>
-          <p><strong>${escapeHtml(record.nestId || "(bez ID)")}</strong> • ${LABELS.species[record.species] || record.species} • ${escapeHtml(record.sector || "")}</p>
+          <p><strong>${escapeHtml(record.nestId || "(bez ID)")}</strong> • ${speciesLabel(record.species)} • ${escapeHtml(record.sector || "")}</p>
           <p>${escapeHtml(record.obsDate || "")} ${escapeHtml(record.obsTime || "")} • jaja: ${record.eggCount ?? "brak"} • GPS: ${record.lat ?? "brak"}, ${record.lon ?? "brak"}</p>
         `;
       }
@@ -2832,7 +3183,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       obsDate: quickValue("#quick-obs-date"),
       obsTime: quickValue("#quick-obs-time"),
       observer: quickTrim("#quick-observer") || currentUserDisplayName(),
-      species: quickValue("#quick-species", "unknown"),
+      species: normalizeSpeciesValue(quickValue("#quick-species", "unknown")),
       sector: quickTrim("#quick-sector"),
       lat: quickNumber("#quick-lat", null),
       lon: quickNumber("#quick-lon", null),
@@ -2907,7 +3258,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setValue("#obs-date", record.obsDate);
     setValue("#obs-time", record.obsTime);
     setValue("#observer", record.observer);
-    setValue("#species", record.species || "unknown");
+    setValue("#species", normalizeSpeciesValue(record.species || "unknown"));
+    if (findOtherSpecies(record.species)) {
+      $("#other-species-picker")?.removeAttribute("hidden");
+      const customInput = $("#species-custom-input");
+      if (customInput) customInput.hidden = true;
+      updateSelectedOtherSpecies();
+      renderOtherSpeciesPicker();
+    }
     setValue("#sector", record.sector);
     const sectorEl = $("#sector");
     if (sectorEl) {
@@ -3072,7 +3430,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (speciesSummary) {
       const stats = new Map();
       entries.forEach((entry) => {
-        const key = entry.species || "unknown";
+        const key = normalizeSpeciesValue(entry.species || "unknown");
         if (!stats.has(key)) stats.set(key, { all: 0, today: 0 });
         const row = stats.get(key);
         row.all += 1;
@@ -3081,7 +3439,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       speciesSummary.innerHTML = [
         `<div>Wszystkie rekordy: ${entries.length}</div>`,
         `<div>Dzisiaj: ${todayCount}</div>`,
-        ...Array.from(stats.entries()).map(([key, row]) => `<div>${escapeHtml(LABELS.species[key] || key || "Inne / nieokreślone")}: ${row.all}, dziś ${row.today}</div>`),
+        ...Array.from(stats.entries()).map(([key, row]) => `<div>${escapeHtml(speciesLabel(key) || "Inne / nieokreślone")}: ${row.all}, dziś ${row.today}</div>`),
       ].join("");
     }
   }
@@ -3097,7 +3455,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         entry.nestId,
         entry.sector,
         entry.observer,
-        LABELS.species[entry.species] || entry.species,
+        speciesLabel(entry.species),
         entry.obsDate,
       ].join(" ").toLowerCase();
       return text.includes(query);
@@ -3117,7 +3475,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         <div class="entry-main">
           <h3>${escapeHtml(entry.nestId || "(bez ID)")}</h3>
           ${renderRecordCompletenessBadge(entry)}
-          <p>${escapeHtml(LABELS.species[entry.species] || entry.species || "gatunek?")} • ${escapeHtml(entry.sector || "sektor?")}</p>
+          <p>${escapeHtml(speciesLabel(entry.species) || "gatunek?")} • ${escapeHtml(entry.sector || "sektor?")}</p>
           <p class="muted">${escapeHtml(entry.obsDate || "")} ${escapeHtml(entry.obsTime || "")} • jaja: ${entry.eggCount ?? "brak"} • obserwator: ${escapeHtml(entry.observer || "brak")}</p>
           <p class="muted">GPS: ${entry.lat ?? "brak"}, ${entry.lon ?? "brak"} • protokół: ${escapeHtml(entry.protocolVersion || "")}</p>
           <p class="muted">Sync: ${escapeHtml(entry.syncStatus || "pending")}</p>
@@ -3136,13 +3494,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
 
   function buildRecordShareText(record) {
-    const speciesLabel = LABELS.species[record?.species] || record?.species || "Nieokreślony";
+    const label = speciesLabel(record?.species) || "Nieokreślony";
     const nestPos = toLatLon(record?.lat, record?.lon);
     const gpsText = nestPos ? `${nestPos[0].toFixed(6)}, ${nestPos[1].toFixed(6)}` : "brak";
     const mapUrl = nestPos ? `https://www.google.com/maps?q=${nestPos[0].toFixed(6)},${nestPos[1].toFixed(6)}` : null;
     return [
       `Gniazdo: ${record?.nestId || "(bez ID)"}`,
-      `Gatunek: ${speciesLabel}`,
+      `Gatunek: ${label}`,
       `Data: ${record?.obsDate || "brak"}`,
       `Liczba jaj: ${record?.eggCount ?? "brak"}`,
       `GPS: ${gpsText}`,
@@ -4785,7 +5143,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }).join("") || "<p>—</p>"}</div>`;
     const basicNotice = isBasicRecord(record) ? `<div class="basic-record-notice"><strong>Zapis podstawowy — bez pełnej kontroli.</strong><br>Ten rekord zapisano jako podstawowy, bez pełnego opisu siedliska.</div>` : "";
     const sections = [
-      ["Identyfikacja", `${basicNotice}${renderRecordCompletenessBadge(record)}${fld("Kompletność", isBasicRecord(record) ? "basic — rekord niepełny" : "full")}${fld("ID gniazda", record.nestId)}${fld("Gatunek", LABELS.species[record.species] || record.species)}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
+      ["Identyfikacja", `${basicNotice}${renderRecordCompletenessBadge(record)}${fld("Kompletność", isBasicRecord(record) ? "basic — rekord niepełny" : "full")}${fld("ID gniazda", record.nestId)}${fld("Gatunek", speciesLabel(record.species))}${fld("Data", record.obsDate)}${fld("Godzina", record.obsTime)}${fld("Obserwator", record.observer)}${fld("Sektor", record.sector)}${fld("Liczba jaj", record.eggCount)}`],
       ["Pomiary jaj", renderEggMeasurementsReadonly(record)],
       ["GPS i zdjęcia gniazda", `${fld("Lat", record.lat)}${fld("Lon", record.lon)}${fld("Dokładność [m]", record.gpsAccuracyM)}${photoGrid(record.nestMicro?.photos, "Zdjęcie gniazda")}`],
       ["Mikrohabitat gniazda", `${fld("Podłoże", LABELS.substrate[record.nestMicro?.substrate] || record.nestMicro?.substrate)}${fld("Piasek [%]", record.nestMicro?.coverage?.pctSand)}${fld("Drobny żwir [%]", record.nestMicro?.coverage?.pctFineGravel)}${fld("Gruby żwir/kamienie [%]", record.nestMicro?.coverage?.pctCoarse)}${fld("Muszle [%]", record.nestMicro?.coverage?.pctShells)}${fld("Roślinność żywa [%]", record.nestMicro?.coverage?.pctLiveVeg)}${fld("Roślinność sucha [%]", record.nestMicro?.coverage?.pctDryVeg)}${fld("Drewno/szczątki [%]", record.nestMicro?.coverage?.pctOrganic)}${fld("Antropogeniczne [%]", record.nestMicro?.coverage?.pctAnthro)}${fld("Suma pokrycia [%]", coverageSum(record.nestMicro?.coverage||{}))}${fld("Odległość do rośliny [cm]", record.nestMicro?.distPlantCm)}${fld("Wysokość rośliny [cm]", record.nestMicro?.heightPlantCm)}${fld("Odległość do obiektu [cm]", record.nestMicro?.distObjectCm)}${fld("Wysokość obiektu [cm]", record.nestMicro?.heightObjectCm)}${fld("Nachylenie", LABELS.slope[record.nestMicro?.slope] || record.nestMicro?.slope)}${fld("Mikrorzeźba", LABELS.microrelief[record.nestMicro?.microrelief] || record.nestMicro?.microrelief)}`],
@@ -5066,9 +5424,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const movable = canMove && isMapPointEditModeEnabled("records");
       const m = L.marker(p.pos, { icon, draggable: movable, autoPan: movable }).addTo(mapMarkersLayer);
       bindRecordPointDrag(m, p);
-      if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(LABELS.species[p.entry.species] || p.entry.species || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
+      if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(speciesLabel(p.entry.species) || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
-      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(LABELS.species[e.species]||e.species||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("records") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
+      m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(speciesLabel(e.species)||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("records") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
     });
     if (focusUid) {
@@ -5312,6 +5670,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         setTimeout(openAppMenu, 0);
       }
     });
+    $("#commission-species-back")?.addEventListener("click", () => showView("home"));
+    $("#commission-species-search")?.addEventListener("input", renderOtherSpeciesPanel);
+    $("#commission-species-refresh")?.addEventListener("click", () => refreshOtherSpeciesFromCommission());
     $("#resume-draft")?.addEventListener("click", () => {
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
     });
@@ -5638,7 +5999,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       obsDate: entry.obsDate,
       obsTime: entry.obsTime,
       observer: entry.observer,
-      species: entry.species,
+      species: speciesLabel(entry.species),
       sector: entry.sector,
       lat: entry.lat,
       lon: entry.lon,
@@ -5748,7 +6109,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         rows.push({
           record_uid: entry.uid || "",
           nest_id: entry.nestId || "",
-          species: entry.species || "",
+          species: speciesLabel(entry.species) || "",
           egg_no: item.eggNo,
           width_cm: item.widthCm ?? "",
           length_cm: item.lengthCm ?? "",
@@ -5885,7 +6246,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const entries = activeEntries();
     const placemarks = [];
     const buildDescription = (entry, pos) => [
-      `ID gniazda: ${entry.nestId || "(bez ID)"}`,`Gatunek: ${LABELS.species[entry.species] || entry.species || "-"}`,`Data: ${entry.obsDate || "-"}`,`Liczba jaj: ${entry.eggCount ?? "brak"}`,`Obserwator: ${entry.observer || "-"}`,`Sektor: ${entry.sector || "-"}`,`Lat/Lon: ${pos[0]}, ${pos[1]}`
+      `ID gniazda: ${entry.nestId || "(bez ID)"}`,`Gatunek: ${speciesLabel(entry.species) || "-"}`,`Data: ${entry.obsDate || "-"}`,`Liczba jaj: ${entry.eggCount ?? "brak"}`,`Obserwator: ${entry.observer || "-"}`,`Sektor: ${entry.sector || "-"}`,`Lat/Lon: ${pos[0]}, ${pos[1]}`
     ].join("\n");
     for (const entry of entries) {
       const nestPos = toLatLon(entry.lat, entry.lon);
@@ -6248,7 +6609,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }[char]));
   }
 
-  function init() {
+  async function init() {
     migrateLegacyEntries();
     setupViewportLayoutWatcher();
     applyUiSettings();
@@ -6258,7 +6619,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setDefaultDateTime();
     setupNestIdAutofill();
     setupSmartLists();
-    setupCustomSpecies();
+    setupOtherSpeciesPicker();
     setupNavigation();
     setupGps();
     setupCompass();
@@ -6270,6 +6631,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setupAuthUI();
     syncTilesFromInputs();
     updatePercentSummaries();
+    await initOtherSpecies();
     renderEntries();
     updateCounts();
     updateDraftResumeButton();
@@ -6281,5 +6643,5 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     registerServiceWorker();
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("DOMContentLoaded", () => { init().catch((error) => { console.error(error); alert(`Błąd startu aplikacji: ${error.message || error}`); }); });
 })();

@@ -3179,3 +3179,77 @@ body {
   width: 20px;
   height: 20px;
 }
+
+.other-species-picker,
+.commission-species-meta {
+  margin-top: .75rem;
+  padding: .75rem;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: .8rem;
+  background: rgba(15, 118, 110, .04);
+}
+
+.other-species-results,
+.commission-species-list {
+  display: grid;
+  gap: .5rem;
+  max-height: min(58vh, 34rem);
+  overflow: auto;
+  padding: .25rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.other-species-results h4 {
+  margin: .75rem 0 .2rem;
+  color: var(--muted-text, #475569);
+}
+
+.other-species-item,
+.commission-species-row {
+  display: grid;
+  gap: .18rem;
+  width: 100%;
+  text-align: left;
+  padding: .75rem .85rem;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: .75rem;
+  background: #fff;
+}
+
+.other-species-item {
+  cursor: pointer;
+  min-height: 3.25rem;
+}
+
+.other-species-item:hover,
+.other-species-item:focus-visible {
+  border-color: var(--primary, #0f766e);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, .14);
+}
+
+.other-species-item span,
+.other-species-item small,
+.commission-species-row span {
+  color: var(--muted-text, #64748b);
+  font-size: .9em;
+}
+
+#commission-species-status.error {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+@media (max-width: 520px) {
+  .other-species-picker,
+  .commission-species-meta {
+    padding: .65rem;
+  }
+  .other-species-results,
+  .commission-species-list {
+    max-height: 52vh;
+  }
+  .other-species-item,
+  .commission-species-row {
+    padding: .8rem;
+  }
+}
