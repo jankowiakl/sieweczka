@@ -174,7 +174,7 @@
     </section>
 
     <section id="commission-species-screen" class="screen card" hidden>
-      <div class="screen-head"><button type="button" id="commission-species-back">← Menu</button><h2>Lista gatunków Komisja</h2></div>
+      <div class="screen-head"><button type="button" id="commission-species-back">← Menu</button><h2>Katalog gatunków Komisji</h2></div>
       <p class="lead">Lista gatunków oparta na wykazie Komisji Faunistycznej PTZool.</p>
       <div class="commission-species-meta">
         <p>Źródło: <a id="commission-species-source" href="https://komisjafaunistyczna.pl/lista/" target="_blank" rel="noopener">https://komisjafaunistyczna.pl/lista/</a></p>
@@ -326,6 +326,15 @@
       <p class="muted">Dane użytkowników są pobierane bezpośrednio z serwera.</p>
       <button id="admin-refresh-users" type="button">Odśwież użytkowników</button>
       <div id="admin-users-list" class="entries-list"></div>
+      <section id="admin-species-catalog-section" class="card">
+        <h3>Katalog gatunków Komisji</h3>
+        <p class="muted">Katalog jest przechowywany w istniejącej bazie PostgreSQL aplikacji i odświeżany wyłącznie przez backend.</p>
+        <div class="row-actions">
+          <button id="admin-open-species-catalog" type="button">Podgląd katalogu</button>
+          <button id="commission-species-refresh-admin" type="button" class="primary">Odśwież listę z Komisji Faunistycznej</button>
+        </div>
+        <p id="admin-species-catalog-status" class="muted"></p>
+      </section>
       <section id="admin-deleted-records-section" class="card">
         <h3>Ukryte wpisy</h3>
         <p class="muted">Rekordy oznaczone jako ukryte/usunięte miękko pozostają w bazie i mogą zostać przywrócone przez administratora.</p>
