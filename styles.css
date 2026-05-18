@@ -3140,3 +3140,42 @@ body {
   text-anchor: middle;
   vector-effect: non-scaling-stroke;
 }
+
+.quick-map-entry-control {
+  margin-bottom: 3.45rem !important;
+}
+.quick-map-entry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  min-height: 44px;
+  max-width: min(220px, 72vw);
+  white-space: nowrap;
+}
+.quick-map-entry-button .quick-map-icon,
+.map-marker.quick-nest-draft .quick-map-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.quick-map-entry-button .quick-map-icon svg {
+  width: 1.35rem;
+  height: 1.35rem;
+}
+.quick-map-entry-button.active {
+  background: #f59e0b;
+  border-color: #b45309;
+  color: #1f2937;
+}
+.map-marker.quick-nest-draft .pin {
+  background: #f59e0b;
+  color: #111827;
+}
+.map-marker.quick-nest-draft .pin span {
+  display: flex;
+  transform: rotate(-45deg);
+}
+.map-marker.quick-nest-draft .quick-map-icon svg {
+  width: 20px;
+  height: 20px;
+}
