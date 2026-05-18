@@ -2833,7 +2833,6 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }
     if (!record.obsDate) addErr(1, "#obs-date", "Brakuje daty.");
     if (!record.obsTime) addErr(1, "#obs-time", "Brakuje godziny.");
-    if (!record.sector) addErr(1, "#sector", "Brakuje sektora / części wyspy.");
     if (!record.observer) addWarn(1, "#observer", "Brakuje obserwatora.");
     if (record.species === "unknown") addErr(1, "#species", "Brak gatunku.");
     if (record.eggCount == null || Number.isNaN(record.eggCount)) addErr(1, "#egg-count", "Brak liczby jaj.");
@@ -2945,7 +2944,6 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!record.nestId) errors.push("Brakuje ID gniazda.");
     if (!record.obsDate) errors.push("Brakuje daty.");
     if (!record.obsTime) errors.push("Brakuje godziny.");
-    if (!record.sector) errors.push("Brakuje sektora / części wyspy.");
     if (!record.species || record.species === "unknown") errors.push("Do zapisu podstawowego wybierz gatunek.");
     if (!hasValidCoords(record.lat, record.lon)) errors.push("Do zapisu podstawowego pobierz lub wpisz poprawny GPS gniazda na karcie 2. Nie można zapisać żadnego rekordu bez pozycji.");
     return errors;
