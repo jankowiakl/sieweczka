@@ -11,7 +11,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.11-photo-measure-transparent-polygon";
+  const APP_VERSION = "2026.05.18-quick-nest-egg-weight";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -1853,6 +1853,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#login-screen").hidden = name !== "login";
     $("#change-password-screen").hidden = name !== "change-password";
     $("#home-screen").hidden = name !== "home";
+    $("#quick-nest-screen").hidden = name !== "quick-nest";
     $("#records-screen").hidden = name !== "records";
     $("#record-readonly-screen").hidden = name !== "readonly";
     $("#map-screen").hidden = name !== "map";
@@ -2082,6 +2083,17 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return value == null || Number.isNaN(Number(value)) ? "" : String(Number(value).toFixed(2)).replace(".", ",");
   }
 
+  function parseOptionalGrams(value) {
+    const raw = String(value ?? "").trim().replace(",", ".");
+    if (!raw) return null;
+    const number = Number(raw);
+    return Number.isFinite(number) ? Math.round(number * 100) / 100 : null;
+  }
+
+  function formatGrams(value) {
+    return value == null || Number.isNaN(Number(value)) ? "" : String(Number(value).toFixed(2)).replace(".", ",");
+  }
+
   function normalizeEggMeasurements(measurements = []) {
     if (!Array.isArray(measurements)) return [];
     return measurements
@@ -2092,6 +2104,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
           eggNo: Math.floor(eggNo),
           widthCm: item?.widthCm != null ? parseOptionalCm(item.widthCm) : parseLegacyMmAsCm(item?.widthMm),
           lengthCm: item?.lengthCm != null ? parseOptionalCm(item.lengthCm) : parseLegacyMmAsCm(item?.lengthMm),
+          weightG: parseOptionalGrams(item?.weightG ?? item?.weight_g ?? item?.weightGrams),
           note: String(item?.note ?? "")
         };
       })
@@ -2114,6 +2127,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       eggNo: Number(row.dataset.eggNo || index + 1),
       widthCm: row.querySelector("[data-field='widthCm']")?.value ?? "",
       lengthCm: row.querySelector("[data-field='lengthCm']")?.value ?? "",
+      weightG: row.querySelector("[data-field='weightG']")?.value ?? "",
       note: row.querySelector("[data-field='note']")?.value ?? ""
     })));
   }
@@ -2137,6 +2151,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
             </label>
             <label>Długość [cm]
               <input type="number" step="0.01" inputmode="decimal" placeholder="3,43" data-field="lengthCm" value="${escapeHtml(formatEggInputValue(item.lengthCm))}" />
+            </label>
+            <label>Waga jaja [g]
+              <input type="number" min="0" step="0.01" inputmode="decimal" placeholder="12.34" data-field="weightG" value="${escapeHtml(formatEggInputValue(item.weightG))}" />
             </label>
           </div>
         </div>
@@ -2169,6 +2186,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         const value = item[field];
         if (value != null && (value < 0.5 || value > 8)) warnings.push(`Jajo ${item.eggNo}: ${label} ${formatCm(value)} cm jest poza zakresem 0,50-8,00 cm.`);
       });
+      if (item.weightG != null && (item.weightG <= 0 || item.weightG > 100)) warnings.push(`Jajo ${item.eggNo}: waga ${formatGrams(item.weightG)} g jest poza zakresem 0,01-100,00 g.`);
     });
     return warnings;
   }
@@ -2184,7 +2202,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function setupEggMeasurements() {
     $("#egg-count")?.addEventListener("change", syncEggMeasurementsWithEggCount);
     $("#egg-measurements-grid")?.addEventListener("input", (event) => {
-      if (event.target?.matches("input[data-field='widthCm'], input[data-field='lengthCm']") && String(event.target.value || "").includes(",")) {
+      if (event.target?.matches("input[data-field='widthCm'], input[data-field='lengthCm'], input[data-field='weightG']") && String(event.target.value || "").includes(",")) {
         event.target.value = String(event.target.value || "").replace(",", ".");
       }
       updateEggMeasurementWarnings();
@@ -2490,22 +2508,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const extra = warnings.length ? `\n\nUwaga:\n- ${warnings.join("\n- ")}` : "";
     const confirmed = confirm(`To jest zapis podstawowy bez pełnej kontroli siedliska. Aplikacja sprawdziła podstawowe dane i GPS gniazda. Użyj tylko wtedy, gdy nie wykonujesz pełnego opisu gniazda. Rekord zostanie oznaczony jako niepełny. Czy zapisać?${extra}`);
     if (!confirmed) return;
-    const entries = getEntries();
-    const idx = entries.findIndex((entry) => String(entry.uid) === String(record.uid));
-    if (idx >= 0) entries[idx] = record;
-    else entries.unshift(record);
-    record.syncStatus = "pending";
-    if (!setEntries(entries)) return;
+    if (!saveBasicRecord(record)) return;
     editingUid = null;
     currentNestPhotos = [];
     currentRandomPhotos = [];
     localStorage.removeItem(DRAFT_KEY);
     updateDraftResumeButton();
-    renderEntries();
     resetForm();
     showView("records");
     alert("Rekord zapisany jako podstawowy — bez pełnej kontroli.");
-    if (navigator.onLine) { syncNow().catch(() => { markSyncStatus(record.uid, "error"); }); }
   }
 
   async function saveFinalRecord() {
@@ -2626,7 +2637,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const observerText = String($("#observer")?.value || "").trim();
     if (observerText && observerText !== currentUserDisplayName()) return true;
     if (String($("#egg-count")?.value || "").trim()) return true;
-    if (readEggMeasurementsFromForm().some((item) => item.widthCm != null || item.lengthCm != null || String(item.note || "").trim())) return true;
+    if (readEggMeasurementsFromForm().some((item) => item.widthCm != null || item.lengthCm != null || item.weightG != null || String(item.note || "").trim())) return true;
     const meaningful = ["#nest-id", "#season", "#sector", "#lat", "#lon", "#notes-identification", "#notes-nest-micro", "#notes-random-micro", "#notes-meso", "#notes"];
     return meaningful.some((selector) => String($(selector)?.value || "").trim());
   }
@@ -2737,6 +2748,118 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     fillDefaultObserverForNewRecord();
     showView("form");
     showStep(1);
+  }
+
+
+  function quickValue(selector, fallback = "") {
+    return $(selector)?.value ?? fallback;
+  }
+
+  function quickTrim(selector, fallback = "") {
+    return String(quickValue(selector, fallback)).trim();
+  }
+
+  function quickNumber(selector, fallback = null) {
+    const raw = quickValue(selector, "");
+    if (raw === "" || raw == null) return fallback;
+    const number = Number(raw);
+    return Number.isFinite(number) ? number : fallback;
+  }
+
+  function buildQuickNestId() {
+    const species = quickValue("#quick-species", "unknown");
+    const dateText = quickValue("#quick-obs-date") || new Date().toISOString().slice(0, 10);
+    return `${speciesCode(species)}-${ymdFromDateText(dateText)}-${nextNestDailyNumber(species, dateText, null)}`;
+  }
+
+  function resetQuickNestForm() {
+    const form = $("#quick-nest-form");
+    if (form) form.reset();
+    const now = new Date();
+    setValue("#quick-season", String(now.getFullYear()));
+    setValue("#quick-observer", currentUserDisplayName());
+    setValue("#quick-obs-date", now.toISOString().slice(0, 10));
+    setValue("#quick-obs-time", now.toTimeString().slice(0, 5));
+    setValue("#quick-species", "unknown");
+    setValue("#quick-nest-id", buildQuickNestId());
+    setValue("#quick-gps-accuracy", "");
+    const status = $("#quick-gps-status");
+    if (status) status.textContent = "GPS: brak";
+  }
+
+  function startQuickNestRecord() {
+    resetQuickNestForm();
+    showView("quick-nest");
+    setTimeout(() => $("#quick-species")?.focus(), 100);
+  }
+
+  function buildQuickNestRecord() {
+    const now = new Date().toISOString();
+    const user = getCurrentUser();
+    const eggCount = quickNumber("#quick-egg-count", null);
+    const record = {
+      uid: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      protocolVersion: PROTOCOL_VERSION,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: user?.id || "",
+      createdByName: user?.name || "",
+      updatedBy: user?.id || "",
+      updatedByName: user?.name || "",
+      deletedAt: null,
+      deletedBy: null,
+      deleteReason: "",
+      nestId: quickTrim("#quick-nest-id") || buildQuickNestId(),
+      season: quickTrim("#quick-season") || String(new Date().getFullYear()),
+      obsDate: quickValue("#quick-obs-date"),
+      obsTime: quickValue("#quick-obs-time"),
+      observer: quickTrim("#quick-observer") || currentUserDisplayName(),
+      species: quickValue("#quick-species", "unknown"),
+      sector: quickTrim("#quick-sector"),
+      lat: quickNumber("#quick-lat", null),
+      lon: quickNumber("#quick-lon", null),
+      gpsAccuracyM: quickNumber("#quick-gps-accuracy", null),
+      nestStatus: "unknown",
+      eggCount: eggCount == null ? null : Math.max(0, Math.floor(eggCount)),
+      eggMeasurements: [],
+      possibleRenest: "unknown",
+      docPhotoDone: "unknown",
+      nestOneMPhotoDone: "unknown",
+      randomPointDone: "unknown",
+      nestMicro: { photos: [], substrate: "", coverage: {}, distPlantCm: null, heightPlantCm: null, distObjectCm: null, heightObjectCm: null, slope: "", microrelief: "" },
+      randomMicro: { photos: [], azimuthDeg: null, wasRerolled: "unknown", rerollReason: "none", lat: null, lon: null, gpsAccuracyM: null, substrate: "", coverage: {}, distPlantCm: null, heightPlantCm: null, distObjectCm: null, heightObjectCm: null, slope: "", microrelief: "" },
+      meso: {},
+      qualityControl: {},
+      moduleNotes: { identification: "Szybki wpis — bez pełnej kontroli.", nestMicro: "", randomMicro: "", meso: "" },
+      notes: quickTrim("#quick-notes")
+    };
+    return markRecordAsBasic(record);
+  }
+
+  function saveBasicRecord(record) {
+    const entries = getEntries();
+    const idx = entries.findIndex((entry) => String(entry.uid) === String(record.uid));
+    if (idx >= 0) entries[idx] = record;
+    else entries.unshift(record);
+    record.syncStatus = "pending";
+    if (!setEntries(entries)) return false;
+    renderEntries();
+    updateCounts();
+    if (navigator.onLine) { syncNow().catch(() => { markSyncStatus(record.uid, "error"); }); }
+    return true;
+  }
+
+  async function saveQuickNestRecord() {
+    const record = buildQuickNestRecord();
+    const errors = validateBasicRecordForSave(record);
+    if (errors.length) {
+      alert(`Nie zapiszę szybkiego wpisu:\n- ${errors.join("\n- ")}`);
+      return;
+    }
+    if (!saveBasicRecord(record)) return;
+    resetQuickNestForm();
+    showView("records");
+    alert("Szybki wpis gniazda zapisany jako rekord podstawowy — bez pełnej kontroli.");
   }
 
   function loadRecordToForm(record) {
@@ -4598,7 +4721,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   function renderEggMeasurementsReadonly(record) {
     const measurements = normalizeEggMeasurements(record?.eggMeasurements || []);
-    const hasAnyMeasurement = measurements.some((item) => item.widthCm != null || item.lengthCm != null || String(item.note || "").trim());
+    const hasAnyMeasurement = measurements.some((item) => item.widthCm != null || item.lengthCm != null || item.weightG != null || String(item.note || "").trim());
     if (!hasAnyMeasurement) return `<p class="muted">Pomiary jaj: brak</p>`;
     const count = Number(record?.eggCount);
     const maxNo = Math.max(
@@ -4609,12 +4732,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return Array.from({ length: maxNo }, (_, index) => {
       const eggNo = index + 1;
       const item = byNo.get(eggNo);
-      if (!item || (item.widthCm == null && item.lengthCm == null && !String(item.note || "").trim())) {
+      if (!item || (item.widthCm == null && item.lengthCm == null && item.weightG == null && !String(item.note || "").trim())) {
         return `<div class="readonly-field"><div class="label">Jajo ${eggNo}</div><div class="value">brak pomiaru</div></div>`;
       }
       const parts = [];
       parts.push(item.widthCm == null ? "szer. brak" : `szer. ${formatCm(item.widthCm)} cm`);
       parts.push(item.lengthCm == null ? "dł. brak" : `dł. ${formatCm(item.lengthCm)} cm`);
+      parts.push(item.weightG == null ? "waga brak" : `waga ${formatGrams(item.weightG)} g`);
       if (String(item.note || "").trim()) parts.push(`uwaga: ${item.note}`);
       return `<div class="readonly-field"><div class="label">Jajo ${eggNo}</div><div class="value">${escapeHtml(parts.join(", "))}</div></div>`;
     }).join("");
@@ -5035,6 +5159,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     };
     $("#gps-btn").addEventListener("click", () => getGps("#lat", "#lon", "#gps-accuracy", "#gps-status", "GPS gniazda"));
     $("#random-gps-btn").addEventListener("click", () => getGps("#random-lat", "#random-lon", "#random-gps-accuracy", "#random-gps-status", "GPS punktu"));
+    $("#quick-gps-btn")?.addEventListener("click", () => getGps("#quick-lat", "#quick-lon", "#quick-gps-accuracy", "#quick-gps-status", "GPS gniazda"));
   }
 
   function gpsQuality(acc) {
@@ -5068,6 +5193,21 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
     });
     $("#start-new").addEventListener("click", () => { editReturnToReadonly = false; startNewRecord(); });
+    $("#start-quick-nest")?.addEventListener("click", () => { editReturnToReadonly = false; startQuickNestRecord(); });
+    $("#quick-nest-back")?.addEventListener("click", () => showView("home"));
+    $("#quick-nest-id-generate")?.addEventListener("click", () => setValue("#quick-nest-id", buildQuickNestId()));
+    $("#quick-species")?.addEventListener("change", () => {
+      const idEl = $("#quick-nest-id");
+      if (idEl && !String(idEl.value || "").trim()) idEl.value = buildQuickNestId();
+    });
+    $("#quick-obs-date")?.addEventListener("change", () => {
+      const idEl = $("#quick-nest-id");
+      if (idEl && !String(idEl.value || "").trim()) idEl.value = buildQuickNestId();
+    });
+    $("#quick-nest-save")?.addEventListener("click", () => saveQuickNestRecord().catch((error) => {
+      console.error(error);
+      alert(`Szybki wpis nie powiódł się: ${error.message || error}`);
+    }));
     $("#open-records").addEventListener("click", () => {
       renderEntries();
       showView("records");
@@ -5351,6 +5491,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const item = byNo.get(eggNo) || {};
       row[`egg_${eggNo}_width_cm`] = item.widthCm ?? "";
       row[`egg_${eggNo}_length_cm`] = item.lengthCm ?? "";
+      row[`egg_${eggNo}_weight_g`] = item.weightG ?? "";
     }
     return row;
   }
@@ -5485,11 +5626,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
           egg_no: item.eggNo,
           width_cm: item.widthCm ?? "",
           length_cm: item.lengthCm ?? "",
+          weight_g: item.weightG ?? "",
           note: item.note || ""
         });
       });
     });
-    return csvFromRows(rows, ["record_uid", "nest_id", "species", "egg_no", "width_cm", "length_cm", "note"]);
+    return csvFromRows(rows, ["record_uid", "nest_id", "species", "egg_no", "width_cm", "length_cm", "weight_g", "note"]);
   }
 
   function setExportStatus(message) {
