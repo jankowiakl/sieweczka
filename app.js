@@ -19,7 +19,6 @@
   const PHOTO_MEASURE_CALIBRATION_KEY = "sieweczka-photo-measure-calibrations-v1";
   const OTHER_SPECIES_SOURCE_URL = "https://komisjafaunistyczna.pl/lista/";
   const OTHER_SPECIES_DATA_URL = "data/other_species.json";
-  const OTHER_SPECIES_MIN_REFRESH_COUNT = 100;
   const OTHER_SPECIES_PARSER_VERSION = "app-kf-table-parser-v1";
 
   const SYNC_CONFIG_KEY = "sieweczka-sync-config-v1";
@@ -519,7 +518,7 @@
         <button type="button" data-menu-action="sync">Synchronizacja</button>
         ${canExport ? `<button type="button" data-menu-action="export">Eksport</button>` : ""}
         ${isAdmin() ? `<button type="button" data-menu-action="admin">Administrator</button>` : ""}
-        <button type="button" data-menu-action="commission-species">Lista gatunków Komisja</button>
+        ${isAdmin() ? `<button type="button" data-menu-action="commission-species">Katalog gatunków Komisji</button>` : ""}
         <button type="button" data-menu-action="settings">Ustawienia</button>
         <button type="button" data-menu-action="install">Zainstaluj aplikację</button>
         <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
@@ -700,6 +699,7 @@
         const user = await loginUser();
         $("#login-status").textContent = `Zalogowano: ${user.name}`;
         renderUserPanel();
+        initOtherSpecies().catch(() => {});
         showView(user.must_change_password ? "change-password" : "home");
       } catch (error) {
         $("#login-status").textContent = "Nie można połączyć się z serwerem. Sprawdź internet albo skontaktuj się z administratorem.";
@@ -1022,7 +1022,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       englishName,
       latinName,
       status: String(item.status || "").trim(),
-      legacyValues: Array.isArray(item.legacyValues) ? item.legacyValues.map((v) => String(v || "").trim()).filter(Boolean) : []
+      aliases: Array.isArray(item.aliases) ? item.aliases.map((v) => String(v || "").trim()).filter(Boolean) : [],
+      legacyValues: Array.isArray(item.legacyValues) ? item.legacyValues.map((v) => String(v || "").trim()).filter(Boolean) : [],
+      id: String(item.id || "").trim(),
+      source: item.source || "Komisja Faunistyczna PTZool",
+      sourceUrl: item.sourceUrl || OTHER_SPECIES_SOURCE_URL,
+      isActive: item.isActive !== false,
+      needsReview: !!item.needsReview
     };
   }
 
@@ -1041,11 +1047,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return {
       schemaVersion: payload?.schemaVersion || 1,
       source: {
-        primaryName: source.primaryName || "Komisja Faunistyczna PTZool — lista awifauny krajowej",
-        primaryUrl: source.primaryUrl || OTHER_SPECIES_SOURCE_URL,
-        lastFetchedAt: source.lastFetchedAt || source.fetchedAt || null,
-        lastSuccessfulFetchAt: source.lastSuccessfulFetchAt || source.lastFetchedAt || source.fetchedAt || null,
+        primaryName: source.primaryName || source.source || payload?.meta?.source || "Komisja Faunistyczna PTZool — lista awifauny krajowej",
+        primaryUrl: source.primaryUrl || source.sourceUrl || payload?.meta?.sourceUrl || OTHER_SPECIES_SOURCE_URL,
+        lastFetchedAt: source.lastFetchedAt || source.fetchedAt || source.lastFetchAttemptAt || null,
+        lastSuccessfulFetchAt: source.lastSuccessfulFetchAt || payload?.meta?.lastSuccessfulFetchAt || source.lastFetchedAt || source.fetchedAt || null,
         parserVersion: source.parserVersion || payload?.parserVersion || OTHER_SPECIES_PARSER_VERSION,
+        speciesCount: source.speciesCount || payload?.meta?.speciesCount || rawSpecies.length,
         sourceType
       },
       species
@@ -1068,6 +1075,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }
   }
 
+  async function loadApiOtherSpecies() {
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    const response = await fetch(`${apiBase}/api/species`, { cache: "no-store", headers: getSyncAuthHeaders(cfg) });
+    if (!response.ok) throw new Error(await readApiError(response, `HTTP ${response.status}`));
+    return normalizeOtherSpeciesPayload(await response.json(), "api-cache");
+  }
+
   async function loadBundledOtherSpecies() {
     const response = await fetch(`${OTHER_SPECIES_DATA_URL}?v=${encodeURIComponent(APP_VERSION)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1078,17 +1093,23 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const cached = readOtherSpeciesCache();
     if (cached?.species?.length) otherSpeciesState = cached;
     try {
-      const bundled = await loadBundledOtherSpecies();
-      const cachedDate = cached?.source?.lastSuccessfulFetchAt || cached?.source?.lastFetchedAt || "";
-      const bundledDate = bundled?.source?.lastSuccessfulFetchAt || bundled?.source?.lastFetchedAt || "";
-      if (!cached || (bundledDate && bundledDate > cachedDate) || (bundled.species.length > cached.species.length && !cachedDate)) {
-        otherSpeciesState = bundled;
-        try { localStorage.setItem(OTHER_SPECIES_CACHE_KEY, JSON.stringify(bundled)); } catch { /* cache best effort */ }
+      const fromApi = await loadApiOtherSpecies();
+      saveOtherSpeciesCache(fromApi);
+      updateOtherSpeciesStatus(`Katalog gatunków wczytany z API (${fromApi.species.length} gatunków).`);
+    } catch (apiError) {
+      if (cached?.species?.length) {
+        otherSpeciesState = cached;
+        updateOtherSpeciesStatus("API niedostępne — używam ostatniego lokalnego cache katalogu gatunków.");
+      } else {
+        try {
+          const bundled = await loadBundledOtherSpecies();
+          saveOtherSpeciesCache(bundled);
+          updateOtherSpeciesStatus("API niedostępne — używam pliku data/other_species.json jako fallbacku.");
+        } catch {
+          otherSpeciesState = normalizeOtherSpeciesPayload(OTHER_SPECIES_FALLBACK, "fallback");
+          updateOtherSpeciesStatus("Brak API, cache i pliku fallback — używam minimalnego wpisu Sieweczki morskiej.");
+        }
       }
-      updateOtherSpeciesStatus("Lista Komisji wczytana z pliku aplikacji.");
-    } catch (error) {
-      otherSpeciesState = cached || normalizeOtherSpeciesPayload(OTHER_SPECIES_FALLBACK, "fallback");
-      updateOtherSpeciesStatus(cached ? "Plik aplikacji niedostępny offline — używam ostatniej zapisanej listy." : "Brak zapisanej listy offline — używam minimalnego fallbacku z Sieweczką morską.");
     }
     renderOtherSpeciesPicker();
     renderOtherSpeciesPanel();
@@ -1098,7 +1119,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const normalized = normalizeSearchText(value);
     if (!normalized) return null;
     return otherSpeciesState.species.find((item) => [
-      item.polishName, item.latinName, item.englishName, item.code, ...(item.legacyValues || [])
+      item.id, item.polishName, item.latinName, item.englishName, item.code, ...(item.aliases || []), ...(item.legacyValues || [])
     ].some((candidate) => normalizeSearchText(candidate) === normalized)) || null;
   }
 
@@ -1115,7 +1136,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function speciesMatchesQuery(item, query) {
     const q = normalizeSearchText(query);
     if (!q) return true;
-    return [item.polishName, item.latinName, item.englishName, item.code, item.status, ...(item.legacyValues || [])]
+    return [item.id, item.polishName, item.latinName, item.englishName, item.code, item.status, ...(item.aliases || []), ...(item.legacyValues || [])]
       .some((value) => normalizeSearchText(value).includes(q));
   }
 
@@ -1156,10 +1177,29 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (meta) meta.textContent = `${otherSpeciesState.species.length} gatunków • źródło: ${otherSpeciesState.source.sourceType || "—"}`;
   }
 
+  function applySpeciesCatalogFields(record, item, originalLabel) {
+    if (!item) return record;
+    return {
+      ...record,
+      speciesId: item.id || record.speciesId || "",
+      speciesCode: item.code || record.speciesCode || "",
+      speciesPolishName: item.polishName || record.speciesPolishName || "",
+      speciesLatinName: item.latinName || record.speciesLatinName || "",
+      speciesEnglishName: item.englishName || record.speciesEnglishName || "",
+      speciesSource: item.source || "Komisja Faunistyczna PTZool",
+      speciesListVersion: otherSpeciesState.source.lastSuccessfulFetchAt || otherSpeciesState.source.lastFetchedAt || "",
+      speciesOriginalLabel: originalLabel || item.polishName || record.species || ""
+    };
+  }
+
+  function getRecordSpeciesCatalogItem(record = {}) {
+    return findOtherSpecies(record.speciesId) || findOtherSpecies(record.speciesCode) || findOtherSpecies(record.speciesLatinName) || findOtherSpecies(record.speciesPolishName) || findOtherSpecies(record.species);
+  }
+
   function chooseOtherSpecies(value) {
     const item = findOtherSpecies(value);
     if (!item) return;
-    setValue("#species", otherSpeciesCanonicalValue(item));
+    setValue("#species", item.polishName || otherSpeciesCanonicalValue(item));
     const input = $("#species-custom-input");
     if (input) input.value = item.polishName || otherSpeciesCanonicalValue(item);
     syncTilesFromInputs();
@@ -1206,36 +1246,6 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     updateSelectedOtherSpecies();
   }
 
-  function stripTags(value) {
-    const div = document.createElement("div");
-    div.innerHTML = String(value || "");
-    return (div.textContent || div.innerText || "").replace(/\s+/g, " ").trim();
-  }
-
-  function makeOtherSpeciesCode(latinName, polishName) {
-    const words = String(latinName || polishName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z\s-]/g, " ").split(/[\s-]+/).filter(Boolean);
-    if (words.length >= 2) return `${words[0].slice(0, 3)}${words[1].slice(0, 3)}`.toUpperCase();
-    return words.join("").slice(0, 6).toUpperCase();
-  }
-
-  function parseOtherSpeciesFromHtml(html) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const rows = Array.from(doc.querySelectorAll("tr"));
-    const species = [];
-    rows.forEach((row) => {
-      const cells = Array.from(row.querySelectorAll("th,td")).map((cell) => ({ html: cell.innerHTML, text: stripTags(cell.innerHTML) })).filter((cell) => cell.text);
-      if (cells.length < 2) return;
-      const latinName = Array.from(row.querySelectorAll("i,em")).map((el) => stripTags(el.innerHTML)).find((name) => /^[A-Z][a-z]+\s+[a-z-]+/.test(name)) || "";
-      const joined = cells.map((cell) => cell.text).join(" | ");
-      if (!latinName && !/[A-Z][a-z]+\s+[a-z-]+/.test(joined)) return;
-      const polishCell = cells.find((cell) => cell.text !== latinName && /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(cell.text)) || cells.find((cell) => cell.text !== latinName && !/^[A-Z][a-z]+\s+[a-z-]+/.test(cell.text));
-      const polishName = polishCell?.text || "";
-      const status = cells.map((cell) => cell.text).filter((text) => text !== polishName && text !== latinName).slice(-1)[0] || "";
-      if (polishName || latinName) species.push({ code: makeOtherSpeciesCode(latinName, polishName), polishName, englishName: "", latinName, status, legacyValues: [] });
-    });
-    return normalizeOtherSpeciesPayload({ source: { primaryUrl: OTHER_SPECIES_SOURCE_URL }, species }, "refreshed-browser");
-  }
-
   function updateOtherSpeciesStatus(message, isError = false) {
     const status = $("#commission-species-status");
     if (status) {
@@ -1256,6 +1266,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const list = $("#commission-species-list");
     if (count) count.textContent = String(otherSpeciesState.species.length);
     if (fetched) fetched.textContent = formatSpeciesDate(otherSpeciesState.source.lastSuccessfulFetchAt || otherSpeciesState.source.lastFetchedAt);
+    const adminStatus = $("#admin-species-catalog-status");
+    if (adminStatus) adminStatus.textContent = `${otherSpeciesState.species.length} gatunków • ostatnia udana aktualizacja: ${formatSpeciesDate(otherSpeciesState.source.lastSuccessfulFetchAt || otherSpeciesState.source.lastFetchedAt)} • źródło: ${otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL}`;
     if (source) source.textContent = otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL;
     if (!list) return;
     const query = value("#commission-species-search");
@@ -1267,27 +1279,22 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   async function refreshOtherSpeciesFromCommission() {
-    updateOtherSpeciesStatus("Pobieram listę z Komisji Faunistycznej...");
+    if (!isAdmin()) {
+      updateOtherSpeciesStatus("Odświeżanie katalogu jest dostępne tylko dla administratora.", true);
+      return;
+    }
+    updateOtherSpeciesStatus("Zlecam backendowi odświeżenie katalogu z Komisji Faunistycznej...");
     try {
-      const response = await fetch(OTHER_SPECIES_SOURCE_URL, { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const parsed = parseOtherSpeciesFromHtml(await response.text());
-      if (parsed.species.length < OTHER_SPECIES_MIN_REFRESH_COUNT) throw new Error(`Parser znalazł tylko ${parsed.species.length} gatunków — nie zapisuję podejrzanie krótkiej listy.`);
-      parsed.source = {
-        ...parsed.source,
-        primaryName: "Komisja Faunistyczna PTZool — lista awifauny krajowej",
-        primaryUrl: OTHER_SPECIES_SOURCE_URL,
-        lastFetchedAt: new Date().toISOString(),
-        lastSuccessfulFetchAt: new Date().toISOString(),
-        parserVersion: OTHER_SPECIES_PARSER_VERSION,
-        speciesCount: parsed.species.length
-      };
-      saveOtherSpeciesCache(parsed);
+      const result = await adminPost("admin/species/refresh", {});
+      const fromApi = await loadApiOtherSpecies();
+      saveOtherSpeciesCache(fromApi);
       renderOtherSpeciesPicker();
       renderOtherSpeciesPanel();
-      updateOtherSpeciesStatus(`Odświeżono listę Komisji: ${parsed.species.length} gatunków.`);
+      updateOtherSpeciesStatus(`Odświeżono katalog: ${result.speciesCount} gatunków, dodano ${result.added}, zaktualizowano ${result.updated}, do przeglądu ${result.needsReview}.`);
+      const adminStatus = $("#admin-species-catalog-status");
+      if (adminStatus) adminStatus.textContent = `Odświeżono katalog: ${result.speciesCount} gatunków, dodano ${result.added}, zaktualizowano ${result.updated}, do przeglądu ${result.needsReview}.`;
     } catch (error) {
-      updateOtherSpeciesStatus(`Nie udało się odświeżyć automatycznie. Przeglądarka może blokować CORS albo brak internetu. Dobra lokalna lista nie została skasowana. Aktualizacja developerska: npm run update:other-species. Szczegóły: ${error.message || error}`, true);
+      updateOtherSpeciesStatus(`Nie udało się odświeżyć katalogu po stronie serwera. Dotychczasowa lista nie została skasowana. Szczegóły: ${error.message || error}`, true);
     }
   }
 
@@ -1971,7 +1978,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       deleteReason: entry.deleteReason || entry.delete_reason || "",
       season: entry.season || "",
       observer: entry.observer || "",
-      species: normalizeSpeciesValue(entry.species || "unknown"),
+      species: normalizeSpeciesValue(entry.species || entry.speciesPolishName || entry.speciesId || "unknown"),
+      speciesId: entry.speciesId || "",
+      speciesCode: entry.speciesCode || "",
+      speciesPolishName: entry.speciesPolishName || "",
+      speciesLatinName: entry.speciesLatinName || "",
+      speciesEnglishName: entry.speciesEnglishName || "",
+      speciesSource: entry.speciesSource || "",
+      speciesListVersion: entry.speciesListVersion || "",
+      speciesOriginalLabel: entry.speciesOriginalLabel || entry.species || "",
       recordCompleteness: entry.recordCompleteness || (entry.quickSave ? "basic" : "full"),
       quickSave: !!entry.quickSave,
       quickSaveReason: entry.quickSaveReason || entry.quick_save_reason || "",
@@ -2159,16 +2174,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function setupCustomSpecies() {
-    const hidden = $("#species"); const customInput = $("#species-custom-input"); const list = $("#species-custom-list");
-    if (!hidden || !customInput || !list) return;
-    const render = () => { list.innerHTML = readList(CUSTOM_SPECIES_KEY).map((v) => `<option value="${escapeHtml(v)}"></option>`).join(""); };
-    document.addEventListener("click", (event) => { if (event.target.closest('.tile-group[data-target="species"] .tile[data-value="custom:other"]')) { hidden.value = "custom:"; customInput.hidden = false; customInput.focus(); } });
-    customInput.addEventListener("change", () => {
-      const raw = String(customInput.value || "").trim(); if (!raw) return;
-      hidden.value = `custom:${slugify(raw) || "inn"}`;
-      const arr = readList(CUSTOM_SPECIES_KEY); arr.push(raw); saveList(CUSTOM_SPECIES_KEY, arr); render();
-    });
-    render();
+    // Legacy custom free-text species are kept readable, but new "Inny gatunek" choices use the Komisja catalog picker.
+    const customInput = $("#species-custom-input");
+    if (customInput) customInput.hidden = true;
   }
 
   function haversineM(lat1, lon1, lat2, lon2) {
@@ -2192,7 +2200,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function showView(name) {
     if (!getCurrentUser() && name !== "login") name = "login";
     if (getCurrentUser() && mustChangePassword() && !["change-password", "login"].includes(name)) name = "change-password";
-    if (name === "admin" && !isAdmin()) name = "home";
+    if ((name === "admin" || name === "commission-species") && !isAdmin()) name = "home";
     if (name !== "map") {
       removeQuickMapDraftMarker();
       if (quickMapEntryMode) setQuickMapEntryMode(false);
@@ -2582,8 +2590,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const uid = editingUid || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
     const now = new Date().toISOString();
     const user = getCurrentUser();
+    const selectedSpeciesItem = findOtherSpecies(value("#species", "unknown"));
 
-    return {
+    return applySpeciesCatalogFields({
       uid,
       protocolVersion: PROTOCOL_VERSION,
       createdAt: existing?.createdAt || now,
@@ -2685,7 +2694,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       quickSaveReason: "",
       habitatDescriptionSkipped: false,
       savedFromStep: currentStep,
-    };
+    }, selectedSpeciesItem, value("#species", "unknown"));
   }
 
   function validateRecord(record) {
@@ -3166,7 +3175,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const now = new Date().toISOString();
     const user = getCurrentUser();
     const eggCount = quickNumber("#quick-egg-count", null);
-    const record = {
+    const quickSpeciesItem = findOtherSpecies(quickValue("#quick-species", "unknown"));
+    let record = {
       uid: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       protocolVersion: PROTOCOL_VERSION,
       createdAt: now,
@@ -3203,6 +3213,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       moduleNotes: { identification: quickNestCreationSource === "quick_map_entry" ? "Szybki wpis z mapy — bez pełnej kontroli." : "Szybki wpis — bez pełnej kontroli.", nestMicro: "", randomMicro: "", meso: "" },
       notes: quickTrim("#quick-notes")
     };
+    record = applySpeciesCatalogFields(record, quickSpeciesItem, quickValue("#quick-species", "unknown"));
     if (quickNestCreationSource === "quick_map_entry") {
       record.quickSaveReason = "quick_map_entry";
     }
@@ -5673,6 +5684,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#commission-species-back")?.addEventListener("click", () => showView("home"));
     $("#commission-species-search")?.addEventListener("input", renderOtherSpeciesPanel);
     $("#commission-species-refresh")?.addEventListener("click", () => refreshOtherSpeciesFromCommission());
+    $("#commission-species-refresh-admin")?.addEventListener("click", () => refreshOtherSpeciesFromCommission());
+    $("#admin-open-species-catalog")?.addEventListener("click", () => { showView("commission-species"); renderOtherSpeciesPanel(); });
     $("#resume-draft")?.addEventListener("click", () => {
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
     });
@@ -6000,6 +6013,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       obsTime: entry.obsTime,
       observer: entry.observer,
       species: speciesLabel(entry.species),
+      speciesStoredName: entry.speciesOriginalLabel || entry.species || "",
+      speciesLatinName: getRecordSpeciesCatalogItem(entry)?.latinName || entry.speciesLatinName || "",
+      speciesCode: getRecordSpeciesCatalogItem(entry)?.code || entry.speciesCode || "",
+      speciesId: getRecordSpeciesCatalogItem(entry)?.id || entry.speciesId || "",
+      speciesSource: getRecordSpeciesCatalogItem(entry)?.source || entry.speciesSource || "",
+      speciesListVersion: entry.speciesListVersion || otherSpeciesState.source.lastSuccessfulFetchAt || "",
       sector: entry.sector,
       lat: entry.lat,
       lon: entry.lon,
