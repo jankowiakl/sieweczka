@@ -3310,3 +3310,21 @@ body {
     padding: .8rem;
   }
 }
+
+.measure-field-inline {
+  align-items: center;
+}
+
+.measure-map-button {
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+#meso-measure-map {
+  height: 40vh;
+  min-height: 260px;
+  margin: 0.5rem 0;
+}
