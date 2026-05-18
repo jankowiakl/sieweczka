@@ -1521,7 +1521,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   const mapPointEditControls = { records: null, working: null };
   const mapUserState = {
     records: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false, isTrackingUser: false },
-    working: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false, isTrackingUser: false }
+    working: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false, isTrackingUser: false },
+    meso: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false, isTrackingUser: false }
   };
   let latestUserLatLng = null;
   let latestUserAccuracy = null;
@@ -4831,6 +4832,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function getMapUserState(targetMap) {
+    if (targetMap === mesoMeasureMap) return mapUserState.meso;
     if (targetMap === workingMap) return mapUserState.working;
     return mapUserState.records;
   }
@@ -5663,9 +5665,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       initMeasureTools(mesoMeasureMap, "meso");
       if (!ortoCacheState.meso.viewRestored) mesoMeasureMap.setView([52, 19], 15);
     }
+    syncUserLocationLayers("meso");
     const lat = getNumber("#lat", null);
     const lon = getNumber("#lon", null);
-    if (hasValidCoords(lat, lon)) mesoMeasureMap.setView([lat, lon], 18);
+    if (!mapUserState.meso.hasAutoCenteredOnUser && !centerMeasurementMapOnUser({ animate: false }) && hasValidCoords(lat, lon)) {
+      mesoMeasureMap.setView([lat, lon], 18);
+    }
     mesoMeasureMap.invalidateSize();
     setMeasureMode("meso", "line");
   }
@@ -5677,7 +5682,22 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const targetLabel = $("#meso-measure-target-label");
     if (targetLabel) targetLabel.textContent = `Pole docelowe: ${label}`;
     showView("meso-measure");
-    setTimeout(renderMesoMeasureMap, 0);
+    mapUserState.meso.hasAutoCenteredOnUser = false;
+    setTimeout(async () => {
+      renderMesoMeasureMap();
+      if (centerMeasurementMapOnUser({ animate: false })) {
+        const status = $("#meso-user-status");
+        if (status) status.textContent = "Twoja pozycja: aktywna";
+      }
+      try {
+        await showMyLocationOnMap(mesoMeasureMap, "#meso-user-status");
+        syncUserLocationLayers("meso");
+        if (!mapUserState.meso.hasAutoCenteredOnUser) centerMeasurementMapOnUser({ animate: true });
+      } catch {
+        const status = $("#meso-user-status");
+        if (status) status.textContent = "Nie udało się pobrać pozycji GPS. Możesz nadal przesunąć mapę ręcznie.";
+      }
+    }, 0);
   }
 
   function applyMesoMeasureToField() {
@@ -5723,7 +5743,24 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function getMapById(mapId) {
+    if (mapId === "meso") return mesoMeasureMap;
     return mapId === "working" ? workingMap : recordsMap;
+  }
+
+  function zoomForUserAccuracy(accuracy) {
+    if (!Number.isFinite(accuracy)) return 18;
+    if (accuracy <= 8) return 20;
+    if (accuracy <= 15) return 19;
+    return 18;
+  }
+
+  function centerMeasurementMapOnUser(options = {}) {
+    const map = options.map || mesoMeasureMap;
+    if (!map || !latestUserLatLng) return false;
+    syncUserLocationLayers("meso");
+    map.setView(latestUserLatLng, zoomForUserAccuracy(latestUserAccuracy), { animate: !!options.animate });
+    mapUserState.meso.hasAutoCenteredOnUser = true;
+    return true;
   }
 
   function followTrackedUserLocation() {
@@ -5968,6 +6005,20 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#open-working-map").addEventListener("click", () => showView("working-map"));
     $("#meso-measure-back")?.addEventListener("click", () => showView("form"));
     $("#meso-measure-apply")?.addEventListener("click", applyMesoMeasureToField);
+    $("#meso-center-user")?.addEventListener("click", async () => {
+      if (centerMeasurementMapOnUser({ animate: true })) {
+        const status = $("#meso-user-status");
+        if (status) status.textContent = "Twoja pozycja: aktywna";
+      }
+      try {
+        await showMyLocationOnMap(mesoMeasureMap, "#meso-user-status");
+        syncUserLocationLayers("meso");
+        centerMeasurementMapOnUser({ animate: true });
+      } catch {
+        const status = $("#meso-user-status");
+        if (status) status.textContent = "Nie udało się pobrać pozycji GPS. Możesz nadal przesunąć mapę ręcznie.";
+      }
+    });
     $("#recalculate-plover-distances")?.addEventListener("click", () => {
       ["#dist-nearest-hiaticula", "#dist-nearest-dubius"].forEach((sel) => { const el = $(sel); if (el) delete el.dataset.manual; });
       autoFillNearestDistances();
