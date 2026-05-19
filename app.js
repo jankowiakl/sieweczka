@@ -518,7 +518,7 @@
         <button type="button" data-menu-action="sync">Synchronizacja</button>
         ${canExport ? `<button type="button" data-menu-action="export">Eksport</button>` : ""}
         ${isAdmin() ? `<button type="button" data-menu-action="admin">Administrator</button>` : ""}
-        ${isAdmin() ? `<button type="button" data-menu-action="commission-species">Katalog gatunków Komisji</button>` : ""}
+        <button type="button" data-menu-action="commission-species">Lista gatunków Komisji</button>
         <button type="button" data-menu-action="settings">Ustawienia</button>
         <button type="button" data-menu-action="install">Zainstaluj aplikację</button>
         <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
@@ -578,6 +578,8 @@
       }
       if (action === "commission-species") {
         closeForNavigation();
+        commissionSpeciesViewMode = "public";
+        await loadPublicSpeciesCatalog({ force: true }).catch(() => null);
         showView("commission-species");
         renderOtherSpeciesPanel();
       }
@@ -935,6 +937,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   };
   let otherSpeciesState = normalizeOtherSpeciesPayload(OTHER_SPECIES_FALLBACK, "fallback");
   let otherSpeciesAdminMeta = null;
+  let commissionSpeciesViewMode = "public";
 
   const LABELS = {
     species: {
@@ -1093,6 +1096,36 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return await response.json();
   }
 
+  async function loadPublicSpeciesCatalog({ force = false } = {}) {
+    const cached = !force ? readOtherSpeciesCache() : null;
+    if (cached?.species?.length) {
+      otherSpeciesState = cached;
+    }
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    try {
+      const response = await fetch(`${apiBase}/api/species`, {
+        cache: "no-store",
+        headers: getSyncAuthHeaders(cfg)
+      });
+      if (!response.ok) throw new Error(await readApiError(response, `Species HTTP ${response.status}`));
+      const payload = await response.json();
+      const normalized = normalizeOtherSpeciesPayload(payload, force ? "public-api-force" : "public-api");
+      otherSpeciesState = normalized;
+      localStorage.setItem(OTHER_SPECIES_CACHE_KEY, JSON.stringify(normalized));
+      renderOtherSpeciesPicker();
+      renderQuickOtherSpeciesPicker();
+      return normalized;
+    } catch (error) {
+      if (cached?.species?.length) {
+        renderOtherSpeciesPicker();
+        renderQuickOtherSpeciesPicker();
+        return cached;
+      }
+      throw new Error("Nie udało się załadować listy gatunków. Spróbuj połączyć się z internetem albo zsynchronizuj aplikację.");
+    }
+  }
+
   async function loadAdminSpeciesCatalog({ includeInactive = true, force = false } = {}) {
     if (!isAdmin()) throw new Error("Brak uprawnień administratora.");
     const cfg = getSyncConfig();
@@ -1130,7 +1163,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const cached = readOtherSpeciesCache();
     if (cached?.species?.length) otherSpeciesState = cached;
     try {
-      const fromApi = await loadApiOtherSpecies(isAdmin());
+      const fromApi = await loadPublicSpeciesCatalog({ force: true });
       saveOtherSpeciesCache(fromApi);
       if (isAdmin()) {
         try { otherSpeciesAdminMeta = await loadAdminSpeciesMeta(); } catch { otherSpeciesAdminMeta = null; }
@@ -1319,6 +1352,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return findOtherSpecies(selectedQuickSpeciesValue());
   }
 
+  async function ensurePublicSpeciesLoaded() {
+    if (otherSpeciesState?.species?.length) return;
+    try {
+      await loadPublicSpeciesCatalog({ force: false });
+    } catch (error) {
+      updateOtherSpeciesStatus(error.message || String(error), true);
+    }
+  }
+
   function updateSelectedQuickOtherSpecies() {
     const selected = $("#quick-other-species-selected");
     if (!selected) return;
@@ -1326,12 +1368,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     selected.textContent = item ? `Wybrano: ${item.polishName}${item.latinName ? ` (${item.latinName})` : ""}` : "Nie wybrano gatunku z listy Komisji.";
   }
 
-  function toggleQuickOtherSpeciesPicker() {
+  async function toggleQuickOtherSpeciesPicker() {
     const panel = $("#quick-other-species-picker");
     if (!panel) return;
     const show = quickValue("#quick-species", "unknown") === "custom:other";
     panel.hidden = !show;
     if (show) {
+      await ensurePublicSpeciesLoaded();
       renderQuickOtherSpeciesPicker();
       updateSelectedQuickOtherSpecies();
     } else {
@@ -1345,9 +1388,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const panel = $("#other-species-picker");
     const input = $("#species-custom-input");
     if (!hidden || !panel) return;
-    const showPicker = () => {
+    const showPicker = async () => {
       panel.hidden = false;
       if (input) input.hidden = true;
+      await ensurePublicSpeciesLoaded();
       renderOtherSpeciesPicker();
       updateSelectedOtherSpecies();
       setTimeout(() => $("#other-species-search")?.focus(), 0);
@@ -1391,11 +1435,18 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const list = $("#commission-species-list");
     const adminStatus = $("#admin-species-catalog-status");
     const adminTools = $("#commission-species-admin-tools");
-    if (adminTools) adminTools.hidden = !isAdmin();
+    const title = $("#commission-species-title");
+    const lead = $("#commission-species-lead");
+    const filterWrap = $("#commission-species-filter-wrap");
+    const isAdminMode = isAdmin() && commissionSpeciesViewMode === "admin";
+    if (adminTools) adminTools.hidden = !isAdminMode;
+    if (filterWrap) filterWrap.hidden = !isAdminMode;
+    if (title) title.textContent = isAdminMode ? "Katalog gatunków Komisji" : "Lista gatunków Komisji";
+    if (lead) lead.textContent = isAdminMode ? "Panel administratora katalogu gatunków Komisji Faunistycznej." : "Wyszukaj gatunek z katalogu Komisji Faunistycznej.";
     if (adminStatus) adminStatus.textContent = `${otherSpeciesState.species.length} gatunków • Ostatnia udana aktualizacja: ${formatSpeciesDate(otherSpeciesState.source.lastSuccessfulFetchAt || otherSpeciesState.source.lastFetchedAt)} • źródło: ${otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL}`;
     if (!list) return;
     const query = normalizeSearchText(value("#commission-species-search"));
-    const filter = value("#commission-species-filter", "all");
+    const filter = isAdminMode ? value("#commission-species-filter", "all") : "all";
     const all = [...otherSpeciesState.species].sort((a, b) => (a.polishName || a.latinName || "").localeCompare((b.polishName || b.latinName || ""), "pl"));
     const filtered = all.filter((item) => {
       if (filter === "active") return item.isActive !== false;
@@ -1406,23 +1457,21 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }).filter((item) => !query || speciesSearchRank(item, query) != null);
     const visible = query ? filtered : filtered.slice(0, 100);
     const counter = $("#commission-species-counter");
-    if (counter) counter.textContent = `Wyświetlono ${visible.length} z ${filtered.length} gatunków (łącznie: ${all.length}).`;
-    const meta = $("#commission-species-meta");
-    if (meta && isAdmin()) {
-      const m = otherSpeciesAdminMeta || {};
-      meta.innerHTML = `
-        <strong>Źródło:</strong> ${escapeHtml(m.source || otherSpeciesState.source.primaryName || "Komisja Faunistyczna PTZool")}<br>
-        <strong>URL źródła:</strong> ${escapeHtml(m.sourceUrl || otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL)}<br>
-        <strong>Ostatnia udana aktualizacja:</strong> ${escapeHtml(formatSpeciesDate(m.lastSuccessfulFetchAt || otherSpeciesState.source.lastSuccessfulFetchAt))}<br>
-        <strong>Liczba gatunków:</strong> ${escapeHtml(String(m.speciesCount ?? all.length))} • <strong>Aliasy:</strong> ${escapeHtml(String(m.aliasCount ?? "—"))} • <strong>Legacy values:</strong> ${escapeHtml(String(m.legacyValuesCount ?? "—"))} • <strong>Wymaga weryfikacji:</strong> ${escapeHtml(String(m.needsReviewCount ?? "—"))}<br>
-        <strong>Ostatni błąd:</strong> ${escapeHtml(m.lastError || "brak")}<br>
-        <strong>Ostatnie zmiany parsera/nazw:</strong> ${escapeHtml(m.parserChanges || m.lastParserChanges || "brak")}
-      `;
+    if (counter) {
+      counter.hidden = !isAdminMode;
+      counter.textContent = isAdminMode ? `Wyświetlono ${visible.length} z ${filtered.length} gatunków (łącznie: ${all.length}).` : `Znaleziono ${filtered.length} gatunków`;
     }
-    list.innerHTML = visible.length ? visible.map((item, idx) => {
-      const lp = item?.sourcePayload?.lp || "—";
-      return `<article class="commission-species-row"><div class="species-admin-grid"><span>${idx + 1}.</span><span>${escapeHtml(String(lp))}</span><span>${escapeHtml(item.polishName || "—")}</span><span>${escapeHtml(item.latinName || "—")}</span><span>${escapeHtml(item.code || "—")}</span><span>${escapeHtml(item.category || "—")}</span><span>${escapeHtml(item.status || "—")}</span><span>${escapeHtml(item.id || "—")}</span><span>${item.isActive === false ? "nieaktywny" : "aktywny"}</span><span>${item.needsReview ? "tak" : "nie"}</span><span>${escapeHtml((item.aliases || []).join(", ") || "—")}</span><span>${escapeHtml((item.legacyValues || []).join(", ") || "—")}</span><span>${escapeHtml(formatSpeciesDate(item.updatedAt || item.updated_at || item.sourcePayload?.updatedAt))}</span></div></article>`;
-    }).join("") : `<p class="muted species-search-empty">Brak gatunków dla wybranego filtra.</p>`;
+    const meta = $("#commission-species-meta");
+    if (meta) {
+      meta.hidden = !isAdminMode;
+      if (isAdminMode) {
+        const m = otherSpeciesAdminMeta || {};
+        meta.innerHTML = `<strong>Źródło:</strong> ${escapeHtml(m.source || otherSpeciesState.source.primaryName || "Komisja Faunistyczna PTZool")}<br><strong>URL źródła:</strong> ${escapeHtml(m.sourceUrl || otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL)}<br><strong>Ostatnia udana aktualizacja:</strong> ${escapeHtml(formatSpeciesDate(m.lastSuccessfulFetchAt || otherSpeciesState.source.lastSuccessfulFetchAt))}<br><strong>Liczba gatunków:</strong> ${escapeHtml(String(m.speciesCount ?? all.length))} • <strong>Aliasy:</strong> ${escapeHtml(String(m.aliasCount ?? "—"))} • <strong>Legacy values:</strong> ${escapeHtml(String(m.legacyValuesCount ?? "—"))} • <strong>Wymaga weryfikacji:</strong> ${escapeHtml(String(m.needsReviewCount ?? "—"))}<br><strong>Ostatni błąd:</strong> ${escapeHtml(m.lastError || "brak")}<br><strong>Ostatnie zmiany parsera/nazw:</strong> ${escapeHtml(m.parserChanges || m.lastParserChanges || "brak")}`;
+      }
+    }
+    list.innerHTML = visible.length ? visible.map((item, idx) => isAdminMode
+      ? `<article class="commission-species-row"><div class="species-admin-grid"><span>${idx + 1}.</span><span>${escapeHtml(String(item?.sourcePayload?.lp || "—"))}</span><span>${escapeHtml(item.polishName || "—")}</span><span>${escapeHtml(item.latinName || "—")}</span><span>${escapeHtml(item.code || "—")}</span><span>${escapeHtml(item.category || "—")}</span><span>${escapeHtml(item.status || "—")}</span><span>${escapeHtml(item.id || "—")}</span><span>${item.isActive === false ? "nieaktywny" : "aktywny"}</span><span>${item.needsReview ? "tak" : "nie"}</span><span>${escapeHtml((item.aliases || []).join(", ") || "—")}</span><span>${escapeHtml((item.legacyValues || []).join(", ") || "—")}</span><span>${escapeHtml(formatSpeciesDate(item.updatedAt || item.updated_at || item.sourcePayload?.updatedAt))}</span></div></article>`
+      : `<article class="commission-species-row"><strong>${escapeHtml(item.polishName || "—")}</strong><p class="muted">${escapeHtml(item.latinName || "—")}${item.code ? ` · ${escapeHtml(item.code)}` : ""}${item.status ? ` · ${escapeHtml(item.status)}` : ""}</p></article>`).join("") : `<p class="muted species-search-empty">Brak gatunków dla wybranego filtra.</p>`;
   }
 
   function renderAdminSpeciesCatalogTable(normalized, meta) {
@@ -1522,7 +1571,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   const mapUserState = {
     records: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false, isTrackingUser: false },
     working: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false, isTrackingUser: false },
-    meso: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false, isTrackingUser: false }
+    meso: { userLocationMarker: null, userAccuracyCircle: null, userHeadingMarker: null, hasAutoCenteredOnUser: false, isTrackingUser: false, userMovedMap: false, openSessionId: 0, bound: false, isProgrammaticMove: false }
   };
   let latestUserLatLng = null;
   let latestUserAccuracy = null;
@@ -4397,7 +4446,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         item.skippedSession = 0;
         item.lastError = "";
         if (item.map && item.onlineLayer && navigator.onLine) {
-          const clearedMapId = item === ortoCacheState.records ? "records" : "working";
+          const clearedMapId = item === ortoCacheState.records ? "records" : item === ortoCacheState.working ? "working" : "meso";
           setMapBaseLayer(item.map, clearedMapId, "Ortofotomapa Geoportal");
         }
       }
@@ -4444,7 +4493,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   function resolveMapViewStateKey(mapId) {
     if (mapId && ortoCacheState[mapId]) return mapId;
-    return mapId === "working" ? "working" : "records";
+    if (mapId === "working") return "working";
+    if (mapId === "meso") return "meso";
+    return "records";
   }
 
   function getMapViewState(mapId) {
@@ -4608,13 +4659,25 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (layerName !== "Ortofotomapa Geoportal") setMapBaseLayer(map, mapId, "Ortofotomapa Geoportal");
       return;
     }
+
+    const previousCenter = map._loaded ? map.getCenter() : null;
+    const previousZoom = map._loaded ? map.getZoom() : null;
+    if (mapId === "meso") console.debug("[meso-map] layer changed", layerName);
+
     Object.values(layers).forEach((layer) => {
       if (map.hasLayer(layer)) map.removeLayer(layer);
     });
     nextLayer.addTo(map);
     const layerMaxZoom = layerName.startsWith("Dominik Layer") ? DOMINIK_MAX_DISPLAY_ZOOM : MAP_MAX_ZOOM;
     map.setMaxZoom(layerMaxZoom);
-    if (map.getZoom() > layerMaxZoom) map.setZoom(layerMaxZoom);
+    if (previousCenter && Number.isFinite(previousZoom)) {
+      if (mapId === "meso") mapUserState.meso.isProgrammaticMove = true;
+      try {
+        map.setView(previousCenter, Math.min(previousZoom, layerMaxZoom), { animate: false });
+      } finally {
+        if (mapId === "meso") mapUserState.meso.isProgrammaticMove = false;
+      }
+    }
     state.currentBaseLayerName = layerName;
     const select = $(`#${mapId}-base-layer`);
     if (select) select.value = layerName;
@@ -4831,16 +4894,17 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
   }
 
-  function getMapUserState(targetMap) {
-    if (targetMap === mesoMeasureMap) return mapUserState.meso;
-    if (targetMap === workingMap) return mapUserState.working;
+  function getMapUserState(target) {
+    if (target === "records" || target === recordsMap) return mapUserState.records;
+    if (target === "working" || target === workingMap) return mapUserState.working;
+    if (target === "meso" || target === mesoMeasureMap) return mapUserState.meso;
     return mapUserState.records;
   }
 
   function syncUserLocationLayers(target) {
-    const targetMap = target === "records" ? recordsMap : target === "working" ? workingMap : target;
+    const targetMap = typeof target === "string" ? getMapById(target) : target;
     if (!targetMap || !latestUserLatLng) return;
-    const state = getMapUserState(targetMap);
+    const state = getMapUserState(target);
     if (!state.userLocationMarker || !targetMap.hasLayer(state.userLocationMarker)) {
       if (state.userLocationMarker) targetMap.removeLayer(state.userLocationMarker);
       state.userLocationMarker = L.circleMarker(latestUserLatLng, {radius:8,color:"#0b57d0",weight:3,fillColor:"#2f8cff",fillOpacity:.85}).addTo(targetMap);
@@ -5646,9 +5710,45 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
 
 
+  function bindMesoMeasureMapUserMoveGuard() {
+    if (!mesoMeasureMap || mapUserState.meso.bound) return;
+    mapUserState.meso.bound = true;
+    mesoMeasureMap.on("dragstart zoomstart", () => {
+      if (mapUserState.meso.isProgrammaticMove) return;
+      mapUserState.meso.userMovedMap = true;
+      console.debug("[meso-map] user moved map");
+    });
+  }
+
+  function setMesoGpsStatus(message) {
+    const status = $("#meso-user-status");
+    if (status) status.textContent = message;
+  }
+
+  function centerMesoMapOnNestIfNoUserPosition() {
+    if (!mesoMeasureMap || latestUserLatLng || mapUserState.meso.hasAutoCenteredOnUser || mapUserState.meso.userMovedMap) return false;
+    const lat = getNumber("#lat", null);
+    const lon = getNumber("#lon", null);
+    if (!hasValidCoords(lat, lon)) return false;
+    console.debug("[meso-map] auto-center nest fallback");
+    mapUserState.meso.isProgrammaticMove = true;
+    try {
+      mesoMeasureMap.setView([lat, lon], Math.max(mesoMeasureMap.getZoom() || 18, 18), { animate: false });
+    } finally {
+      mapUserState.meso.isProgrammaticMove = false;
+    }
+    mapUserState.meso.hasAutoCenteredOnUser = true;
+    return true;
+  }
+
+  function prepareMesoMeasurementSession() {
+    if (measureStates.meso?.mode === "off") setMeasureMode("meso", "line");
+  }
+
   function renderMesoMeasureMap() {
     const mapEl = $("#meso-measure-map");
     if (!mapEl || typeof L === "undefined") return;
+    console.debug("[meso-map] render");
     if (!mesoMeasureMap) {
       const base = createBaseLayers();
       mesoMeasureMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: MAP_MAX_ZOOM });
@@ -5663,16 +5763,20 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       initMapViewStatePersistence(mesoMeasureMap, "meso");
       switchToOfflineOrtoIfNeeded(mesoMeasureMap, "meso");
       initMeasureTools(mesoMeasureMap, "meso");
-      if (!ortoCacheState.meso.viewRestored) mesoMeasureMap.setView([52, 19], 15);
+      bindMesoMeasureMapUserMoveGuard();
+      if (!ortoCacheState.meso.viewRestored) {
+        mapUserState.meso.isProgrammaticMove = true;
+        try {
+          mesoMeasureMap.setView([52, 19], 15);
+        } finally {
+          mapUserState.meso.isProgrammaticMove = false;
+        }
+      }
+    } else {
+      bindMesoMeasureMapUserMoveGuard();
     }
     syncUserLocationLayers("meso");
-    const lat = getNumber("#lat", null);
-    const lon = getNumber("#lon", null);
-    if (!mapUserState.meso.hasAutoCenteredOnUser && !centerMeasurementMapOnUser({ animate: false }) && hasValidCoords(lat, lon)) {
-      mesoMeasureMap.setView([lat, lon], 18);
-    }
     mesoMeasureMap.invalidateSize();
-    setMeasureMode("meso", "line");
   }
 
   function openMesoMeasureForField(targetSelector) {
@@ -5683,21 +5787,35 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (targetLabel) targetLabel.textContent = `Pole docelowe: ${label}`;
     showView("meso-measure");
     mapUserState.meso.hasAutoCenteredOnUser = false;
+    mapUserState.meso.userMovedMap = false;
+    mapUserState.meso.openSessionId += 1;
+    console.debug("[meso-map] open", { sessionId: mapUserState.meso.openSessionId, targetSelector: mesoMeasureTargetSelector });
+    const sessionId = mapUserState.meso.openSessionId;
     setTimeout(async () => {
+      if (sessionId !== mapUserState.meso.openSessionId) return;
       renderMesoMeasureMap();
-      if (centerMeasurementMapOnUser({ animate: false })) {
-        const status = $("#meso-user-status");
-        if (status) status.textContent = "Twoja pozycja: aktywna";
+      if (!mesoMeasureMap) return;
+      prepareMesoMeasurementSession();
+      mesoMeasureMap.invalidateSize();
+
+      if (latestUserLatLng) {
+        syncUserLocationLayers("meso");
+        if (centerMeasurementMapOnUser({ animate: false })) setMesoGpsStatus("Twoja pozycja: aktywna");
+      } else {
+        centerMesoMapOnNestIfNoUserPosition();
       }
+
       try {
         await showMyLocationOnMap(mesoMeasureMap, "#meso-user-status");
+        if (sessionId !== mapUserState.meso.openSessionId) return;
         syncUserLocationLayers("meso");
-        if (!mapUserState.meso.hasAutoCenteredOnUser) centerMeasurementMapOnUser({ animate: true });
+        centerMeasurementMapOnUser({ animate: true });
       } catch {
-        const status = $("#meso-user-status");
-        if (status) status.textContent = "Nie udało się pobrać pozycji GPS. Możesz nadal przesunąć mapę ręcznie.";
+        if (sessionId === mapUserState.meso.openSessionId) {
+          setMesoGpsStatus("Nie udało się pobrać pozycji GPS. Możesz przesunąć mapę ręcznie.");
+        }
       }
-    }, 0);
+    }, 100);
   }
 
   function applyMesoMeasureToField() {
@@ -5726,6 +5844,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         updateMapHeadingButtons();
         syncUserLocationLayers("records");
         syncUserLocationLayers("working");
+        syncUserLocationLayers("meso");
         followTrackedUserLocation();
       }, () => {
         mapUserState.records.isTrackingUser = false;
@@ -5739,12 +5858,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       updateMapHeadingButtons();
       syncUserLocationLayers("records");
       syncUserLocationLayers("working");
+      syncUserLocationLayers("meso");
     }
   }
 
   function getMapById(mapId) {
+    if (mapId === "records") return recordsMap;
+    if (mapId === "working") return workingMap;
     if (mapId === "meso") return mesoMeasureMap;
-    return mapId === "working" ? workingMap : recordsMap;
+    return mapId || null;
   }
 
   function zoomForUserAccuracy(accuracy) {
@@ -5755,10 +5877,25 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function centerMeasurementMapOnUser(options = {}) {
-    const map = options.map || mesoMeasureMap;
+    const map = mesoMeasureMap;
     if (!map || !latestUserLatLng) return false;
     syncUserLocationLayers("meso");
-    map.setView(latestUserLatLng, zoomForUserAccuracy(latestUserAccuracy), { animate: !!options.animate });
+
+    const force = options.force === true;
+    const shouldAutoCenter = !mapUserState.meso.hasAutoCenteredOnUser && !mapUserState.meso.userMovedMap;
+    if (!force && !shouldAutoCenter) return true;
+
+    console.debug("[meso-map] auto-center user", { force, animate: !!options.animate });
+    mapUserState.meso.isProgrammaticMove = true;
+    try {
+      map.setView(
+        latestUserLatLng,
+        options.zoom || Math.max(map.getZoom() || 18, zoomForUserAccuracy(latestUserAccuracy)),
+        { animate: !!options.animate }
+      );
+    } finally {
+      mapUserState.meso.isProgrammaticMove = false;
+    }
     mapUserState.meso.hasAutoCenteredOnUser = true;
     return true;
   }
@@ -5955,23 +6092,24 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         setTimeout(openAppMenu, 0);
       }
     });
-    $("#commission-species-back")?.addEventListener("click", () => showView(isAdmin() ? "admin" : "home"));
+    $("#commission-species-back")?.addEventListener("click", () => showView(commissionSpeciesViewMode === "admin" && isAdmin() ? "admin" : "home"));
     $("#commission-species-search")?.addEventListener("input", renderOtherSpeciesPanel);
     $("#commission-species-filter")?.addEventListener("change", renderOtherSpeciesPanel);
     $("#commission-species-refresh-admin")?.addEventListener("click", async () => {
-      if (!isAdmin()) return;
+      if (!isAdmin() || commissionSpeciesViewMode !== "admin") return;
       await refreshOtherSpeciesFromCommission();
       await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
       renderOtherSpeciesPanel();
     });
     $("#admin-open-species-catalog")?.addEventListener("click", async () => {
       if (!isAdmin()) return;
+      commissionSpeciesViewMode = "admin";
       await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
       renderOtherSpeciesPanel();
       showView("commission-species");
     });
     $("#commission-species-clear-cache-admin")?.addEventListener("click", async () => {
-      if (!isAdmin()) return;
+      if (!isAdmin() || commissionSpeciesViewMode !== "admin") return;
       localStorage.removeItem(OTHER_SPECIES_CACHE_KEY);
       await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
       updateOtherSpeciesStatus("Wyczyszczono lokalny cache gatunków i pobrano świeże dane z API.");
@@ -5981,6 +6119,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
     });
     $("#start-new").addEventListener("click", () => { editReturnToReadonly = false; startNewRecord(); });
+    $("#open-commission-species")?.addEventListener("click", async () => {
+      commissionSpeciesViewMode = "public";
+      await loadPublicSpeciesCatalog({ force: true }).catch((error) => updateOtherSpeciesStatus(error.message || String(error), true));
+      renderOtherSpeciesPanel();
+      showView("commission-species");
+    });
     $("#start-quick-nest")?.addEventListener("click", () => { editReturnToReadonly = false; startQuickNestRecord(); });
     $("#quick-nest-back")?.addEventListener("click", () => showView(quickNestReturnView === "map" ? "map" : "home"));
     $("#quick-nest-id-generate")?.addEventListener("click", () => setValue("#quick-nest-id", buildQuickNestId()));
@@ -6006,17 +6150,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#meso-measure-back")?.addEventListener("click", () => showView("form"));
     $("#meso-measure-apply")?.addEventListener("click", applyMesoMeasureToField);
     $("#meso-center-user")?.addEventListener("click", async () => {
-      if (centerMeasurementMapOnUser({ animate: true })) {
-        const status = $("#meso-user-status");
-        if (status) status.textContent = "Twoja pozycja: aktywna";
+      if (centerMeasurementMapOnUser({ animate: true, force: true })) {
+        setMesoGpsStatus("Twoja pozycja: aktywna");
       }
       try {
         await showMyLocationOnMap(mesoMeasureMap, "#meso-user-status");
         syncUserLocationLayers("meso");
-        centerMeasurementMapOnUser({ animate: true });
+        centerMeasurementMapOnUser({ animate: true, force: true });
       } catch {
-        const status = $("#meso-user-status");
-        if (status) status.textContent = "Nie udało się pobrać pozycji GPS. Możesz nadal przesunąć mapę ręcznie.";
+        setMesoGpsStatus("Nie udało się pobrać pozycji GPS. Możesz nadal przesunąć mapę ręcznie.");
       }
     });
     $("#recalculate-plover-distances")?.addEventListener("click", () => {
