@@ -518,7 +518,7 @@
         <button type="button" data-menu-action="sync">Synchronizacja</button>
         ${canExport ? `<button type="button" data-menu-action="export">Eksport</button>` : ""}
         ${isAdmin() ? `<button type="button" data-menu-action="admin">Administrator</button>` : ""}
-        ${isAdmin() ? `<button type="button" data-menu-action="commission-species">Katalog gatunków Komisji</button>` : ""}
+        <button type="button" data-menu-action="commission-species">Lista gatunków Komisji</button>
         <button type="button" data-menu-action="settings">Ustawienia</button>
         <button type="button" data-menu-action="install">Zainstaluj aplikację</button>
         <a class="button-like" href="instrukcja_terenowa_sieweczka.pdf" download>Pomoc</a>
@@ -578,6 +578,8 @@
       }
       if (action === "commission-species") {
         closeForNavigation();
+        commissionSpeciesViewMode = "public";
+        await loadPublicSpeciesCatalog({ force: true }).catch(() => null);
         showView("commission-species");
         renderOtherSpeciesPanel();
       }
@@ -935,6 +937,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   };
   let otherSpeciesState = normalizeOtherSpeciesPayload(OTHER_SPECIES_FALLBACK, "fallback");
   let otherSpeciesAdminMeta = null;
+  let commissionSpeciesViewMode = "public";
 
   const LABELS = {
     species: {
@@ -1093,6 +1096,36 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return await response.json();
   }
 
+  async function loadPublicSpeciesCatalog({ force = false } = {}) {
+    const cached = !force ? readOtherSpeciesCache() : null;
+    if (cached?.species?.length) {
+      otherSpeciesState = cached;
+    }
+    const cfg = getSyncConfig();
+    const apiBase = getSyncApiBase(cfg);
+    try {
+      const response = await fetch(`${apiBase}/api/species`, {
+        cache: "no-store",
+        headers: getSyncAuthHeaders(cfg)
+      });
+      if (!response.ok) throw new Error(await readApiError(response, `Species HTTP ${response.status}`));
+      const payload = await response.json();
+      const normalized = normalizeOtherSpeciesPayload(payload, force ? "public-api-force" : "public-api");
+      otherSpeciesState = normalized;
+      localStorage.setItem(OTHER_SPECIES_CACHE_KEY, JSON.stringify(normalized));
+      renderOtherSpeciesPicker();
+      renderQuickOtherSpeciesPicker();
+      return normalized;
+    } catch (error) {
+      if (cached?.species?.length) {
+        renderOtherSpeciesPicker();
+        renderQuickOtherSpeciesPicker();
+        return cached;
+      }
+      throw new Error("Nie udało się załadować listy gatunków. Spróbuj połączyć się z internetem albo zsynchronizuj aplikację.");
+    }
+  }
+
   async function loadAdminSpeciesCatalog({ includeInactive = true, force = false } = {}) {
     if (!isAdmin()) throw new Error("Brak uprawnień administratora.");
     const cfg = getSyncConfig();
@@ -1130,7 +1163,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const cached = readOtherSpeciesCache();
     if (cached?.species?.length) otherSpeciesState = cached;
     try {
-      const fromApi = await loadApiOtherSpecies(isAdmin());
+      const fromApi = await loadPublicSpeciesCatalog({ force: true });
       saveOtherSpeciesCache(fromApi);
       if (isAdmin()) {
         try { otherSpeciesAdminMeta = await loadAdminSpeciesMeta(); } catch { otherSpeciesAdminMeta = null; }
@@ -1319,6 +1352,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return findOtherSpecies(selectedQuickSpeciesValue());
   }
 
+  async function ensurePublicSpeciesLoaded() {
+    if (otherSpeciesState?.species?.length) return;
+    try {
+      await loadPublicSpeciesCatalog({ force: false });
+    } catch (error) {
+      updateOtherSpeciesStatus(error.message || String(error), true);
+    }
+  }
+
   function updateSelectedQuickOtherSpecies() {
     const selected = $("#quick-other-species-selected");
     if (!selected) return;
@@ -1326,12 +1368,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     selected.textContent = item ? `Wybrano: ${item.polishName}${item.latinName ? ` (${item.latinName})` : ""}` : "Nie wybrano gatunku z listy Komisji.";
   }
 
-  function toggleQuickOtherSpeciesPicker() {
+  async function toggleQuickOtherSpeciesPicker() {
     const panel = $("#quick-other-species-picker");
     if (!panel) return;
     const show = quickValue("#quick-species", "unknown") === "custom:other";
     panel.hidden = !show;
     if (show) {
+      await ensurePublicSpeciesLoaded();
       renderQuickOtherSpeciesPicker();
       updateSelectedQuickOtherSpecies();
     } else {
@@ -1345,9 +1388,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const panel = $("#other-species-picker");
     const input = $("#species-custom-input");
     if (!hidden || !panel) return;
-    const showPicker = () => {
+    const showPicker = async () => {
       panel.hidden = false;
       if (input) input.hidden = true;
+      await ensurePublicSpeciesLoaded();
       renderOtherSpeciesPicker();
       updateSelectedOtherSpecies();
       setTimeout(() => $("#other-species-search")?.focus(), 0);
@@ -1391,11 +1435,18 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const list = $("#commission-species-list");
     const adminStatus = $("#admin-species-catalog-status");
     const adminTools = $("#commission-species-admin-tools");
-    if (adminTools) adminTools.hidden = !isAdmin();
+    const title = $("#commission-species-title");
+    const lead = $("#commission-species-lead");
+    const filterWrap = $("#commission-species-filter-wrap");
+    const isAdminMode = isAdmin() && commissionSpeciesViewMode === "admin";
+    if (adminTools) adminTools.hidden = !isAdminMode;
+    if (filterWrap) filterWrap.hidden = !isAdminMode;
+    if (title) title.textContent = isAdminMode ? "Katalog gatunków Komisji" : "Lista gatunków Komisji";
+    if (lead) lead.textContent = isAdminMode ? "Panel administratora katalogu gatunków Komisji Faunistycznej." : "Wyszukaj gatunek z katalogu Komisji Faunistycznej.";
     if (adminStatus) adminStatus.textContent = `${otherSpeciesState.species.length} gatunków • Ostatnia udana aktualizacja: ${formatSpeciesDate(otherSpeciesState.source.lastSuccessfulFetchAt || otherSpeciesState.source.lastFetchedAt)} • źródło: ${otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL}`;
     if (!list) return;
     const query = normalizeSearchText(value("#commission-species-search"));
-    const filter = value("#commission-species-filter", "all");
+    const filter = isAdminMode ? value("#commission-species-filter", "all") : "all";
     const all = [...otherSpeciesState.species].sort((a, b) => (a.polishName || a.latinName || "").localeCompare((b.polishName || b.latinName || ""), "pl"));
     const filtered = all.filter((item) => {
       if (filter === "active") return item.isActive !== false;
@@ -1406,23 +1457,21 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }).filter((item) => !query || speciesSearchRank(item, query) != null);
     const visible = query ? filtered : filtered.slice(0, 100);
     const counter = $("#commission-species-counter");
-    if (counter) counter.textContent = `Wyświetlono ${visible.length} z ${filtered.length} gatunków (łącznie: ${all.length}).`;
-    const meta = $("#commission-species-meta");
-    if (meta && isAdmin()) {
-      const m = otherSpeciesAdminMeta || {};
-      meta.innerHTML = `
-        <strong>Źródło:</strong> ${escapeHtml(m.source || otherSpeciesState.source.primaryName || "Komisja Faunistyczna PTZool")}<br>
-        <strong>URL źródła:</strong> ${escapeHtml(m.sourceUrl || otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL)}<br>
-        <strong>Ostatnia udana aktualizacja:</strong> ${escapeHtml(formatSpeciesDate(m.lastSuccessfulFetchAt || otherSpeciesState.source.lastSuccessfulFetchAt))}<br>
-        <strong>Liczba gatunków:</strong> ${escapeHtml(String(m.speciesCount ?? all.length))} • <strong>Aliasy:</strong> ${escapeHtml(String(m.aliasCount ?? "—"))} • <strong>Legacy values:</strong> ${escapeHtml(String(m.legacyValuesCount ?? "—"))} • <strong>Wymaga weryfikacji:</strong> ${escapeHtml(String(m.needsReviewCount ?? "—"))}<br>
-        <strong>Ostatni błąd:</strong> ${escapeHtml(m.lastError || "brak")}<br>
-        <strong>Ostatnie zmiany parsera/nazw:</strong> ${escapeHtml(m.parserChanges || m.lastParserChanges || "brak")}
-      `;
+    if (counter) {
+      counter.hidden = !isAdminMode;
+      counter.textContent = isAdminMode ? `Wyświetlono ${visible.length} z ${filtered.length} gatunków (łącznie: ${all.length}).` : `Znaleziono ${filtered.length} gatunków`;
     }
-    list.innerHTML = visible.length ? visible.map((item, idx) => {
-      const lp = item?.sourcePayload?.lp || "—";
-      return `<article class="commission-species-row"><div class="species-admin-grid"><span>${idx + 1}.</span><span>${escapeHtml(String(lp))}</span><span>${escapeHtml(item.polishName || "—")}</span><span>${escapeHtml(item.latinName || "—")}</span><span>${escapeHtml(item.code || "—")}</span><span>${escapeHtml(item.category || "—")}</span><span>${escapeHtml(item.status || "—")}</span><span>${escapeHtml(item.id || "—")}</span><span>${item.isActive === false ? "nieaktywny" : "aktywny"}</span><span>${item.needsReview ? "tak" : "nie"}</span><span>${escapeHtml((item.aliases || []).join(", ") || "—")}</span><span>${escapeHtml((item.legacyValues || []).join(", ") || "—")}</span><span>${escapeHtml(formatSpeciesDate(item.updatedAt || item.updated_at || item.sourcePayload?.updatedAt))}</span></div></article>`;
-    }).join("") : `<p class="muted species-search-empty">Brak gatunków dla wybranego filtra.</p>`;
+    const meta = $("#commission-species-meta");
+    if (meta) {
+      meta.hidden = !isAdminMode;
+      if (isAdminMode) {
+        const m = otherSpeciesAdminMeta || {};
+        meta.innerHTML = `<strong>Źródło:</strong> ${escapeHtml(m.source || otherSpeciesState.source.primaryName || "Komisja Faunistyczna PTZool")}<br><strong>URL źródła:</strong> ${escapeHtml(m.sourceUrl || otherSpeciesState.source.primaryUrl || OTHER_SPECIES_SOURCE_URL)}<br><strong>Ostatnia udana aktualizacja:</strong> ${escapeHtml(formatSpeciesDate(m.lastSuccessfulFetchAt || otherSpeciesState.source.lastSuccessfulFetchAt))}<br><strong>Liczba gatunków:</strong> ${escapeHtml(String(m.speciesCount ?? all.length))} • <strong>Aliasy:</strong> ${escapeHtml(String(m.aliasCount ?? "—"))} • <strong>Legacy values:</strong> ${escapeHtml(String(m.legacyValuesCount ?? "—"))} • <strong>Wymaga weryfikacji:</strong> ${escapeHtml(String(m.needsReviewCount ?? "—"))}<br><strong>Ostatni błąd:</strong> ${escapeHtml(m.lastError || "brak")}<br><strong>Ostatnie zmiany parsera/nazw:</strong> ${escapeHtml(m.parserChanges || m.lastParserChanges || "brak")}`;
+      }
+    }
+    list.innerHTML = visible.length ? visible.map((item, idx) => isAdminMode
+      ? `<article class="commission-species-row"><div class="species-admin-grid"><span>${idx + 1}.</span><span>${escapeHtml(String(item?.sourcePayload?.lp || "—"))}</span><span>${escapeHtml(item.polishName || "—")}</span><span>${escapeHtml(item.latinName || "—")}</span><span>${escapeHtml(item.code || "—")}</span><span>${escapeHtml(item.category || "—")}</span><span>${escapeHtml(item.status || "—")}</span><span>${escapeHtml(item.id || "—")}</span><span>${item.isActive === false ? "nieaktywny" : "aktywny"}</span><span>${item.needsReview ? "tak" : "nie"}</span><span>${escapeHtml((item.aliases || []).join(", ") || "—")}</span><span>${escapeHtml((item.legacyValues || []).join(", ") || "—")}</span><span>${escapeHtml(formatSpeciesDate(item.updatedAt || item.updated_at || item.sourcePayload?.updatedAt))}</span></div></article>`
+      : `<article class="commission-species-row"><strong>${escapeHtml(item.polishName || "—")}</strong><p class="muted">${escapeHtml(item.latinName || "—")}${item.code ? ` · ${escapeHtml(item.code)}` : ""}${item.status ? ` · ${escapeHtml(item.status)}` : ""}</p></article>`).join("") : `<p class="muted species-search-empty">Brak gatunków dla wybranego filtra.</p>`;
   }
 
   function renderAdminSpeciesCatalogTable(normalized, meta) {
@@ -6043,23 +6092,24 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         setTimeout(openAppMenu, 0);
       }
     });
-    $("#commission-species-back")?.addEventListener("click", () => showView(isAdmin() ? "admin" : "home"));
+    $("#commission-species-back")?.addEventListener("click", () => showView(commissionSpeciesViewMode === "admin" && isAdmin() ? "admin" : "home"));
     $("#commission-species-search")?.addEventListener("input", renderOtherSpeciesPanel);
     $("#commission-species-filter")?.addEventListener("change", renderOtherSpeciesPanel);
     $("#commission-species-refresh-admin")?.addEventListener("click", async () => {
-      if (!isAdmin()) return;
+      if (!isAdmin() || commissionSpeciesViewMode !== "admin") return;
       await refreshOtherSpeciesFromCommission();
       await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
       renderOtherSpeciesPanel();
     });
     $("#admin-open-species-catalog")?.addEventListener("click", async () => {
       if (!isAdmin()) return;
+      commissionSpeciesViewMode = "admin";
       await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
       renderOtherSpeciesPanel();
       showView("commission-species");
     });
     $("#commission-species-clear-cache-admin")?.addEventListener("click", async () => {
-      if (!isAdmin()) return;
+      if (!isAdmin() || commissionSpeciesViewMode !== "admin") return;
       localStorage.removeItem(OTHER_SPECIES_CACHE_KEY);
       await loadAdminSpeciesCatalog({ includeInactive: true, force: true });
       updateOtherSpeciesStatus("Wyczyszczono lokalny cache gatunków i pobrano świeże dane z API.");
@@ -6069,6 +6119,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (!loadDraftToForm()) alert("Brak zapisanego szkicu.");
     });
     $("#start-new").addEventListener("click", () => { editReturnToReadonly = false; startNewRecord(); });
+    $("#open-commission-species")?.addEventListener("click", async () => {
+      commissionSpeciesViewMode = "public";
+      await loadPublicSpeciesCatalog({ force: true }).catch((error) => updateOtherSpeciesStatus(error.message || String(error), true));
+      renderOtherSpeciesPanel();
+      showView("commission-species");
+    });
     $("#start-quick-nest")?.addEventListener("click", () => { editReturnToReadonly = false; startQuickNestRecord(); });
     $("#quick-nest-back")?.addEventListener("click", () => showView(quickNestReturnView === "map" ? "map" : "home"));
     $("#quick-nest-id-generate")?.addEventListener("click", () => setValue("#quick-nest-id", buildQuickNestId()));
