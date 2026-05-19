@@ -3098,6 +3098,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const extra = warnings.length ? `\n\nUwaga:\n- ${warnings.join("\n- ")}` : "";
     const confirmed = confirm(`To jest zapis podstawowy bez pełnej kontroli siedliska. Aplikacja sprawdziła podstawowe dane i GPS gniazda. Użyj tylko wtedy, gdy nie wykonujesz pełnego opisu gniazda. Rekord zostanie oznaczony jako niepełny. Czy zapisać?${extra}`);
     if (!confirmed) return;
+    const selectedNestPhotos = $("#nest-photos")?.files?.length ? await saveSelectedFiles("#nest-photos") : [];
+    if (selectedNestPhotos.length) record.nestMicro.photos = [...(record.nestMicro?.photos || []), ...selectedNestPhotos];
     if (!saveBasicRecord(record)) return;
     editingUid = null;
     currentNestPhotos = [];
@@ -3377,6 +3379,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setValue("#quick-gps-accuracy", "");
     const status = $("#quick-gps-status");
     if (status) status.textContent = "GPS: brak";
+    const quickPhotoPreview = $("#quick-nest-photo-preview");
+    if (quickPhotoPreview) quickPhotoPreview.innerHTML = "";
   }
 
   function startQuickNestRecord(options = {}) {
@@ -3462,6 +3466,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   async function saveQuickNestRecord() {
     const record = buildQuickNestRecord();
+    const quickNestPhotos = $("#quick-nest-photos")?.files?.length ? await saveSelectedFiles("#quick-nest-photos") : [];
+    if (quickNestPhotos.length) record.nestMicro.photos = quickNestPhotos;
     const errors = validateBasicRecordForSave(record);
     if (errors.length) {
       alert(`Nie zapiszę szybkiego wpisu:\n- ${errors.join("\n- ")}`);
@@ -3471,6 +3477,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const returnToMap = record.creationSource === "quick_map_entry";
     const savedUid = record.uid;
     resetQuickNestForm();
+    if ($("#quick-nest-photos")) $("#quick-nest-photos").value = "";
     quickNestCreationSource = "quick_menu_entry";
     quickNestReturnView = "home";
     if (returnToMap) {
@@ -3629,34 +3636,35 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return true;
   }
 
-  async function renderPhotoPreviews() {
-    const render = async (wrapSelector, existingRefs, inputSelector, label) => {
-      const wrap = $(wrapSelector);
-      if (!wrap) return;
-      wrap.innerHTML = "";
-      for (const ref of existingRefs) {
+  async function renderPhotoTiles(wrapSelector, existingRefs, inputSelector, label) {
+    const wrap = $(wrapSelector);
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    for (const ref of existingRefs) {
+      const tile = document.createElement("div");
+      tile.className = "photo-tile";
+      tile.innerHTML = `<img alt="${label}"><small>${label}: ${photoStatusForRef(ref)}</small>`;
+      wrap.appendChild(tile);
+      resolvePhotoSrc(ref).then((src) => {
+        if (src) tile.querySelector("img").src = src;
+      });
+    }
+    const input = $(inputSelector);
+    if (input?.files) {
+      for (const file of Array.from(input.files)) {
         const tile = document.createElement("div");
         tile.className = "photo-tile";
-        tile.innerHTML = `<img alt="${label}"><small>${label}: ${photoStatusForRef(ref)}</small>`;
+        tile.innerHTML = `<img alt="${label}"><small>${label} nowe</small>`;
+        tile.querySelector("img").src = URL.createObjectURL(file);
         wrap.appendChild(tile);
-        resolvePhotoSrc(ref).then((src) => {
-          if (src) tile.querySelector("img").src = src;
-        });
       }
-      const input = $(inputSelector);
-      if (input?.files) {
-        for (const file of Array.from(input.files)) {
-          const tile = document.createElement("div");
-          tile.className = "photo-tile";
-          tile.innerHTML = `<img alt="${label}"><small>${label} nowe</small>`;
-          tile.querySelector("img").src = URL.createObjectURL(file);
-          wrap.appendChild(tile);
-        }
-      }
-      if (!wrap.children.length) wrap.innerHTML = `<p class="muted">Brak zdjęć.</p>`;
-    };
-    await render("#nest-photo-preview", currentNestPhotos, "#nest-photos", "gniazdo");
-    await render("#random-photo-preview", currentRandomPhotos, "#random-photos", "punkt losowy");
+    }
+    if (!wrap.children.length) wrap.innerHTML = `<p class="muted">Brak zdjęć.</p>`;
+  }
+
+  async function renderPhotoPreviews() {
+    await renderPhotoTiles("#nest-photo-preview", currentNestPhotos, "#nest-photos", "gniazdo");
+    await renderPhotoTiles("#random-photo-preview", currentRandomPhotos, "#random-photos", "punkt losowy");
   }
 
   function updateCounts() {
@@ -6274,6 +6282,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#nest-photos").addEventListener("change", () => {
       setValue("#nest-one-m-photo-done", "yes");
       renderPhotoPreviews();
+    });
+    $("#quick-nest-photos")?.addEventListener("change", () => {
+      renderPhotoTiles("#quick-nest-photo-preview", [], "#quick-nest-photos", "gniazdo");
     });
     $("#random-photos").addEventListener("change", () => {
       setValue("#random-point-done", "yes");
