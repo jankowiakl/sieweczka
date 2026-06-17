@@ -63,6 +63,21 @@
   function getCurrentUser() { return getAuthState().user || null; }
   function mustChangePassword() { return !!getCurrentUser()?.must_change_password; }
   function getUserToken() { return getAuthState().token || ""; }
+  class AuthExpiredError extends Error {
+    constructor(message = "Sesja wygasła. Zaloguj się ponownie, a potem uruchom synchronizację.") {
+      super(message);
+      this.name = "AuthExpiredError";
+    }
+  }
+  function handleAuthExpired(error) {
+    clearAuthState();
+    renderUserPanel();
+    const message = error?.message || "Sesja wygasła. Zaloguj się ponownie, a potem uruchom synchronizację.";
+    const loginStatus = $("#login-status");
+    if (loginStatus) loginStatus.textContent = message;
+    showView("login");
+    return message;
+  }
   function isAdmin() { return getCurrentUser()?.role === "admin"; }
   function canManageData() { return ["admin", "coordinator"].includes(getCurrentUser()?.role); }
   function ownsItem(item) { return !!getCurrentUser()?.id && String(item?.createdBy || item?.created_by || item?.uploadedBy || "") === String(getCurrentUser().id); }
@@ -312,6 +327,7 @@
     const workingNests = getWorkingNests();
     const payload = { clientId: getClientId(), lastSyncAt: getLastSyncAt(), records: entries, workingNests };
     const res = await fetch(`${apiBase}/api/sync`, { method: "POST", headers: { "Content-Type": "application/json", ...getSyncAuthHeaders(cfg) }, body: JSON.stringify(payload) });
+    if (res.status === 401) throw new AuthExpiredError();
     if (!res.ok) throw new Error(`Sync HTTP ${res.status}`);
     const data = await res.json();
     const local = new Map(getEntries().map((r)=>[String(r.uid), r]));
@@ -358,7 +374,9 @@
         const result = await syncNow();
         $("#sync-status").textContent = `Synchronizacja zakończona. ${formatPhotoSyncStatus(result.photoSync)}`;
         renderEntries();
-      } catch (e) { $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`; }
+      } catch (e) {
+        $("#sync-status").textContent = e instanceof AuthExpiredError ? handleAuthExpired(e) : `Błąd synchronizacji: ${e.message}`;
+      }
     });
     $("#home-sync-now")?.addEventListener("click", async () => {
       try {
@@ -367,7 +385,7 @@
         renderEntries();
         updateCounts();
       } catch (e) {
-        $("#sync-status").textContent = `Błąd synchronizacji: ${e.message}`;
+        $("#sync-status").textContent = e instanceof AuthExpiredError ? handleAuthExpired(e) : `Błąd synchronizacji: ${e.message}`;
       }
     });
     window.addEventListener("online", () => { syncNow().catch(()=>{}); });
@@ -410,6 +428,7 @@
     const apiBase = getSyncApiBase(cfg);
     if (!apiBase || !getUserToken()) return null;
     const res = await fetch(`${apiBase}/api/me`, { headers: getSyncAuthHeaders(cfg) });
+    if (res.status === 401) throw new AuthExpiredError();
     if (!res.ok) throw new Error(`Me HTTP ${res.status}`);
     const data = await res.json();
     setAuthState({ ...getAuthState(), user: data.user });
@@ -563,7 +582,13 @@
           updateCounts();
           renderHomeSummary();
         } catch (error) {
-          actionButton.textContent = `Błąd synchronizacji: ${error.message || error}`;
+          if (error instanceof AuthExpiredError) {
+            const message = handleAuthExpired(error);
+            actionButton.textContent = message;
+            setTimeout(closeForNavigation, 900);
+          } else {
+            actionButton.textContent = `Błąd synchronizacji: ${error.message || error}`;
+          }
         } finally {
           setTimeout(() => {
             actionButton.disabled = false;
@@ -7117,6 +7142,13 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     syncTilesFromInputs();
     updatePercentSummaries();
     await initOtherSpecies();
+    if (getUserToken() && navigator.onLine) {
+      try {
+        await fetchMe();
+      } catch (error) {
+        if (error instanceof AuthExpiredError) handleAuthExpired(error);
+      }
+    }
     renderEntries();
     updateCounts();
     updateDraftResumeButton();
