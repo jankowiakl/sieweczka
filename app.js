@@ -75,6 +75,32 @@
   function getUiSettings() { try { return JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"); } catch { return {}; } }
   function readObjectSetting(key) { try { const parsed = JSON.parse(localStorage.getItem(key) || "{}"); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; } catch { return {}; } }
   function setUiSettings(settings) { localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(settings || {})); }
+  function setupPullToRefreshGuard() {
+    let touchStartY = 0;
+    const pageScrollTop = () => Math.max(
+      window.scrollY || 0,
+      document.documentElement?.scrollTop || 0,
+      document.body?.scrollTop || 0
+    );
+    const hasScrollableAncestorAboveTop = (target) => {
+      for (let el = target; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+        const style = window.getComputedStyle(el);
+        const canScroll = /(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight;
+        if (canScroll && el.scrollTop > 0) return true;
+      }
+      return false;
+    };
+    document.addEventListener("touchstart", (event) => {
+      if (event.touches.length === 1) touchStartY = event.touches[0].clientY;
+    }, { passive: true });
+    document.addEventListener("touchmove", (event) => {
+      if (event.touches.length !== 1) return;
+      const pullingDown = event.touches[0].clientY > touchStartY;
+      if (pullingDown && pageScrollTop() <= 0 && !hasScrollableAncestorAboveTop(event.target)) {
+        event.preventDefault();
+      }
+    }, { passive: false });
+  }
   const UI_CLASS_VALUES = {
     font: ["font-minimal", "font-xsmall", "font-small", "font-normal", "font-large", "font-xlarge"],
     ui: ["ui-minimal", "ui-xcompact", "ui-compact", "ui-normal", "ui-comfortable", "ui-large"],
@@ -3179,6 +3205,20 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (showAlert) alert("Szkic zapisany lokalnie.");
   }
 
+  function saveDraftSnapshotSync() {
+    if (!formHasStarted()) return;
+    const form = $("#entry-form");
+    if (!form) return;
+    const data = {};
+    new FormData(form).forEach((v, k) => { data[k] = v; });
+    $$("input, select, textarea", form).forEach((el) => {
+      if (el.id && el.type !== "file") data[el.id] = el.value;
+    });
+    data.__currentNestPhotos = currentNestPhotos || [];
+    data.__currentRandomPhotos = currentRandomPhotos || [];
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data }));
+  }
+
   function saveDraft() {
     return writeDraft(true);
   }
@@ -6001,6 +6041,23 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     updateMapHeadingButtons();
   }
 
+  function pausePowerHungryFeatures() {
+    if (userLocationWatchId != null && navigator.geolocation?.clearWatch) {
+      navigator.geolocation.clearWatch(userLocationWatchId);
+      userLocationWatchId = null;
+    }
+    mapUserState.records.isTrackingUser = false;
+    mapUserState.working.isTrackingUser = false;
+    disableMapHeading();
+    for (const state of Object.values(ortoCacheState)) {
+      clearTimeout(state.timer);
+      clearTimeout(state.dominikTimer);
+      state.pending = false;
+      state.dominikPending = false;
+    }
+    updateMapHeadingButtons();
+  }
+
   async function toggleMapHeading() {
     if (mapHeadingEnabled) {
       disableMapHeading();
@@ -7096,6 +7153,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
 
   async function init() {
     migrateLegacyEntries();
+    setupPullToRefreshGuard();
     setupViewportLayoutWatcher();
     applyUiSettings();
     setupPercentGroups();
@@ -7114,6 +7172,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setupFieldMode();
     setupSyncUI();
     setupAuthUI();
+    window.addEventListener("beforeunload", saveDraftSnapshotSync);
+    window.addEventListener("pagehide", saveDraftSnapshotSync);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) pausePowerHungryFeatures();
+    });
     syncTilesFromInputs();
     updatePercentSummaries();
     await initOtherSpecies();
