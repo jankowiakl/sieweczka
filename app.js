@@ -12,7 +12,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.06.22-home-summary-dense";
+  const APP_VERSION = "2026.06.22-species-completeness-summary";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -566,7 +566,7 @@
     let latestDate = "";
     entries.forEach((entry) => {
       const speciesKey = normalizeSpeciesValue(entry.species || "unknown");
-      if (!bySpecies.has(speciesKey)) bySpecies.set(speciesKey, { all: 0, today: 0 });
+      if (!bySpecies.has(speciesKey)) bySpecies.set(speciesKey, { all: 0, today: 0, full: 0, notFull: 0 });
       const speciesRow = bySpecies.get(speciesKey);
       speciesRow.all += 1;
       if (entry.obsDate === today) {
@@ -577,8 +577,13 @@
       if (entryDate && entryDate >= weekStart && entryDate <= now) byStatus.week += 1;
       if (entry.obsDate && entry.obsDate > latestDate) latestDate = entry.obsDate;
       if (String(entry.sector || "").trim()) sectors.add(String(entry.sector).trim());
-      if (isBasicRecord(entry)) byStatus.basic += 1;
-      else byStatus.full += 1;
+      if (isBasicRecord(entry)) {
+        byStatus.basic += 1;
+        speciesRow.notFull += 1;
+      } else {
+        byStatus.full += 1;
+        speciesRow.full += 1;
+      }
       if (hasValidCoords(entry.lat, entry.lon)) byStatus.gps += 1;
       else byStatus.missingGps += 1;
       if (entry.randomPointDone === "yes" || hasValidCoords(entry.randomMicro?.lat, entry.randomMicro?.lon)) byStatus.randomPoint += 1;
@@ -619,6 +624,8 @@
                 <strong>${escapeHtml(speciesLabel(key) || "Inne / nieokreślone")}</strong>
                 <span><small>Wszystkie</small>${row.all}</span>
                 <span><small>Dzisiaj</small>${row.today}</span>
+                <span><small>Pełne</small>${row.full}</span>
+                <span><small>Niepełne</small>${row.notFull}</span>
               </span>
             `).join("")}
           </div>

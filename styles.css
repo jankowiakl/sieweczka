@@ -1005,9 +1005,9 @@ label span,
 
 .home-species-chip {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) repeat(4, auto);
   align-items: center;
-  gap: .5rem;
+  gap: .42rem;
   padding: .38rem .46rem;
 }
 
@@ -1020,7 +1020,7 @@ label span,
 .home-species-chip small {
   display: block;
   color: var(--muted);
-  font-size: .62rem;
+  font-size: .58rem;
   font-weight: 750;
   line-height: 1;
 }
