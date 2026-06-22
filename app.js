@@ -12,7 +12,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.05.18-commission-species";
+  const APP_VERSION = "2026.06.22-home-summary-panel";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -522,6 +522,122 @@
     setText("#home-online-status", onlineText);
     setText("#home-last-sync", lastSync ? new Date(lastSync).toLocaleString("pl-PL") : "—");
     setText("#home-photo-pending", String(photoSummary.pending || 0));
+    const entries = activeEntries();
+    const workingNests = activeWorkingNests();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const weekStart = new Date(now);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const bySpecies = new Map();
+    const byStatus = {
+      full: 0,
+      basic: 0,
+      gps: 0,
+      missingGps: 0,
+      randomPoint: 0,
+      pendingSync: 0,
+      syncErrors: 0,
+      eggs: 0,
+      eggsRecords: 0,
+      today: 0,
+      week: 0
+    };
+    const sectors = new Set();
+    let latestDate = "";
+    entries.forEach((entry) => {
+      const speciesKey = normalizeSpeciesValue(entry.species || "unknown");
+      if (!bySpecies.has(speciesKey)) bySpecies.set(speciesKey, { all: 0, today: 0 });
+      const speciesRow = bySpecies.get(speciesKey);
+      speciesRow.all += 1;
+      if (entry.obsDate === today) {
+        byStatus.today += 1;
+        speciesRow.today += 1;
+      }
+      const entryDate = /^\d{4}-\d{2}-\d{2}$/.test(entry.obsDate || "") ? new Date(`${entry.obsDate}T00:00:00`) : null;
+      if (entryDate && entryDate >= weekStart && entryDate <= now) byStatus.week += 1;
+      if (entry.obsDate && entry.obsDate > latestDate) latestDate = entry.obsDate;
+      if (String(entry.sector || "").trim()) sectors.add(String(entry.sector).trim());
+      if (isBasicRecord(entry)) byStatus.basic += 1;
+      else byStatus.full += 1;
+      if (hasValidCoords(entry.lat, entry.lon)) byStatus.gps += 1;
+      else byStatus.missingGps += 1;
+      if (entry.randomPointDone === "yes" || hasValidCoords(entry.randomMicro?.lat, entry.randomMicro?.lon)) byStatus.randomPoint += 1;
+      if ((entry.syncStatus || "pending") === "error") byStatus.syncErrors += 1;
+      if ((entry.syncStatus || "pending") !== "synced") byStatus.pendingSync += 1;
+      const eggCount = Number(entry.eggCount);
+      if (Number.isFinite(eggCount)) {
+        byStatus.eggs += eggCount;
+        byStatus.eggsRecords += 1;
+      }
+    });
+    setText("#entry-count", String(entries.length));
+    setText("#today-count", String(byStatus.today));
+
+    const summary = $("#species-summary");
+    if (summary) {
+      const pct = (value, total = entries.length) => total ? `${Math.round((value / total) * 100)}%` : "0%";
+      const statCard = (label, value, detail = "") => `
+        <div class="home-summary-stat">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(String(value))}</strong>
+          ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+        </div>
+      `;
+      const sortedSpecies = Array.from(bySpecies.entries()).sort((a, b) => b[1].all - a[1].all || speciesLabel(a[0]).localeCompare(speciesLabel(b[0]), "pl"));
+      const latestRecords = [...entries].sort((a, b) => {
+        const aTime = new Date(a.updatedAt || `${a.obsDate || ""}T${a.obsTime || "00:00"}`).getTime() || 0;
+        const bTime = new Date(b.updatedAt || `${b.obsDate || ""}T${b.obsTime || "00:00"}`).getTime() || 0;
+        return bTime - aTime;
+      }).slice(0, 5);
+
+      summary.innerHTML = entries.length ? `
+        <div class="home-summary-stats">
+          ${statCard("Wszystkie", entries.length, `${byStatus.full} pełne, ${byStatus.basic} szybkie`)}
+          ${statCard("Dzisiaj", byStatus.today, `${byStatus.week} w ostatnich 7 dniach`)}
+          ${statCard("Z GPS", byStatus.gps, `${pct(byStatus.gps)} rekordów`)}
+          ${statCard("Jaja", byStatus.eggs, `${byStatus.eggsRecords} rekordów z liczbą jaj`)}
+          ${statCard("Synchronizacja", byStatus.pendingSync, byStatus.syncErrors ? `${byStatus.syncErrors} błędów` : "oczekujące")}
+          ${statCard("Punkty robocze", workingNests.length, "do sprawdzenia w terenie")}
+        </div>
+        <div class="home-summary-section">
+          <h4>Gatunki</h4>
+          <div class="home-species-chips">
+            ${sortedSpecies.map(([key, row]) => `
+              <span class="home-species-chip">
+                <strong>${escapeHtml(speciesLabel(key) || "Inne / nieokreślone")}</strong>
+                <span>${row.all} razem${row.today ? `, ${row.today} dziś` : ""}</span>
+              </span>
+            `).join("")}
+          </div>
+        </div>
+        <div class="home-summary-section">
+          <h4>Stan danych</h4>
+          <div class="home-summary-lines">
+            <div><span>Ostatnia data obserwacji</span><strong>${escapeHtml(latestDate || "—")}</strong></div>
+            <div><span>Sektory</span><strong>${escapeHtml(String(sectors.size))}</strong></div>
+            <div><span>Brak GPS gniazda</span><strong>${escapeHtml(String(byStatus.missingGps))}</strong></div>
+            <div><span>Punkt losowy / kontrola</span><strong>${escapeHtml(`${byStatus.randomPoint}/${entries.length}`)}</strong></div>
+          </div>
+        </div>
+        <div class="home-summary-section">
+          <h4>Ostatnie rekordy</h4>
+          <div class="home-recent-records">
+            ${latestRecords.map((entry) => `
+              <button type="button" class="home-summary-record" data-home-record-uid="${escapeHtml(entry.uid)}">
+                <strong>${escapeHtml(entry.nestId || "(bez ID)")}</strong>
+                <span>${escapeHtml(speciesLabel(entry.species) || "gatunek?")} • ${escapeHtml(entry.obsDate || "brak daty")} • jaja: ${entry.eggCount ?? "brak"}</span>
+              </button>
+            `).join("")}
+          </div>
+        </div>
+      ` : `
+        <div class="home-summary-empty">
+          <strong>Brak lokalnych rekordów.</strong>
+          <span>Po zapisaniu pierwszego wpisu tutaj pojawią się podsumowania, gatunki i ostatnie rekordy.</span>
+        </div>
+      `;
+    }
     updateDraftResumeButton();
   }
 
@@ -3716,22 +3832,6 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#today-count").textContent = String(todayCount);
     if ($("#offline-status")) $("#offline-status").textContent = navigator.onLine ? "online" : "offline";
     renderHomeSummary();
-    const speciesSummary = $("#species-summary");
-    if (speciesSummary) {
-      const stats = new Map();
-      entries.forEach((entry) => {
-        const key = normalizeSpeciesValue(entry.species || "unknown");
-        if (!stats.has(key)) stats.set(key, { all: 0, today: 0 });
-        const row = stats.get(key);
-        row.all += 1;
-        if (entry.obsDate === today) row.today += 1;
-      });
-      speciesSummary.innerHTML = [
-        `<div>Wszystkie rekordy: ${entries.length}</div>`,
-        `<div>Dzisiaj: ${todayCount}</div>`,
-        ...Array.from(stats.entries()).map(([key, row]) => `<div>${escapeHtml(speciesLabel(key) || "Inne / nieokreślone")}: ${row.all}, dziś ${row.today}</div>`),
-      ].join("");
-    }
   }
 
   function renderEntries() {
@@ -6277,6 +6377,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       }
       const card = event.target.closest(".entry-card");
       if (card?.dataset.uid) showReadonlyRecord(card.dataset.uid);
+    });
+    $("#species-summary")?.addEventListener("click", (event) => {
+      const btn = event.target.closest("button[data-home-record-uid]");
+      if (btn?.dataset.homeRecordUid) showReadonlyRecord(btn.dataset.homeRecordUid);
     });
     $("#readonly-back").addEventListener("click", () => { revokePhotoUrls("server"); showView("records"); });
     $("#readonly-edit").addEventListener("click", () => { editReturnToReadonly = true; readonlyUid && editRecord(readonlyUid); });

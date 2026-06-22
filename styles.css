@@ -911,6 +911,164 @@ label span,
   margin-top: .2rem;
 }
 
+.home-summary-panel {
+  border: 1px solid #b7d4cc;
+  border-radius: 12px;
+  background: #f8fafc;
+  margin: var(--section-gap) 0;
+  overflow: hidden;
+}
+
+.home-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--section-gap);
+  padding: .75rem .8rem .55rem;
+  border-bottom: 1px solid rgba(15, 118, 110, .18);
+  background: #ecfdf5;
+}
+
+.home-summary-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.home-summary-header span {
+  display: block;
+  margin-top: .1rem;
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 650;
+}
+
+.home-summary-scroll {
+  max-height: clamp(190px, 34svh, 330px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding: .75rem;
+  scrollbar-gutter: stable;
+}
+
+.home-summary-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .5rem;
+}
+
+.home-summary-stat,
+.home-summary-lines > div,
+.home-species-chip,
+.home-summary-record {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.home-summary-stat {
+  display: grid;
+  gap: .1rem;
+  padding: .62rem;
+}
+
+.home-summary-stat span,
+.home-summary-lines span {
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.home-summary-stat strong {
+  font-size: 1.2rem;
+}
+
+.home-summary-stat small {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.home-summary-section {
+  margin-top: .8rem;
+}
+
+.home-summary-section h4 {
+  margin: 0 0 .42rem;
+  font-size: .95rem;
+}
+
+.home-species-chips,
+.home-recent-records,
+.home-summary-lines {
+  display: grid;
+  gap: .45rem;
+}
+
+.home-species-chip {
+  display: flex;
+  justify-content: space-between;
+  gap: .65rem;
+  padding: .5rem .58rem;
+}
+
+.home-species-chip span {
+  color: var(--muted);
+  font-weight: 650;
+  text-align: right;
+}
+
+.home-summary-lines {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.home-summary-lines > div {
+  padding: .52rem .58rem;
+}
+
+.home-summary-lines strong {
+  display: block;
+  margin-top: .1rem;
+}
+
+.home-summary-record {
+  min-height: 0;
+  display: grid;
+  justify-content: stretch;
+  align-items: start;
+  gap: .12rem;
+  width: 100%;
+  padding: .58rem .64rem;
+  color: var(--text);
+  text-align: left;
+  background: #fff;
+  border-color: #b7d4cc;
+}
+
+.home-summary-record:hover,
+.home-summary-record:focus-visible {
+  background: #f0fdfa;
+  color: var(--text);
+}
+
+.home-summary-record span {
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 650;
+}
+
+.home-summary-empty {
+  display: grid;
+  gap: .25rem;
+  min-height: 120px;
+  align-content: center;
+  color: var(--muted);
+}
+
+.home-summary-empty strong {
+  color: var(--text);
+}
+
 .home-primary-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -996,6 +1154,21 @@ label span,
   .home-status-grid {
     gap: clamp(.38rem, calc(1.5vw * var(--space-scale)), .55rem);
   }
+  .home-summary-header,
+  .home-summary-scroll {
+    padding-inline: clamp(.5rem, 2vw, .65rem);
+  }
+  .home-summary-scroll {
+    max-height: clamp(180px, 32svh, 280px);
+  }
+  .home-summary-stats,
+  .home-summary-lines {
+    gap: .38rem;
+  }
+  .home-summary-stat,
+  .home-summary-lines > div {
+    padding: clamp(.42rem, 1.7vw, .55rem);
+  }
   .home-status-grid > div {
     padding: clamp(.45rem, 1.8vw, .65rem);
   }
@@ -1027,6 +1200,9 @@ label span,
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: .4rem;
   }
+  .home-summary-scroll {
+    max-height: clamp(172px, 31svh, 250px);
+  }
   .home-tile {
     min-height: clamp(62px, calc(16vw * var(--ui-scale)), 78px);
     padding: clamp(.48rem, 1.7vw, .68rem);
@@ -1041,6 +1217,10 @@ label span,
   .home-primary-actions,
   .home-secondary-actions,
   .home-status-grid {
+    grid-template-columns: 1fr;
+  }
+  .home-summary-stats,
+  .home-summary-lines {
     grid-template-columns: 1fr;
   }
 }
@@ -2350,6 +2530,12 @@ html.buttons-xsmall {
 .home-primary-actions,
 .home-secondary-actions,
 .home-status-grid,
+.home-summary-panel,
+.home-summary-header,
+.home-summary-scroll,
+.home-summary-stats,
+.home-summary-lines,
+.home-summary-record,
 .home-tile,
 .entry-card,
 .entry-actions,
@@ -2397,6 +2583,11 @@ html.buttons-xsmall {
 .screen-head h2,
 .home-tile strong,
 .home-tile span,
+.home-summary-header,
+.home-summary-stat,
+.home-summary-lines > div,
+.home-species-chip,
+.home-summary-record,
 .entry-main,
 .entry-main h3,
 .entry-main p,
