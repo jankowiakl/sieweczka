@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=2026.06.22-home-summary-panel" />
+  <link rel="stylesheet" href="styles.css?v=2026.06.22-home-summary-dense" />
 </head>
 <body>
   <noscript>
@@ -69,8 +69,8 @@
         <div class="home-summary-header">
           <div>
             <h3 id="home-summary-title">Podsumowanie rekordów</h3>
-            <span>Przesuń palcem w panelu, aby zobaczyć wszystkie statystyki.</span>
           </div>
+          <button type="button" class="help-bubble-btn" data-help-title="Podsumowanie rekordów" data-help-body="Przesuń palcem wewnątrz panelu, aby przewinąć wszystkie podsumowania bez przewijania całej strony." aria-label="Wyjaśnienie panelu podsumowania">?</button>
         </div>
         <div id="species-summary" class="home-summary-scroll" tabindex="0" aria-live="polite"></div>
       </section>
@@ -1178,7 +1178,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="app.js?v=2026.06.22-home-summary-panel"></script>
+  <script src="app.js?v=2026.06.22-home-summary-dense"></script>
   <script src="field-help.js?v=2026.05.08-dominik-offline-last-map-view"></script>
   <script>
   (() => {

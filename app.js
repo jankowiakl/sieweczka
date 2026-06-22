@@ -12,7 +12,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.06.22-home-summary-panel";
+  const APP_VERSION = "2026.06.22-home-summary-dense";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -592,6 +592,18 @@
       }).slice(0, 5);
 
       summary.innerHTML = entries.length ? `
+        <div class="home-summary-section first">
+          <h4>Gatunki</h4>
+          <div class="home-species-chips">
+            ${sortedSpecies.map(([key, row]) => `
+              <span class="home-species-chip">
+                <strong>${escapeHtml(speciesLabel(key) || "Inne / nieokreślone")}</strong>
+                <span><small>Wszystkie</small>${row.all}</span>
+                <span><small>Dzisiaj</small>${row.today}</span>
+              </span>
+            `).join("")}
+          </div>
+        </div>
         <div class="home-summary-stats">
           ${statCard("Wszystkie", entries.length, `${byStatus.full} pełne, ${byStatus.basic} szybkie`)}
           ${statCard("Dzisiaj", byStatus.today, `${byStatus.week} w ostatnich 7 dniach`)}
@@ -599,17 +611,6 @@
           ${statCard("Jaja", byStatus.eggs, `${byStatus.eggsRecords} rekordów z liczbą jaj`)}
           ${statCard("Synchronizacja", byStatus.pendingSync, byStatus.syncErrors ? `${byStatus.syncErrors} błędów` : "oczekujące")}
           ${statCard("Punkty robocze", workingNests.length, "do sprawdzenia w terenie")}
-        </div>
-        <div class="home-summary-section">
-          <h4>Gatunki</h4>
-          <div class="home-species-chips">
-            ${sortedSpecies.map(([key, row]) => `
-              <span class="home-species-chip">
-                <strong>${escapeHtml(speciesLabel(key) || "Inne / nieokreślone")}</strong>
-                <span>${row.all} razem${row.today ? `, ${row.today} dziś` : ""}</span>
-              </span>
-            `).join("")}
-          </div>
         </div>
         <div class="home-summary-section">
           <h4>Stan danych</h4>
