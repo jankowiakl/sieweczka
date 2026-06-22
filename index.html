@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="styles.css?v=2026.05.18-commission-species" />
+  <link rel="stylesheet" href="styles.css?v=2026.06.22-home-summary-dense" />
 </head>
 <body>
   <noscript>
@@ -65,7 +65,15 @@
         <div><span>Rekordy lokalne</span><strong id="entry-count">0</strong></div>
         <div><span>Dzisiaj</span><strong id="today-count">0</strong></div>
       </div>
-      <div id="species-summary" class="muted"></div>
+      <section class="home-summary-panel" aria-labelledby="home-summary-title">
+        <div class="home-summary-header">
+          <div>
+            <h3 id="home-summary-title">Podsumowanie rekordów</h3>
+          </div>
+          <button type="button" class="help-bubble-btn" data-help-title="Podsumowanie rekordów" data-help-body="Przesuń palcem wewnątrz panelu, aby przewinąć wszystkie podsumowania bez przewijania całej strony." aria-label="Wyjaśnienie panelu podsumowania">?</button>
+        </div>
+        <div id="species-summary" class="home-summary-scroll" tabindex="0" aria-live="polite"></div>
+      </section>
 
       <div class="home-primary-actions">
         <button id="start-new" type="button" class="home-tile primary"><strong>Dodaj gniazdo – pełen wpis</strong><span>Pełna karta kontroli gniazda</span></button>
@@ -1170,7 +1178,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="app.js?v=2026.05.11-photo-measure-transparent-polygon"></script>
+  <script src="app.js?v=2026.06.22-home-summary-dense"></script>
   <script src="field-help.js?v=2026.05.08-dominik-offline-last-map-view"></script>
   <script>
   (() => {
