@@ -12,7 +12,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.06.22-species-completeness-summary";
+  const APP_VERSION = "2026.11.10-map-filters";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -511,6 +511,32 @@
     updateInstallStatus();
   }
 
+
+  const studyFilters = { records: StudyFilters.getDefaultFilters(), working: StudyFilters.getDefaultFilters(), home: StudyFilters.getDefaultFilters() };
+  const FILTER_EMPTY_MESSAGE = "Brak rekordów w wybranym okresie. Zmień filtry, aby zobaczyć dane z wcześniejszych sezonów.";
+  function getViewFilters(view) {
+    studyFilters[view] = StudyFilters.ensureCurrentCalendar(studyFilters[view]);
+    return studyFilters[view];
+  }
+  function getSpeciesInfo(entry = {}) {
+    const raw = String([entry.species, entry.speciesPolishName, entry.speciesLatinName, entry.speciesEnglishName, entry.speciesId, entry.speciesCode].find((value) => value && value !== "unknown") || "").trim();
+    if (!raw || raw === "unknown") return { key: "", polish: "Nieokreślony", latin: "", english: "" };
+    const legacyKey = Object.keys(LABELS.species).find((key) => [key, LABELS.species[key], key.replaceAll("-", " ")].some((value) => normalizeSearchText(value) === normalizeSearchText(raw)));
+    const item = getRecordSpeciesCatalogItem(entry) || findOtherSpecies(LABELS.species[legacyKey]) || findOtherSpecies(raw.replaceAll("-", " "));
+    const polish = item?.polishName || entry.speciesPolishName || LABELS.species[legacyKey] || raw;
+    const legacyLatin = legacyKey && legacyKey !== "unknown" ? legacyKey.replaceAll("-", " ").replace(/^./, (c) => c.toUpperCase()) : "";
+    const latin = item?.latinName || entry.speciesLatinName || legacyLatin;
+    return { key: normalizeSearchText(polish), polish, latin, english: item?.englishName || entry.speciesEnglishName || "" };
+  }
+  function mapSpeciesLabel(entry, mapId) {
+    const species = getSpeciesInfo(entry);
+    const lang = getMapViewState(mapId).overlays?.speciesLanguage || "pl";
+    return lang === "en" ? species.english || species.latin || species.polish : lang === "la" ? species.latin || species.polish : species.polish;
+  }
+  function filteredRecords(view = "records") { return StudyFilters.filterRecords(activeEntries(), getViewFilters(view), getSpeciesInfo); }
+  function filteredWorkingNests(view = "working") { return StudyFilters.filterWorkingNests(activeWorkingNests(), getViewFilters(view), getSpeciesInfo); }
+  function resetFiltersToCurrentSeason(view) { studyFilters[view] = StudyFilters.getDefaultFilters(); }
+
   function renderHomeSummary() {
     const user = getCurrentUser();
     const photoSummary = getPhotoSyncSummary();
@@ -522,8 +548,9 @@
     setText("#home-online-status", onlineText);
     setText("#home-last-sync", lastSync ? new Date(lastSync).toLocaleString("pl-PL") : "—");
     setText("#home-photo-pending", String(photoSummary.pending || 0));
-    const entries = activeEntries();
-    const workingNests = activeWorkingNests();
+    const entries = filteredRecords("home");
+    const workingNests = filteredWorkingNests("home");
+    refreshFilterSummary("home", entries.length);
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     const weekStart = new Date(now);
@@ -546,7 +573,7 @@
     const sectors = new Set();
     let latestDate = "";
     entries.forEach((entry) => {
-      const speciesKey = normalizeSpeciesValue(entry.species || "unknown");
+      const speciesKey = getSpeciesInfo(entry).polish;
       if (!bySpecies.has(speciesKey)) bySpecies.set(speciesKey, { all: 0, today: 0, full: 0, notFull: 0 });
       const speciesRow = bySpecies.get(speciesKey);
       speciesRow.all += 1;
@@ -565,9 +592,9 @@
         byStatus.full += 1;
         speciesRow.full += 1;
       }
-      if (hasValidCoords(entry.lat, entry.lon)) byStatus.gps += 1;
+      if (StudyFilters.filterRecordMapPoints([entry], getViewFilters("home"), getSpeciesInfo).length) byStatus.gps += 1;
       else byStatus.missingGps += 1;
-      if (entry.randomPointDone === "yes" || hasValidCoords(entry.randomMicro?.lat, entry.randomMicro?.lon)) byStatus.randomPoint += 1;
+      if (getViewFilters("home").pointType !== "gniazdo" && hasValidCoords(entry.randomMicro?.lat, entry.randomMicro?.lon)) byStatus.randomPoint += 1;
       if ((entry.syncStatus || "pending") === "error") byStatus.syncErrors += 1;
       if ((entry.syncStatus || "pending") !== "synced") byStatus.pendingSync += 1;
       const eggCount = Number(entry.eggCount);
@@ -596,7 +623,7 @@
         return bTime - aTime;
       }).slice(0, 5);
 
-      summary.innerHTML = entries.length ? `
+      summary.innerHTML = `
         <div class="home-summary-section first">
           <h4>Gatunki</h4>
           <div class="home-species-chips">
@@ -624,7 +651,7 @@
           <div class="home-summary-lines">
             <div><span>Ostatnia data obserwacji</span><strong>${escapeHtml(latestDate || "—")}</strong></div>
             <div><span>Sektory</span><strong>${escapeHtml(String(sectors.size))}</strong></div>
-            <div><span>Brak GPS gniazda</span><strong>${escapeHtml(String(byStatus.missingGps))}</strong></div>
+            <div><span>Brak GPS wybranych punktów</span><strong>${escapeHtml(String(byStatus.missingGps))}</strong></div>
             <div><span>Punkt losowy / kontrola</span><strong>${escapeHtml(`${byStatus.randomPoint}/${entries.length}`)}</strong></div>
           </div>
         </div>
@@ -639,11 +666,7 @@
             `).join("")}
           </div>
         </div>
-      ` : `
-        <div class="home-summary-empty">
-          <strong>Brak lokalnych rekordów.</strong>
-          <span>Po zapisaniu pierwszego wpisu tutaj pojawią się podsumowania, gatunki i ostatnie rekordy.</span>
-        </div>
+      ${!entries.length ? `<div class="home-summary-empty"><strong>0 rekordów</strong><span>${FILTER_EMPTY_MESSAGE}</span></div>` : ""}
       `;
     }
     updateDraftResumeButton();
@@ -2570,6 +2593,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function showView(name) {
+    closeMapControlPanels();
     if (!getCurrentUser() && name !== "login") name = "login";
     if (getCurrentUser() && mustChangePassword() && !["change-password", "login"].includes(name)) name = "change-password";
     if ((name === "admin" || name === "commission-species") && !isAdmin()) name = "home";
@@ -4677,7 +4701,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function getMapOverlayState(mapId) {
     return {
       grid: !!$(`#${mapId}-grid-toggle`)?.checked,
-      speciesLabels: mapId === "records" ? !!$("#records-species-labels-toggle")?.checked : undefined,
+      speciesLabels: !!$(`#${mapId}-species-labels-toggle`)?.checked,
       notes: mapId === "working" ? !!$("#working-notes-toggle")?.checked : undefined,
       brysnaSmieckPoints: !!$(`#${mapId}-brysna-smieck-toggle`)?.checked
     };
@@ -4824,9 +4848,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (map.hasLayer(layer)) map.removeLayer(layer);
     });
     nextLayer.addTo(map);
-    const layerMaxZoom = layerName.startsWith("Dominik Layer") ? DOMINIK_MAX_DISPLAY_ZOOM : MAP_MAX_ZOOM;
+    const layerMaxZoom = layerName.startsWith("Dominik Layer") ? DOMINIK_MAX_DISPLAY_ZOOM : mapId === "meso" ? MAP_MAX_ZOOM : Math.max(MAP_MAX_ZOOM, previousZoom || 0);
     map.setMaxZoom(layerMaxZoom);
-    if (previousCenter && Number.isFinite(previousZoom)) {
+    if (mapId === "meso" && previousCenter && Number.isFinite(previousZoom)) {
       if (mapId === "meso") mapUserState.meso.isProgrammaticMove = true;
       try {
         map.setView(previousCenter, Math.min(previousZoom, layerMaxZoom), { animate: false });
@@ -4837,6 +4861,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     state.currentBaseLayerName = layerName;
     const select = $(`#${mapId}-base-layer`);
     if (select) select.value = layerName;
+    updateBasemapControl(mapId);
     if (layerName === "Ortofotomapa offline") {
       showMapOfflineStatus(mapId, "Ortofotomapa offline działa cache-first. Brakujące kafle pokażą neutralny placeholder.", { type: "info", autoHide: true, timeoutMs: 6000 });
     }
@@ -4851,6 +4876,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const select = $(`#${mapId}-base-layer`);
     if (!state || !select) return;
     state.baseLayers = base.layers;
+    if (mapId !== "meso") initMapControlDock(map, mapId);
     state.currentBaseLayerName = select.value || "Ortofotomapa Geoportal";
     Array.from(select.options).forEach((option) => { option.disabled = !base.layers[option.value]; });
     if (!base.layers[state.currentBaseLayerName]) state.currentBaseLayerName = "Ortofotomapa Geoportal";
@@ -5086,7 +5112,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function normalizeWorkingNest(w) {
     const now = new Date().toISOString();
     const normalizedStatus = ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].includes(w?.status) ? w.status : 'do_sprawdzenia';
-    return { ...w, id: w?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), lat: Number(w?.lat), lon: Number(w?.lon), status: normalizedStatus, note: String(w?.note ?? w?.notes ?? ""), notes: String(w?.notes ?? w?.note ?? ""), createdAt: w?.createdAt || now, updatedAt: w?.updatedAt || w?.createdAt || now, createdBy: w?.createdBy || w?.created_by || "", createdByName: w?.createdByName || "", updatedBy: w?.updatedBy || w?.updated_by || "", updatedByName: w?.updatedByName || "", deletedAt: w?.deletedAt || w?.deleted_at || null, deletedBy: w?.deletedBy || w?.deleted_by || null, deleteReason: w?.deleteReason || w?.delete_reason || "" };
+    return { ...w, id: w?.id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), lat: w?.lat == null || String(w.lat).trim() === "" ? null : Number(w.lat), lon: w?.lon == null || String(w.lon).trim() === "" ? null : Number(w.lon), status: normalizedStatus, note: String(w?.note ?? w?.notes ?? ""), notes: String(w?.notes ?? w?.note ?? ""), createdAt: w?.createdAt || w?.created_at || "", updatedAt: w?.updatedAt || w?.createdAt || now, createdBy: w?.createdBy || w?.created_by || "", createdByName: w?.createdByName || "", updatedBy: w?.updatedBy || w?.updated_by || "", updatedByName: w?.updatedByName || "", deletedAt: w?.deletedAt || w?.deleted_at || null, deletedBy: w?.deletedBy || w?.deleted_by || null, deleteReason: w?.deleteReason || w?.delete_reason || "" };
   }
 
   function navigateTo(lat, lon) {
@@ -5797,6 +5823,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function renderRecordsMap(focusUid = null) {
     const mapEl = $("#records-map");
     if (!mapEl || typeof L === "undefined") { $("#map-info").textContent = "Mapa niedostępna offline (brak biblioteki Leaflet)."; return; }
+    const firstRender = !recordsMap;
     if (!recordsMap) {
       const base = createBaseLayers();
       recordsMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: MAP_MAX_ZOOM });
@@ -5828,22 +5855,18 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       recordsMap.removeLayer(recordsGridLayer);
     }
     mapMarkersLayer.clearLayers();
-    const entries = activeEntries();
-    const points = [];
-    let missingNest = 0, missingCtrl = 0;
-    entries.forEach((entry) => {
-      const nestPos = toLatLon(entry.lat, entry.lon);
-      const ctrlPos = toLatLon(entry.randomMicro?.lat, entry.randomMicro?.lon);
-      if (nestPos) points.push({entry, pos:nestPos, type:"gniazdo"}); else missingNest++;
-      if (ctrlPos) points.push({entry, pos:ctrlPos, type:"kontrola"}); else missingCtrl++;
-    });
+    const entries = filteredRecords();
+    const points = StudyFilters.filterRecordMapPoints(entries, getViewFilters("records"), getSpeciesInfo);
+    const missingNest = entries.filter((e) => !toLatLon(e.lat, e.lon)).length;
+    const missingCtrl = entries.filter((e) => !toLatLon(e.randomMicro?.lat, e.randomMicro?.lon)).length;
+    refreshFilterSummary("records", points.length, entries.length);
     points.forEach((p)=>{
       const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div class="pin"><span>${p.type==='gniazdo'?'G':'K'}</span></div>`});
       const canMove = canMoveMapPoint(p.entry);
       const movable = canMove && isMapPointEditModeEnabled("records");
       const m = L.marker(p.pos, { icon, draggable: movable, autoPan: movable }).addTo(mapMarkersLayer);
       bindRecordPointDrag(m, p);
-      if (p.type === "gniazdo" && recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(speciesLabel(p.entry.species) || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
+      if (recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(mapSpeciesLabel(p.entry, "records") || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
       m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(speciesLabel(e.species)||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("records") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
@@ -5856,9 +5879,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (focusPos) recordsMap.setView(focusPos, 19);
       else setMapInfo("records", "Wybrany rekord nie ma poprawnych współrzędnych GPS.");
     }
-    if (!points.length && !ortoCacheState.records.viewRestored && !focusUid) {setMapInfo("records", "Brak zapisanych punktów z GPS do pokazania na mapie."); recordsMap.setView([52,19],7);}
+    if (firstRender && !points.length && !ortoCacheState.records.viewRestored && !focusUid) {setMapInfo("records", "Brak zapisanych punktów z GPS do pokazania na mapie."); recordsMap.setView([52,19],7);}
     setMapInfo("records", `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`);
-    if (points.length && !ortoCacheState.records.viewRestored && !focusUid) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
+    if (firstRender && points.length && !ortoCacheState.records.viewRestored && !focusUid) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
     recordsMap.invalidateSize();
     renderBrysnaSmieckPoints("records");
     syncUserLocationLayers("records"); bringMeasureToFront("records");
@@ -6506,7 +6529,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-edit-cancel").addEventListener("click", closeWorkingEditPanel);
     $("#working-edit-delete").addEventListener("click", () => { if (editingWorkingId && confirm("Dane zostaną ukryte w aplikacji, ale pozostaną w bazie i mogą zostać odzyskane przez administratora.")) deleteWorkingNest(editingWorkingId); });
     window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeActiveMapFullscreen();
+      if (event.key === "Escape" && !event.defaultPrevented) closeActiveMapFullscreen();
     });
     $("#back-to-readonly")?.addEventListener("click", () => {
       if (readonlyUid) showReadonlyRecord(readonlyUid);
@@ -6649,7 +6672,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       observer: entry.observer,
       species: speciesLabel(entry.species),
       speciesStoredName: entry.speciesOriginalLabel || entry.species || "",
-      speciesLatinName: getRecordSpeciesCatalogItem(entry)?.latinName || entry.speciesLatinName || "",
+      speciesPolishName: getSpeciesInfo(entry).polish,
+      speciesEnglishName: getSpeciesInfo(entry).english,
+      speciesLatinName: getSpeciesInfo(entry).latin,
       speciesCode: getRecordSpeciesCatalogItem(entry)?.code || entry.speciesCode || "",
       speciesId: getRecordSpeciesCatalogItem(entry)?.id || entry.speciesId || "",
       speciesSource: getRecordSpeciesCatalogItem(entry)?.source || entry.speciesSource || "",
@@ -6751,7 +6776,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     };
     const escape = (cell) => {
       const text = cell == null ? "" : String(cell);
-      return /[",\n;]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+      return /[",\r\n;]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     };
     return [headers.map((header) => labels[header] || header).join(";"), ...rows.map((row) => headers.map((header) => escape(row[header])).join(";"))].join("\n");
   }
@@ -6783,7 +6808,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function csvFromRows(rows, headers) {
     const escape = (cell) => {
       const text = cell == null ? "" : String(cell);
-      return /[",\n;]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+      return /[",\r\n;]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
     };
     return [headers.join(";"), ...rows.map((row) => headers.map((header) => escape(row[header])).join(";"))].join("\n");
   }
@@ -7022,9 +7047,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
   function closeWorkingEditPanel() { editingWorkingId = null; const panel = $("#working-edit-panel"); if (panel) panel.hidden = true; }
   function fitWorkingMapBounds() {
-    const points = activeWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
+    const points = filteredWorkingNests().map((w) => toLatLon(w.lat, w.lon)).filter(Boolean);
     if (points.length) workingMap?.fitBounds(L.latLngBounds(points), { padding: [30, 30] });
-    else workingMap?.setView([52, 19], 7);
+    else if (workingMap && !workingMap._loaded) workingMap.setView([52, 19], 7);
   }
   function askWorkingGpsPointDetails() {
     return new Promise((resolve) => {
@@ -7120,6 +7145,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
   function renderWorkingMap(showNearest = false) {
     const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
+    const firstRender = !workingMap;
     if (!workingMap) {
       const base = createBaseLayers();
       workingMap = L.map(mapEl, { layers: [base.defaultLayer], maxZoom: MAP_MAX_ZOOM });
@@ -7146,7 +7172,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       workingMap.removeLayer(workingGridLayer);
     }
     workingLayer.clearLayers();
-    const items = activeWorkingNests();
+    const items = filteredWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
     enriched.forEach(({w,pos}) => {
       const canMove = canMoveMapPoint(w);
@@ -7154,16 +7180,323 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }), draggable: movable, autoPan: movable }).addTo(workingLayer);
       bindWorkingNestDrag(m, w, pos);
       const noteText = String(w.note ?? w.notes ?? "").trim();
-      if (workingNotesVisible && noteText) m.bindTooltip(escapeHtml(noteText), { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
+      const speciesText = $("#working-species-labels-toggle")?.checked && getSpeciesInfo(w).key ? mapSpeciesLabel(w, "working") : "";
+      const tooltipText = [speciesText, workingNotesVisible ? noteText : ""].filter(Boolean).join(" • ");
+      if (tooltipText) m.bindTooltip(escapeHtml(tooltipText), { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
       m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("working") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
+    const hadFocus = !!workingFocusId;
+    workingFocusId = null;
+    refreshFilterSummary("working", enriched.length, items.length);
     setMapInfo("working", `Punkty robocze: ${enriched.length}`);
-    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button>${canEditItem(w) ? `<button data-w-action="edit" data-working-id="${w.id}">Edytuj</button>` : ""}${canSoftDeleteItem(w) ? `<button class="danger" data-w-action="delete" data-working-id="${w.id}">Ukryj</button>` : ""}${canEditItem(w) ? `<select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}</div></article>`).join("") || `<p class="muted">Brak zapisanych gniazd roboczych.</p>`;
+    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button>${canEditItem(w) ? `<button data-w-action="edit" data-working-id="${w.id}">Edytuj</button>` : ""}${canSoftDeleteItem(w) ? `<button class="danger" data-w-action="delete" data-working-id="${w.id}">Ukryj</button>` : ""}${canEditItem(w) ? `<select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}</div></article>`).join("") || `<p class="muted">${FILTER_EMPTY_MESSAGE}</p>`;
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
+    syncWorkingControlLocation();
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
     renderBrysnaSmieckPoints("working");
-    workingMap.invalidateSize(); if (workingViewMode==='map') { if (!workingFocusId && !ortoCacheState.working.viewRestored) fitWorkingMapBounds(); syncUserLocationLayers("working"); bringMeasureToFront("working");}
+    workingMap.invalidateSize(); if (workingViewMode==='map') { if (firstRender && !hadFocus && !ortoCacheState.working.viewRestored) fitWorkingMapBounds(); syncUserLocationLayers("working"); bringMeasureToFront("working");}
+  }
+
+
+  function closeMapControlPanels(restoreFocus = false) {
+    const open = document.querySelector(".mapControlPanel:not([hidden])");
+    document.querySelectorAll(".mapControlPanel").forEach((panel) => { panel.hidden = true; });
+    document.querySelectorAll("[data-control-panel]").forEach((button) => button.setAttribute("aria-expanded", "false"));
+    if (restoreFocus && open) document.querySelector('[aria-controls="' + open.id + '"]')?.focus({ preventScroll: true });
+  }
+  function openMapControlPanel(view, kind) {
+    const panel = document.getElementById(view + "-" + kind + "-control");
+    if (!panel) return;
+    const opening = panel.hidden;
+    closeMapControlPanels();
+    if (!opening) return;
+    if (kind === "filters") renderFilterForm(view);
+    if (kind === "basemap") renderBasemapChoices(view);
+    panel.hidden = false;
+    document.querySelector('[aria-controls="' + panel.id + '"]')?.setAttribute("aria-expanded", "true");
+    panel.querySelector(".mapControlClose")?.focus({ preventScroll: true });
+  }
+  function controlPanel(view, kind, title) {
+    const panel = document.createElement("section");
+    panel.id = view + "-" + kind + "-control";
+    panel.className = "mapControlPanel";
+    panel.hidden = true;
+    panel.setAttribute("aria-label", title);
+    panel.innerHTML = '<div class="mapControlHeader"><strong>' + title + '</strong><button type="button" class="mapControlClose" aria-label="Zamknij panel">×</button></div><div class="mapControlContent"></div>';
+    panel.querySelector("button").addEventListener("click", () => closeMapControlPanels(true));
+    return panel;
+  }
+  function createControlButton(view, kind, title, markup) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "mapControlButton map" + kind + "Toggle";
+    button.dataset.controlPanel = kind;
+    button.setAttribute("aria-controls", view + "-" + kind + "-control");
+    button.setAttribute("aria-expanded", "false");
+    button.setAttribute("aria-label", title);
+    button.title = title;
+    button.innerHTML = markup;
+    button.addEventListener("click", () => openMapControlPanel(view, kind));
+    return button;
+  }
+  function setupFilterInterface() {
+    const home = document.querySelector(".home-summary-panel");
+    const header = home.querySelector(".home-summary-header");
+    const actions = document.createElement("div");
+    actions.className = "home-summary-actions";
+    actions.append(header.querySelector(".help-bubble-btn"), createControlButton("home", "filters", "Filtry podsumowania", "⚙"));
+    header.append(actions);
+    home.append(controlPanel("home", "filters", "Filtry podsumowania"));
+    const summary = document.createElement("p");
+    summary.id = "home-filter-summary";
+    summary.className = "filter-summary";
+    header.after(summary);
+    document.addEventListener("pointerdown", (event) => {
+      if (!event.target.closest(".mapControlDock, .home-summary-actions, .mapControlPanel")) closeMapControlPanels();
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && document.querySelector(".mapControlPanel:not([hidden])")) {
+        event.preventDefault();
+        closeMapControlPanels(true);
+      }
+    });
+    let lastYear = StudyFilters.getCurrentStudyYear();
+    let midnightTimer;
+    const checkCalendar = () => {
+      clearTimeout(midnightTimer);
+      if (lastYear !== StudyFilters.getCurrentStudyYear()) {
+        lastYear = StudyFilters.getCurrentStudyYear();
+        ["home", "records", "working"].forEach(resetFiltersToCurrentSeason);
+        closeMapControlPanels();
+        renderHomeSummary();
+        if (recordsMap) renderRecordsMap();
+        if (workingMap) renderWorkingMap();
+      }
+      const now = new Date();
+      midnightTimer = setTimeout(checkCalendar, new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime() + 100);
+    };
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) checkCalendar(); });
+    window.addEventListener("focus", checkCalendar);
+    checkCalendar();
+  }
+  function initMapControlDock(map, mapId) {
+    if (document.getElementById(mapId + "-control-dock")) return;
+    const canvas = document.getElementById(mapId + "-map");
+    let wrapper = canvas.parentElement;
+    if (!wrapper.classList.contains("map-panel-with-overlay")) {
+      wrapper = document.createElement("div");
+      wrapper.className = "map-panel-with-overlay";
+      canvas.before(wrapper);
+      wrapper.append(canvas);
+    }
+    const dock = document.createElement("div");
+    dock.id = mapId + "-control-dock";
+    dock.className = "mapControlDock";
+    dock.setAttribute("aria-label", "Narzędzia mapy");
+    const basemap = createControlButton(mapId, "basemap", "Wybierz podkład mapy", '<span class="mapBasemapPreview"></span><span class="mapBasemapName">Podkład</span>');
+    const settings = createControlButton(mapId, "settings", "Ustawienia mapy", "⚙");
+    const filters = createControlButton(mapId, "filters", "Filtry mapy", '<svg width="23" height="23" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18l-7 8v7l-4 2v-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>');
+    dock.append(basemap, settings, filters);
+    dock.append(controlPanel(mapId, "basemap", "Podkład mapy"), controlPanel(mapId, "settings", "Ustawienia mapy"), controlPanel(mapId, "filters", "Filtry mapy"));
+    wrapper.append(dock);
+    const content = document.querySelector("#" + mapId + "-settings-control .mapControlContent");
+    ["navigation-panel", "options-panel", "legend-panel", "measure-panel", "orto-cache-status"].forEach((suffix) => {
+      const element = document.getElementById(mapId + "-" + suffix);
+      if (element) content.append(element);
+    });
+    const select = document.getElementById(mapId + "-base-layer");
+    const label = select.closest("label");
+    label.hidden = true;
+    dock.append(label);
+    const fullscreen = document.getElementById(mapId + "-fullscreen-map");
+    content.prepend(fullscreen);
+    const primaryActions = wrapper.parentElement.querySelector(".map-primary-actions");
+    if (primaryActions && !primaryActions.children.length) primaryActions.hidden = true;
+    const options = document.getElementById(mapId + "-options-panel");
+    if (mapId === "working") {
+      const labels = document.createElement("label");
+      labels.className = "inline-check";
+      labels.innerHTML = '<input type="checkbox" id="working-species-labels-toggle" checked> Pokaż etykiety gatunków (jeśli zapisano gatunek)';
+      const toggle = labels.querySelector("input");
+      toggle.checked = getMapViewState(mapId).overlays?.speciesLabels !== false;
+      toggle.addEventListener("change", () => { saveMapViewState(mapId, { overlays: { speciesLabels: toggle.checked } }); renderWorkingMap(); });
+      options.append(labels);
+    }
+    const language = document.createElement("label");
+    language.textContent = "Język etykiet";
+    const languageSelect = document.createElement("select");
+    languageSelect.id = mapId + "-species-language";
+    languageSelect.innerHTML = '<option value="pl">Polski</option><option value="la">Łaciński</option><option value="en">Angielski</option>';
+    languageSelect.value = getMapViewState(mapId).overlays?.speciesLanguage || "pl";
+    languageSelect.addEventListener("change", () => {
+      saveMapViewState(mapId, { overlays: { speciesLanguage: languageSelect.value } });
+      mapId === "records" ? renderRecordsMap() : renderWorkingMap();
+    });
+    language.append(languageSelect);
+    options.append(language);
+    const summary = document.createElement("p");
+    summary.id = mapId + "-filter-summary";
+    summary.className = "filter-summary map-filter-summary";
+    summary.setAttribute("aria-live", "polite");
+    wrapper.append(summary);
+    L.DomEvent.disableClickPropagation(dock);
+    L.DomEvent.disableScrollPropagation(dock);
+    // Leaflet's native mousedown/touchstart handlers must not see panel interactions.
+    dock.addEventListener("pointerdown", (event) => event.stopPropagation());
+    select.addEventListener("change", () => updateBasemapControl(mapId));
+    updateBasemapControl(mapId);
+  }
+  function syncWorkingControlLocation() {
+    let host = $("#working-list-controls");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "working-list-controls";
+      host.className = "working-list-controls";
+      $("#working-list-panel").before(host);
+    }
+    const list = workingViewMode === "list";
+    host.hidden = !list;
+    const target = list ? host : $("#working-map-panel");
+    ["working-control-dock", "working-filter-summary"].forEach((id) => { const el = document.getElementById(id); if (el) target.append(el); });
+  }
+  function basemapPreviewUrl(mapId, name) {
+    const map = ortoCacheState[mapId]?.map;
+    const keys = { "Ortofotomapa Geoportal": "geoportalOrto", "Ortofotomapa offline": "geoportalOffline", "Dominik Layer": "dominikLayer", "Dominik Layer offline": "dominikOffline", "OpenStreetMap": "openStreetMap", "OSM Standard": "openStreetMap", "Esri Imagery + Labels": "esriWorldImagery", "Esri World Imagery": "esriWorldImagery", "ArcGIS Terrain with Labels": "arcgisTerrainLabels", "CARTO Voyager": "cartoVoyager", "OpenTopoMap": "openTopoMap" };
+    if (keys[name]) return getSampleTileUrlForLayer(keys[name], map?._loaded ? map : null);
+    const c = getSampleTileCoords(map?._loaded ? map : null);
+    if (name === "OSM DE") return xyzUrl("https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png", c);
+    if (name === "CARTO Positron") return xyzUrl("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", c);
+    return "";
+  }
+  function fillBasemapPreview(element, mapId, name) {
+    element.replaceChildren();
+    element.dataset.offline = String(name.includes("offline"));
+    const image = document.createElement("img");
+    image.alt = "";
+    image.loading = "lazy";
+    image.addEventListener("error", () => image.remove(), { once: true });
+    const url = basemapPreviewUrl(mapId, name);
+    if (url) { image.src = url; element.append(image); }
+  }
+  function updateBasemapControl(mapId) {
+    const dock = document.getElementById(mapId + "-control-dock");
+    if (!dock) return;
+    const name = ortoCacheState[mapId]?.currentBaseLayerName || document.getElementById(mapId + "-base-layer").value;
+    dock.querySelector(".mapBasemapName").textContent = name;
+    const toggle = dock.querySelector('[data-control-panel="basemap"]');
+    toggle.title = "Podkład: " + name;
+    toggle.setAttribute("aria-label", "Zmień podkład: " + name);
+    fillBasemapPreview(dock.querySelector(".mapBasemapPreview"), mapId, name);
+    dock.querySelectorAll(".basemapChoice").forEach((button) => {
+      const active = button.dataset.basemap === name;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+  }
+  function renderBasemapChoices(mapId) {
+    const content = document.querySelector("#" + mapId + "-basemap-control .mapControlContent");
+    content.classList.add("basemapGrid");
+    content.replaceChildren();
+    Object.keys(ortoCacheState[mapId].baseLayers).forEach((name) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "basemapChoice";
+      button.dataset.basemap = name;
+      const preview = document.createElement("span");
+      preview.className = "basemapChoicePreview";
+      fillBasemapPreview(preview, mapId, name);
+      const label = document.createElement("span");
+      label.className = "basemapChoiceLabel";
+      label.textContent = name;
+      button.append(preview, label);
+      button.addEventListener("click", () => {
+        const select = document.getElementById(mapId + "-base-layer");
+        select.value = name;
+        select.dispatchEvent(new Event("change"));
+        closeMapControlPanels(true);
+      });
+      content.append(button);
+    });
+    updateBasemapControl(mapId);
+  }
+  function refreshFilterSummary(view, count, recordsCount = count) {
+    const filters = getViewFilters(view);
+    const source = view === "working" ? activeWorkingNests() : activeEntries();
+    const available = StudyFilters.getAvailableSpecies(source, getSpeciesInfo);
+    const species = filters.species.length ? filters.species.map((key) => available.find((s) => s.key === key)?.polish || key).join(", ") : "Wszystkie gatunki";
+    const year = filters.year === "current" ? StudyFilters.getCurrentStudyYear() : filters.year === "all" ? "Wszystkie lata" : filters.year;
+    const period = filters.dateFrom || filters.dateTo ? (filters.dateFrom || "…") + " – " + (filters.dateTo || "…") : "";
+    const type = view === "working" ? filters.statuses.map(workingStatusLabel).join(", ") : ({ all: "Wszystkie punkty", gniazdo: "Gniazda", kontrola: "Kontrole" })[filters.pointType];
+    const text = [year, species, type, period, count + (view === "home" ? " rekordów" : " punktów")].filter(Boolean).join(" • ");
+    const target = document.getElementById(view + "-filter-summary");
+    if (target) target.textContent = text + (!recordsCount ? " • " + FILTER_EMPTY_MESSAGE : !count ? " • Brak poprawnych współrzędnych GPS w tym zakresie." : "");
+    const custom = filters.year !== "current" || filters.species.length > 0 || filters.pointType !== "all" || !!period || filters.statuses.length > 0;
+    document.querySelector('[aria-controls="' + view + '-filters-control"]')?.classList.toggle("filters-active", custom);
+  }
+  function renderFilterForm(view) {
+    const working = view === "working";
+    const source = working ? activeWorkingNests() : activeEntries();
+    const filters = getViewFilters(view);
+    const years = [...new Set(source.map(working ? StudyFilters.getWorkingNestYear : StudyFilters.getRecordStudyYear).filter(Boolean))].sort((a, b) => b - a);
+    if (!['current', 'all'].includes(filters.year) && !years.includes(Number(filters.year))) years.push(Number(filters.year));
+    const available = StudyFilters.getAvailableSpecies(source, getSpeciesInfo);
+    const content = document.querySelector("#" + view + "-filters-control .mapControlContent");
+    content.innerHTML = '<form class="study-filter-form"><label>Rok badań<select name="year"><option value="current">Bieżący rok (' + StudyFilters.getCurrentStudyYear() + ')</option><option value="all">Wszystkie lata</option>' + years.map((year) => '<option value="' + year + '">' + year + '</option>').join('') + '</select></label>' +
+      '<div class="filter-date-range"><label>Data od<input name="dateFrom" type="date"></label><label>Data do<input name="dateTo" type="date"></label></div><button type="button" data-clear-dates>Wyczyść zakres dat</button>' +
+      (!working ? '<label>Rodzaj punktu<select name="pointType"><option value="all">Wszystkie punkty</option><option value="gniazdo">Tylko gniazda</option><option value="kontrola">Tylko kontrole / punkty losowe</option></select></label>' : '<fieldset><legend>Status gniazda roboczego — brak wyboru: wszystkie</legend>' + ['do_sprawdzenia','prawdopodobne','potwierdzone','odrzucone','przepisane'].map((status) => '<label class="filter-check"><input type="checkbox" name="statuses" value="' + status + '">' + workingStatusLabel(status) + '</label>').join('') + '</fieldset>') +
+      (!working || available.length ? '<fieldset><legend>Gatunki</legend><label>Szukaj gatunku<input type="search" name="searchSpecies" placeholder="Nazwa polska lub łacińska"></label><label class="filter-check"><input type="checkbox" name="allSpecies">Wszystkie gatunki</label><div class="filter-species-list">' + available.map((species) => '<label class="filter-check" data-species-search="' + escapeHtml(normalizeSearchText(species.polish + ' ' + species.latin + ' ' + species.english)) + '"><input type="checkbox" name="species" value="' + escapeHtml(species.key) + '"><span>' + escapeHtml(species.polish) + '<small>' + escapeHtml(species.latin) + '</small></span></label>').join('') + '</div></fieldset>' : '') +
+      '<p class="muted">' + (working ? 'Daty dotyczą utworzenia punktów.' : 'Rok: sezon rekordu, a przy jego braku data obserwacji. Rodzaj punktu sprawdza współrzędne GPS; każdy rekord liczony jest raz.') + '</p><div class="row-actions"><button type="submit" class="primary">Zastosuj</button><button type="button" data-reset-filters>Wyczyść filtry</button><button type="button" data-current-season>Bieżący sezon</button></div>' +
+      (view !== "home" && canManageData() ? '<button type="button" data-export-filtered>Pobierz przefiltrowane dane CSV</button><small>Eksport aktywnych filtrów: jeden pełny rekord w wierszu. Najpierw zastosuj zmiany w formularzu.</small>' : '') + '</form>';
+    const form = content.querySelector("form");
+    ['year', 'dateFrom', 'dateTo', 'pointType'].forEach((name) => { if (form.elements[name]) form.elements[name].value = filters[name]; });
+    form.querySelectorAll('[name="statuses"], [name="species"]').forEach((input) => { input.checked = filters[input.name].includes(input.value); });
+    const allSpecies = form.elements.allSpecies;
+    if (allSpecies) {
+      allSpecies.checked = !filters.species.length;
+      allSpecies.addEventListener("change", () => {
+        if (allSpecies.checked) form.querySelectorAll('[name="species"]').forEach((input) => { input.checked = false; });
+        else allSpecies.checked = !form.querySelector('[name="species"]:checked');
+      });
+      form.querySelectorAll('[name="species"]').forEach((input) => input.addEventListener("change", () => { allSpecies.checked = !form.querySelector('[name="species"]:checked'); }));
+      form.elements.searchSpecies.addEventListener("input", (event) => {
+        const tokens = normalizeSearchText(event.target.value).split(/\s+/).filter(Boolean);
+        form.querySelectorAll('[data-species-search]').forEach((label) => { label.hidden = !tokens.every((token) => label.dataset.speciesSearch.includes(token)); });
+      });
+    }
+    const apply = (next) => {
+      studyFilters[view] = next;
+      closeMapControlPanels(true);
+      if (view === "home") renderHomeSummary();
+      else if (view === "records") renderRecordsMap();
+      else { workingFocusId = null; renderWorkingMap(workingViewMode === "list"); }
+    };
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const next = { ...StudyFilters.getDefaultFilters(), year: form.elements.year.value, dateFrom: form.elements.dateFrom.value, dateTo: form.elements.dateTo.value, pointType: form.elements.pointType?.value || "all", species: [...form.querySelectorAll('[name="species"]:checked')].map((input) => input.value), statuses: [...form.querySelectorAll('[name="statuses"]:checked')].map((input) => input.value) };
+      if (next.dateFrom && next.dateTo && next.dateFrom > next.dateTo) { form.elements.dateTo.setCustomValidity("Data końcowa nie może poprzedzać daty początkowej."); form.elements.dateTo.reportValidity(); return; }
+      apply(next);
+    });
+    form.elements.dateTo.addEventListener("input", () => form.elements.dateTo.setCustomValidity(""));
+    form.elements.dateFrom.addEventListener("input", () => form.elements.dateTo.setCustomValidity(""));
+    form.querySelector('[data-clear-dates]').addEventListener("click", () => { form.elements.dateFrom.value = ''; form.elements.dateTo.value = ''; form.elements.dateTo.setCustomValidity(''); });
+    form.querySelector('[data-reset-filters]').addEventListener("click", () => apply({ ...StudyFilters.getDefaultFilters(), year: "all" }));
+    form.querySelector('[data-current-season]').addEventListener("click", () => apply(StudyFilters.getDefaultFilters()));
+    form.querySelector('[data-export-filtered]')?.addEventListener("click", () => exportFilteredData(view));
+  }
+  function exportFilteredData(view) {
+    if (!canManageData()) return alert("Eksport jest dostępny dla administratora i koordynatora.");
+    const filters = getViewFilters(view);
+    const entries = view === "working" ? filteredWorkingNests() : filteredRecords();
+    if (!entries.length) return alert(FILTER_EMPTY_MESSAGE);
+    let csv;
+    if (view === "working") {
+      const rows = entries.map((entry) => Object.fromEntries(Object.entries(entry).map(([key, value]) => [key, value && typeof value === 'object' ? JSON.stringify(value) : value])));
+      csv = csvFromRows(rows, [...new Set(rows.flatMap(Object.keys))]);
+    } else csv = buildCsv(entries);
+    const year = filters.year === "current" ? StudyFilters.getCurrentStudyYear() : filters.year === "all" ? "wszystkie-lata" : filters.year;
+    const range = [filters.dateFrom, filters.dateTo].filter(Boolean).join('_');
+    downloadText('sieweczka-' + (view === 'working' ? 'robocze-' : 'rekordy-') + year + (range ? '_' + range : '') + '.csv', '\uFEFF' + csv, 'text/csv;charset=utf-8;');
   }
 
   function setupFieldMode() {
@@ -7275,6 +7608,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setupNestIdAutofill();
     setupSmartLists();
     setupOtherSpeciesPicker();
+    setupFilterInterface();
     setupNavigation();
     setupGps();
     setupCompass();
