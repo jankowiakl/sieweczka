@@ -12,7 +12,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.11.10-map-filters";
+  const APP_VERSION = "2026.11.10-map-labels-touch";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -94,7 +94,8 @@
       if (event.touches.length === 1) touchStartY = event.touches[0].clientY;
     }, { passive: true });
     document.addEventListener("touchmove", (event) => {
-      if (event.touches.length !== 1) return;
+      // Native panel scrolling must never be cancelled by the page refresh guard.
+      if (event.target.closest?.(".mapControlPanel") || event.touches.length !== 1) return;
       const pullingDown = event.touches[0].clientY > touchStartY;
       if (pullingDown && pageScrollTop() <= 0 && !hasScrollableAncestorAboveTop(event.target)) {
         event.preventDefault();
@@ -2621,8 +2622,15 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#export-screen").hidden = name !== "export";
     $("#commission-species-screen").hidden = name !== "commission-species";
     $("#admin-screen").hidden = name !== "admin";
-    if (name === "map") setTimeout(() => renderRecordsMap(mapFocusUid), 0);
-    if (name === "working-map") setTimeout(() => renderWorkingMap(), 0);
+    if (name === "map") {
+      setMapFullscreen("records", true);
+      setTimeout(() => renderRecordsMap(mapFocusUid), 0);
+    }
+    if (name === "working-map") {
+      workingViewMode = "map";
+      setMapFullscreen("working", true);
+      setTimeout(() => renderWorkingMap(), 0);
+    }
     if (name === "user") renderUserPanel();
     if (name === "commission-species") renderOtherSpeciesPanel();
     if (name === "home") renderHomeSummary();
@@ -2632,22 +2640,22 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function setMapFullscreen(mapId, enabled) {
     const screen = mapId === "working" ? $("#working-map-screen") : $("#map-screen");
     const closeBtn = mapId === "working" ? $("#working-fullscreen-close") : $("#records-fullscreen-close");
-    const map = mapId === "working" ? workingMap : recordsMap;
     if (!screen) return;
     if (enabled && activeMapFullscreen && activeMapFullscreen !== mapId) {
       setMapFullscreen(activeMapFullscreen, false);
     }
     screen.classList.toggle("map-fullscreen-screen", !!enabled);
-    document.documentElement.classList.toggle("map-fullscreen-open", !!enabled);
-    document.body?.classList.toggle("map-fullscreen-open", !!enabled);
+
     if (closeBtn) closeBtn.hidden = !enabled;
     activeMapFullscreen = enabled ? mapId : (activeMapFullscreen === mapId ? null : activeMapFullscreen);
+    document.documentElement.classList.toggle("map-fullscreen-open", !!activeMapFullscreen);
+    document.body?.classList.toggle("map-fullscreen-open", !!activeMapFullscreen);
     setTimeout(() => {
-      if (mapId === "working" && enabled && workingViewMode !== "map") {
+      if (mapId === "working" && enabled && activeMapFullscreen === "working" && workingViewMode !== "map") {
         workingViewMode = "map";
         renderWorkingMap();
       }
-      map?.invalidateSize();
+      resizeFieldMap(mapId);
     }, 120);
   }
 
@@ -3985,7 +3993,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function disableMapPanelPropagation(mapId) {
     if (typeof L === "undefined") return;
     $$(
-      `#${mapId}-measure-panel, #${mapId}-options-panel, #${mapId}-legend-panel`
+      `#${mapId}-measure-panel, #${mapId}-options-panel`
     ).forEach((panel) => {
       L.DomEvent.disableClickPropagation(panel);
       L.DomEvent.disableScrollPropagation(panel);
@@ -4702,6 +4710,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return {
       grid: !!$(`#${mapId}-grid-toggle`)?.checked,
       speciesLabels: !!$(`#${mapId}-species-labels-toggle`)?.checked,
+      ...(mapId !== "meso" ? { legendVisible: $(`#${mapId}-legend-toggle`)?.checked ?? true, dateLabels: !!$(`#${mapId}-date-labels-toggle`)?.checked, speciesLanguage: $(`#${mapId}-species-language`)?.value || "pl" } : {}),
       notes: mapId === "working" ? !!$("#working-notes-toggle")?.checked : undefined,
       brysnaSmieckPoints: !!$(`#${mapId}-brysna-smieck-toggle`)?.checked
     };
@@ -4714,7 +4723,6 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function getMapPanelState(mapId) {
     return {
       optionsOpen: !!$(`#${mapId}-options-panel`)?.open,
-      legendOpen: !!$(`#${mapId}-legend-panel`)?.open,
       measureOpen: !!$(`#${mapId}-measure-panel`)?.open
     };
   }
@@ -4764,10 +4772,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function restoreMapPanelState(mapId) {
     const panels = getMapViewState(mapId).panels || {};
     const optionPanel = $(`#${mapId}-options-panel`);
-    const legendPanel = $(`#${mapId}-legend-panel`);
     const measurePanel = $(`#${mapId}-measure-panel`);
     if (optionPanel && typeof panels.optionsOpen === "boolean") optionPanel.open = panels.optionsOpen;
-    if (legendPanel && typeof panels.legendOpen === "boolean") legendPanel.open = panels.legendOpen;
     if (measurePanel && typeof panels.measureOpen === "boolean") measurePanel.open = panels.measureOpen;
   }
 
@@ -4789,7 +4795,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!state || state.stateBound) return;
     state.stateBound = true;
     map.on("moveend zoomend baselayerchange overlayadd overlayremove", () => scheduleMapViewStateSave(map, mapId));
-    $$(`#${mapId}-options-panel, #${mapId}-legend-panel, #${mapId}-measure-panel`).forEach((panel) => {
+    $(`#${mapId}-options-panel, #${mapId}-measure-panel`).forEach((panel) => {
       panel.addEventListener("toggle", () => saveMapPanelState(mapId));
     });
     window.addEventListener("beforeunload", () => captureMapViewState(map, mapId));
@@ -5866,7 +5872,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const movable = canMove && isMapPointEditModeEnabled("records");
       const m = L.marker(p.pos, { icon, draggable: movable, autoPan: movable }).addTo(mapMarkersLayer);
       bindRecordPointDrag(m, p);
-      if (recordSpeciesLabelsVisible) m.bindTooltip(escapeHtml(mapSpeciesLabel(p.entry, "records") || "-"), { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
+      const labelHtml = markerLabelHtml(p.entry, "records", p.type);
+      if (labelHtml) m.bindTooltip(labelHtml, { permanent: true, direction: "right", offset: [12, 0], className: "record-species-label" });
       const e=p.entry;
       m.bindPopup(`<strong>${escapeHtml(e.nestId||'(bez ID)')}</strong><br>${escapeHtml(speciesLabel(e.species)||'-')}<br>${escapeHtml(e.obsDate||'-')} • ${escapeHtml(e.observer||'-')}<br>Sektor: ${escapeHtml(e.sector||'-')}<br>Typ punktu: ${p.type}<br>Współrzędne: ${p.pos[0]}, ${p.pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("records") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-map-action='view' data-uid='${e.uid}'>Zobacz rekord</button> ${canEditItem(e) ? `<button data-map-action='edit' data-uid='${e.uid}'>Edytuj</button>` : ""} ${canSoftDeleteItem(e) ? `<button class='danger' data-map-action='delete' data-uid='${e.uid}'>Ukryj</button>` : ""} <button data-map-action='nav' data-lat='${p.pos[0]}' data-lon='${p.pos[1]}'>Nawiguj</button>`);
       if (focusUid && String(e.uid)===String(focusUid)) m.openPopup();
@@ -6464,7 +6471,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#records-species-labels-toggle")?.addEventListener("change", () => {
       recordSpeciesLabelsVisible = !!$("#records-species-labels-toggle")?.checked;
       saveMapOverlayState("records");
-      renderRecordsMap(mapFocusUid);
+      renderRecordsMap();
     });
     $("#records-brysna-smieck-toggle")?.addEventListener("change", () => {
       void setBrysnaSmieckLayerVisible("records", !!$("#records-brysna-smieck-toggle")?.checked);
@@ -7033,6 +7040,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return true;
   }
   function openWorkingEditPanel(id) {
+    if (activeMapFullscreen === "working") setMapFullscreen("working", false);
+    closeMapControlPanels();
     const item = findWorkingNest(id);
     const panel = $("#working-edit-panel");
     if (!panel || !item) return;
@@ -7179,10 +7188,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const movable = canMove && isMapPointEditModeEnabled("working");
       const m = L.marker(pos, { icon: L.divIcon({ className: `map-marker working ${w.status||'do_sprawdzenia'}`, html: `<div class="pin"><span>${workingStatusMarkerText(w.status)}</span></div>` }), draggable: movable, autoPan: movable }).addTo(workingLayer);
       bindWorkingNestDrag(m, w, pos);
-      const noteText = String(w.note ?? w.notes ?? "").trim();
-      const speciesText = $("#working-species-labels-toggle")?.checked && getSpeciesInfo(w).key ? mapSpeciesLabel(w, "working") : "";
-      const tooltipText = [speciesText, workingNotesVisible ? noteText : ""].filter(Boolean).join(" • ");
-      if (tooltipText) m.bindTooltip(escapeHtml(tooltipText), { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
+      const labelHtml = markerLabelHtml(w, "working");
+      if (labelHtml) m.bindTooltip(labelHtml, { permanent: true, direction: "right", offset: [12, 0], className: "working-note-label" });
       m.bindPopup(`<strong>${escapeHtml(w.label || "—")}</strong><br>Status: ${escapeHtml(workingStatusLabel(w.status))}<br>${pos[0]}, ${pos[1]}${canMove ? `<br><span class='muted'>${isMapPointEditModeEnabled("working") ? "Tryb edycji włączony — możesz przeciągnąć punkt, zapis wymaga potwierdzenia." : "Punkty są zablokowane. Włącz edycję punktów przyciskiem na mapie, aby przeciągać."}</span>` : ""}<br><button data-w-action='show' data-working-id='${w.id}'>Pokaż</button> <button data-w-action='nav' data-working-id='${w.id}'>Nawiguj</button> ${canEditItem(w) ? `<button data-w-action='edit' data-working-id='${w.id}'>Edytuj</button>` : ""}<br>${canEditItem(w) ? `<select data-w-action='status' data-working-id='${w.id}'>${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}`);
       if (workingFocusId && w.id===workingFocusId) { workingMap.setView(pos,19); m.openPopup(); }
     });
@@ -7193,6 +7200,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button>${canEditItem(w) ? `<button data-w-action="edit" data-working-id="${w.id}">Edytuj</button>` : ""}${canSoftDeleteItem(w) ? `<button class="danger" data-w-action="delete" data-working-id="${w.id}">Ukryj</button>` : ""}${canEditItem(w) ? `<select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}</div></article>`).join("") || `<p class="muted">${FILTER_EMPTY_MESSAGE}</p>`;
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     syncWorkingControlLocation();
+    $("#working-map-frame").hidden = workingViewMode !== "map";
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
     renderBrysnaSmieckPoints("working");
     workingMap.invalidateSize(); if (workingViewMode==='map') { if (firstRender && !hadFocus && !ortoCacheState.working.viewRestored) fitWorkingMapBounds(); syncUserLocationLayers("working"); bringMeasureToFront("working");}
@@ -7223,6 +7231,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     panel.className = "mapControlPanel";
     panel.hidden = true;
     panel.setAttribute("aria-label", title);
+    ["touchstart", "touchmove", "touchend", "pointerdown", "pointermove", "pointerup"].forEach((type) => {
+      panel.addEventListener(type, (event) => event.stopPropagation(), { passive: true });
+    });
     panel.innerHTML = '<div class="mapControlHeader"><strong>' + title + '</strong><button type="button" class="mapControlClose" aria-label="Zamknij panel">×</button></div><div class="mapControlContent"></div>';
     panel.querySelector("button").addEventListener("click", () => closeMapControlPanels(true));
     return panel;
@@ -7280,6 +7291,84 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     window.addEventListener("focus", checkCalendar);
     checkCalendar();
   }
+
+  function getMapLabelSettings(mapId) {
+    const overlays = getMapViewState(mapId).overlays || {};
+    return { legendVisible: overlays.legendVisible !== false, speciesLabels: overlays.speciesLabels !== false, dateLabels: overlays.dateLabels === true, speciesLanguage: overlays.speciesLanguage || "pl" };
+  }
+  function formatMapObservationDate(date, time = "") {
+    if (!StudyFilters.observationDate(date)) return "";
+    const [year, month, day] = date.split("-");
+    const validTime = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(time) ? time : "";
+    return day + "." + month + "." + year + (validTime ? ", " + validTime : "");
+  }
+  function mapPointDateLabel(entry, mapId, pointType) {
+    if (mapId === "working") {
+      const raw = String(entry.createdAt || "");
+      if (!raw) return "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return formatMapObservationDate(raw);
+      if (!StudyFilters.observationDate(raw.slice(0, 10)) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)) return "";
+      const date = new Date(raw);
+      if (!Number.isFinite(date.getTime())) return "";
+      // createdAt is an instant (usually ISO UTC); display it in device-local time,
+      // consistently with working-nest date filters. Never convert obsDate/obsTime.
+      const pad = (value) => String(value).padStart(2, "0");
+      const day = date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
+      const seconds = /T\d{2}:\d{2}:\d{2}/.test(raw) ? ":" + pad(date.getSeconds()) : "";
+      return formatMapObservationDate(day, pad(date.getHours()) + ":" + pad(date.getMinutes()) + seconds);
+    }
+    if (pointType === "kontrola") {
+      const control = entry.randomMicro || {};
+      // These optional fields are read only; current forms do not add them.
+      const pairs = [[control.obsDate, control.obsTime], [control.controlDate, control.controlTime], [control.date, control.time], [entry.controlDate, entry.controlTime], [entry.randomObsDate, entry.randomObsTime]];
+      for (const [date, time] of pairs) {
+        if (StudyFilters.observationDate(date)) return formatMapObservationDate(date, time);
+      }
+    }
+    return formatMapObservationDate(entry.obsDate, entry.obsTime);
+  }
+  function markerLabelHtml(entry, mapId, pointType) {
+    const settings = getMapLabelSettings(mapId);
+    const species = settings.speciesLabels && (mapId !== "working" || getSpeciesInfo(entry).key) ? mapSpeciesLabel(entry, mapId) : "";
+    const date = settings.dateLabels ? mapPointDateLabel(entry, mapId, pointType) : "";
+    const note = mapId === "working" && workingNotesVisible ? String(entry.note ?? entry.notes ?? "").trim() : "";
+    return [species ? '<strong class="map-label-species">' + escapeHtml(species) + '</strong>' : '', date ? '<span class="map-label-date">' + escapeHtml(date) + '</span>' : '', note ? '<span class="map-label-note">' + escapeHtml(note) + '</span>' : ''].filter(Boolean).join('');
+  }
+  function resizeFieldMap(mapId) {
+    const map = mapId === "working" ? workingMap : recordsMap;
+    const dock = document.getElementById(mapId + "-control-dock");
+    const height = map?.getContainer().clientHeight;
+    if (dock && height) dock.style.setProperty("--field-map-panel-height", Math.max(100, height - 94) + "px");
+    if (map?._loaded) map.invalidateSize({ animate: false, pan: true, debounceMoveend: true });
+  }
+  function setupMapLegend(map, mapId, wrapper, content) {
+    const frame = document.createElement("div");
+    frame.id = mapId + "-map-frame";
+    frame.className = "field-map-frame";
+    wrapper.before(frame);
+    const legend = document.getElementById(mapId + "-legend-panel");
+    frame.append(wrapper, legend);
+    legend.classList.add("map-bottom-legend");
+    legend.setAttribute("aria-label", "Legenda mapy");
+    const label = document.createElement("label");
+    label.className = "inline-check";
+    label.innerHTML = '<input type="checkbox" id="' + mapId + '-legend-toggle"> Pokaż legendę pod mapą';
+    const toggle = label.querySelector("input");
+    toggle.checked = getMapLabelSettings(mapId).legendVisible;
+    legend.hidden = !toggle.checked;
+    toggle.addEventListener("change", () => {
+      legend.hidden = !toggle.checked;
+      saveMapViewState(mapId, { overlays: { legendVisible: toggle.checked } });
+      requestAnimationFrame(() => resizeFieldMap(mapId));
+    });
+    content.prepend(label);
+    // The viewport, not its legend, is measured. Resizing never recreates Leaflet.
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => { if (wrapper.clientWidth && wrapper.clientHeight) resizeFieldMap(mapId); });
+      observer.observe(wrapper);
+    } else window.addEventListener("resize", () => resizeFieldMap(mapId), { passive: true });
+  }
+
   function initMapControlDock(map, mapId) {
     if (document.getElementById(mapId + "-control-dock")) return;
     const canvas = document.getElementById(mapId + "-map");
@@ -7301,7 +7390,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     dock.append(controlPanel(mapId, "basemap", "Podkład mapy"), controlPanel(mapId, "settings", "Ustawienia mapy"), controlPanel(mapId, "filters", "Filtry mapy"));
     wrapper.append(dock);
     const content = document.querySelector("#" + mapId + "-settings-control .mapControlContent");
-    ["navigation-panel", "options-panel", "legend-panel", "measure-panel", "orto-cache-status"].forEach((suffix) => {
+    ["navigation-panel", "options-panel", "measure-panel", "orto-cache-status"].forEach((suffix) => {
       const element = document.getElementById(mapId + "-" + suffix);
       if (element) content.append(element);
     });
@@ -7311,20 +7400,35 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     dock.append(label);
     const fullscreen = document.getElementById(mapId + "-fullscreen-map");
     content.prepend(fullscreen);
-    const primaryActions = wrapper.parentElement.querySelector(".map-primary-actions");
+    const primaryActions = wrapper.closest(".screen").querySelector(".map-primary-actions");
     if (primaryActions && !primaryActions.children.length) primaryActions.hidden = true;
-    const options = document.getElementById(mapId + "-options-panel");
+    setupMapLegend(map, mapId, wrapper, content);
+    const labelSection = document.createElement("fieldset");
+    labelSection.className = "map-label-settings";
+    labelSection.innerHTML = '<legend>Etykiety na mapie</legend>';
+    content.append(labelSection);
     if (mapId === "working") {
       const labels = document.createElement("label");
       labels.className = "inline-check";
-      labels.innerHTML = '<input type="checkbox" id="working-species-labels-toggle" checked> Pokaż etykiety gatunków (jeśli zapisano gatunek)';
+      labels.innerHTML = '<input type="checkbox" id="working-species-labels-toggle" checked> Pokaż nazwę gatunku';
       const toggle = labels.querySelector("input");
       toggle.checked = getMapViewState(mapId).overlays?.speciesLabels !== false;
       toggle.addEventListener("change", () => { saveMapViewState(mapId, { overlays: { speciesLabels: toggle.checked } }); renderWorkingMap(); });
-      options.append(labels);
+      labelSection.append(labels);
     }
+    if (mapId === "records") labelSection.append($("#records-species-labels-toggle").closest("label"));
+    const dateLabel = document.createElement("label");
+    dateLabel.className = "inline-check";
+    dateLabel.innerHTML = '<input type="checkbox" id="' + mapId + '-date-labels-toggle"> Pokaż datę i godzinę';
+    const dateToggle = dateLabel.querySelector("input");
+    dateToggle.checked = getMapLabelSettings(mapId).dateLabels;
+    dateToggle.addEventListener("change", () => {
+      saveMapViewState(mapId, { overlays: { dateLabels: dateToggle.checked } });
+      mapId === "records" ? renderRecordsMap() : renderWorkingMap();
+    });
+    labelSection.append(dateLabel);
     const language = document.createElement("label");
-    language.textContent = "Język etykiet";
+    language.textContent = "Język gatunku";
     const languageSelect = document.createElement("select");
     languageSelect.id = mapId + "-species-language";
     languageSelect.innerHTML = '<option value="pl">Polski</option><option value="la">Łaciński</option><option value="en">Angielski</option>';
@@ -7334,7 +7438,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       mapId === "records" ? renderRecordsMap() : renderWorkingMap();
     });
     language.append(languageSelect);
-    options.append(language);
+    labelSection.append(language);
     const summary = document.createElement("p");
     summary.id = mapId + "-filter-summary";
     summary.className = "filter-summary map-filter-summary";
@@ -7356,6 +7460,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       $("#working-list-panel").before(host);
     }
     const list = workingViewMode === "list";
+    if (list && activeMapFullscreen === "working") setMapFullscreen("working", false);
     host.hidden = !list;
     const target = list ? host : $("#working-map-panel");
     ["working-control-dock", "working-filter-summary"].forEach((id) => { const el = document.getElementById(id); if (el) target.append(el); });
