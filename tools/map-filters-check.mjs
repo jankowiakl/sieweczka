@@ -19,7 +19,7 @@ for (const view of ["records", "working"]) {
   }
 }
 assert.ok(html.indexOf('src="study-filters.js') < html.indexOf('src="app.js'));
-assert.ok(read("sw.js").includes('"./study-filters.js?v=2026.11.10-map-filters"'));
+assert.ok(read("sw.js").includes(html.match(/src="(study-filters\.js[^" ]+)"/)[1]));
 
 let localNow = new Date(2026, 11, 31, 23, 59, 50);
 class ClockDate extends Date {

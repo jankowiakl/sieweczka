@@ -7,17 +7,24 @@
     return filters?.calendarYear === getCurrentStudyYear() ? filters : getDefaultFilters();
   }
   function observationDate(value) {
-    const text = String(value || "");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return "";
-    const date = new Date(`${text}T12:00:00`);
-    return Number.isFinite(date.getTime()) && date.getFullYear() === Number(text.slice(0, 4)) && date.getMonth() + 1 === Number(text.slice(5, 7)) && date.getDate() === Number(text.slice(8, 10)) ? text : "";
+    const text = String(value ?? "").trim();
+    const time = '(?:[T ](?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|[+-](?:[01]\\d|2[0-3]):?[0-5]\\d)?)?';
+    const iso = new RegExp('^(\\d{4})-(\\d{2})-(\\d{2})' + time + '$').exec(text);
+    const polish = new RegExp('^(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})' + time + '$').exec(text);
+    if (!iso && !polish) return "";
+    const [year, month, day] = iso ? iso.slice(1).map(Number) : [Number(polish[3]), Number(polish[2]), Number(polish[1])];
+    const date = new Date(year, month - 1, day, 12);
+    if (date.getFullYear() !== year || date.getMonth() + 1 !== month || date.getDate() !== day) return "";
+    // obsDate is a calendar date; do not shift its day/year through UTC.
+    return String(year).padStart(4, "0") + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
   }
   function workingDate(item) {
-    if (!item?.createdAt) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(item.createdAt)) return observationDate(item.createdAt);
-    if (!observationDate(String(item.createdAt).slice(0, 10))) return "";
-    const date = new Date(item.createdAt);
-    return Number.isFinite(date.getTime()) ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` : "";
+    const raw = String(item?.createdAt ?? item?.created_at ?? "").trim();
+    const day = observationDate(raw);
+    if (!day) return "";
+    if (!/^\d{4}-\d{2}-\d{2}[T ]/.test(raw)) return day;
+    const date = new Date(raw.replace(" ", "T"));
+    return Number.isFinite(date.getTime()) ? String(date.getFullYear()).padStart(4, "0") + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0") : "";
   }
   function getRecordStudyYear(entry) {
     const season = String(entry.season ?? "").trim();

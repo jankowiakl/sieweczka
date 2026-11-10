@@ -12,7 +12,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.11.10-map-labels-touch";
+  const APP_VERSION = "2026.11.10-map-points-fix";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -4795,7 +4795,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     if (!state || state.stateBound) return;
     state.stateBound = true;
     map.on("moveend zoomend baselayerchange overlayadd overlayremove", () => scheduleMapViewStateSave(map, mapId));
-    $(`#${mapId}-options-panel, #${mapId}-measure-panel`).forEach((panel) => {
+    $$(`#${mapId}-options-panel, #${mapId}-measure-panel`).forEach((panel) => {
       panel.addEventListener("toggle", () => saveMapPanelState(mapId));
     });
     window.addEventListener("beforeunload", () => captureMapViewState(map, mapId));
@@ -5827,8 +5827,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   }
 
   function renderRecordsMap(focusUid = null) {
+    try { renderRecordsMapContent(focusUid); clearMapRenderError("records"); }
+    catch (error) { showMapRenderError("records", error); }
+  }
+  function renderRecordsMapContent(focusUid = null) {
     const mapEl = $("#records-map");
-    if (!mapEl || typeof L === "undefined") { $("#map-info").textContent = "Mapa niedostępna offline (brak biblioteki Leaflet)."; return; }
+    if (!mapEl || typeof L === "undefined") throw new Error("Mapa niedostępna — brak kontenera lub biblioteki Leaflet.");
     const firstRender = !recordsMap;
     if (!recordsMap) {
       const base = createBaseLayers();
@@ -5860,12 +5864,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     } else if (recordsGridLayer && recordsMap.hasLayer(recordsGridLayer)) {
       recordsMap.removeLayer(recordsGridLayer);
     }
-    mapMarkersLayer.clearLayers();
     const entries = filteredRecords();
     const points = StudyFilters.filterRecordMapPoints(entries, getViewFilters("records"), getSpeciesInfo);
     const missingNest = entries.filter((e) => !toLatLon(e.lat, e.lon)).length;
     const missingCtrl = entries.filter((e) => !toLatLon(e.randomMicro?.lat, e.randomMicro?.lon)).length;
     refreshFilterSummary("records", points.length, entries.length);
+    mapMarkersLayer.clearLayers();
     points.forEach((p)=>{
       const icon = L.divIcon({className:`map-marker ${p.type}`, html:`<div class="pin"><span>${p.type==='gniazdo'?'G':'K'}</span></div>`});
       const canMove = canMoveMapPoint(p.entry);
@@ -5886,10 +5890,10 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       if (focusPos) recordsMap.setView(focusPos, 19);
       else setMapInfo("records", "Wybrany rekord nie ma poprawnych współrzędnych GPS.");
     }
-    if (firstRender && !points.length && !ortoCacheState.records.viewRestored && !focusUid) {setMapInfo("records", "Brak zapisanych punktów z GPS do pokazania na mapie."); recordsMap.setView([52,19],7);}
-    setMapInfo("records", `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`);
+    if (firstRender && !recordsMap._loaded && !points.length) recordsMap.setView([52,19],7);
+    setMapInfo("records", getMapEmptyMessage("records", points.length) || `Punkty: ${points.length}. Brak GPS gniazda: ${missingNest}. Brak GPS kontroli: ${missingCtrl}.`);
     if (firstRender && points.length && !ortoCacheState.records.viewRestored && !focusUid) recordsMap.fitBounds(L.latLngBounds(points.map((p)=>p.pos)), {padding:[30,30]});
-    recordsMap.invalidateSize();
+    resizeFieldMap("records");
     renderBrysnaSmieckPoints("records");
     syncUserLocationLayers("records"); bringMeasureToFront("records");
   }
@@ -7153,7 +7157,11 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     closeWorkingEditPanel();
   }
   function renderWorkingMap(showNearest = false) {
-    const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") return;
+    try { renderWorkingMapContent(showNearest); clearMapRenderError("working"); }
+    catch (error) { showMapRenderError("working", error); }
+  }
+  function renderWorkingMapContent(showNearest = false) {
+    const mapEl = $("#working-map"); if (!mapEl || typeof L === "undefined") throw new Error("Mapa niedostępna — brak kontenera lub biblioteki Leaflet.");
     const firstRender = !workingMap;
     if (!workingMap) {
       const base = createBaseLayers();
@@ -7180,9 +7188,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     } else if (workingGridLayer && workingMap.hasLayer(workingGridLayer)) {
       workingMap.removeLayer(workingGridLayer);
     }
-    workingLayer.clearLayers();
     const items = filteredWorkingNests();
     const my=latestUserLatLng; const enriched=items.map((w)=>{ const pos=toLatLon(w.lat,w.lon); const dist=(my&&pos)?distanceM(my,pos):null; const bearing=(my&&pos)?bearingDeg(my,pos):null; return {w,pos,dist,bearing}; }).filter(x=>x.pos).sort((a,b)=>(a.dist??1e12)-(b.dist??1e12));
+    workingLayer.clearLayers();
     enriched.forEach(({w,pos}) => {
       const canMove = canMoveMapPoint(w);
       const movable = canMove && isMapPointEditModeEnabled("working");
@@ -7196,14 +7204,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const hadFocus = !!workingFocusId;
     workingFocusId = null;
     refreshFilterSummary("working", enriched.length, items.length);
-    setMapInfo("working", `Punkty robocze: ${enriched.length}`);
-    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button>${canEditItem(w) ? `<button data-w-action="edit" data-working-id="${w.id}">Edytuj</button>` : ""}${canSoftDeleteItem(w) ? `<button class="danger" data-w-action="delete" data-working-id="${w.id}">Ukryj</button>` : ""}${canEditItem(w) ? `<select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}</div></article>`).join("") || `<p class="muted">${FILTER_EMPTY_MESSAGE}</p>`;
+    setMapInfo("working", getMapEmptyMessage("working", enriched.length) || `Punkty robocze: ${enriched.length}`);
+    $("#working-list").innerHTML = enriched.map(({w,pos,dist,bearing}) => `<article class="entry-card"><div class="entry-main"><h3>${escapeHtml(w.label || "—")}</h3><p>Status: <strong>${escapeHtml(workingStatusLabel(w.status))}</strong> • ${escapeHtml(w.createdAt || "—")}</p><p class="muted">${pos[0]}, ${pos[1]} • GPS ±${escapeHtml(w.accuracy||'—')} m</p><p class="muted">${dist==null?'Odległość niedostępna — włącz moją pozycję.':`${Math.round(dist)} m • ${bearingLabel(bearing)} / ${Math.round(bearing)}°`}</p>${w.note?`<p>${escapeHtml(w.note)}</p>`:''}</div><div class="entry-actions"><button data-w-action="show" data-working-id="${w.id}">Pokaż na mapie</button><button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button>${canEditItem(w) ? `<button data-w-action="edit" data-working-id="${w.id}">Edytuj</button>` : ""}${canSoftDeleteItem(w) ? `<button class="danger" data-w-action="delete" data-working-id="${w.id}">Ukryj</button>` : ""}${canEditItem(w) ? `<select data-w-action="status" data-working-id="${w.id}">${workingStatusOptions(w.status||'do_sprawdzenia')}</select>` : ""}</div></article>`).join("") || `<p class="muted">${escapeHtml(getMapEmptyMessage("working", 0))}</p>`;
     $("#working-nearest-list").innerHTML = showNearest ? (enriched.slice(0,5).map(({w,dist,bearing})=>`<div>${escapeHtml(w.label)} — ${dist==null?'—':Math.round(dist)+' m'} — ${dist==null?'—':bearingLabel(bearing)} <button data-w-action="show" data-working-id="${w.id}">Pokaż</button> <button data-w-action="nav" data-working-id="${w.id}">Nawiguj</button></div>`).join('') || '<p class="muted">Brak danych.</p>') : '';
     syncWorkingControlLocation();
     $("#working-map-frame").hidden = workingViewMode !== "map";
     $("#working-map-panel").hidden = workingViewMode!=='map'; $("#working-list-panel").hidden = workingViewMode!=='list';
     renderBrysnaSmieckPoints("working");
-    workingMap.invalidateSize(); if (workingViewMode==='map') { if (firstRender && !hadFocus && !ortoCacheState.working.viewRestored) fitWorkingMapBounds(); syncUserLocationLayers("working"); bringMeasureToFront("working");}
+    resizeFieldMap("working"); if (workingViewMode==='map') { if (firstRender && !hadFocus && !ortoCacheState.working.viewRestored) fitWorkingMapBounds(); syncUserLocationLayers("working"); bringMeasureToFront("working");}
   }
 
 
@@ -7297,8 +7305,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     return { legendVisible: overlays.legendVisible !== false, speciesLabels: overlays.speciesLabels !== false, dateLabels: overlays.dateLabels === true, speciesLanguage: overlays.speciesLanguage || "pl" };
   }
   function formatMapObservationDate(date, time = "") {
-    if (!StudyFilters.observationDate(date)) return "";
-    const [year, month, day] = date.split("-");
+    const normalized = StudyFilters.observationDate(date);
+    if (!normalized) return "";
+    const [year, month, day] = normalized.split("-");
     const validTime = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(time) ? time : "";
     return day + "." + month + "." + year + (validTime ? ", " + validTime : "");
   }
@@ -7525,6 +7534,32 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     });
     updateBasemapControl(mapId);
   }
+
+  function getMapEmptyMessage(view, pointCount, source = view === "working" ? activeWorkingNests() : activeEntries()) {
+    if (pointCount) return "";
+    if (!source.length) return "Brak zapisanych danych do wyświetlenia.";
+    const filters = getViewFilters(view);
+    const matching = view === "working" ? StudyFilters.filterWorkingNests(source, filters, getSpeciesInfo) : StudyFilters.filterRecords(source, { ...filters, pointType: "all" }, getSpeciesInfo);
+    if (!matching.length) return "Brak punktów w wybranym sezonie. Zmień rok lub wybierz Wszystkie lata.";
+    return "Dane istnieją, ale nie mają poprawnych współrzędnych GPS dla wybranego rodzaju punktów.";
+  }
+  function clearMapRenderError(mapId) {
+    document.getElementById(mapId + "-render-error")?.remove();
+  }
+  function showMapRenderError(mapId, error) {
+    console.error("[map:" + mapId + "] Nie udało się narysować punktów", error);
+    let notice = document.getElementById(mapId + "-render-error");
+    if (!notice) {
+      notice = document.createElement("p");
+      notice.id = mapId + "-render-error";
+      notice.className = "map-render-error";
+      notice.setAttribute("role", "alert");
+      $(mapId === "working" ? "#working-map-screen" : "#map-screen")?.append(notice);
+    }
+    notice.textContent = "Błąd techniczny rysowania punktów: " + (error?.message || String(error)) + ". Dane nie zostały usunięte.";
+    setMapInfo(mapId, notice.textContent);
+  }
+
   function refreshFilterSummary(view, count, recordsCount = count) {
     const filters = getViewFilters(view);
     const source = view === "working" ? activeWorkingNests() : activeEntries();
@@ -7535,7 +7570,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     const type = view === "working" ? filters.statuses.map(workingStatusLabel).join(", ") : ({ all: "Wszystkie punkty", gniazdo: "Gniazda", kontrola: "Kontrole" })[filters.pointType];
     const text = [year, species, type, period, count + (view === "home" ? " rekordów" : " punktów")].filter(Boolean).join(" • ");
     const target = document.getElementById(view + "-filter-summary");
-    if (target) target.textContent = text + (!recordsCount ? " • " + FILTER_EMPTY_MESSAGE : !count ? " • Brak poprawnych współrzędnych GPS w tym zakresie." : "");
+    const emptyMessage = view === "home" ? (!recordsCount ? FILTER_EMPTY_MESSAGE : "") : getMapEmptyMessage(view, count, source);
+    if (target) target.textContent = text + (emptyMessage ? " • " + emptyMessage : "");
     const custom = filters.year !== "current" || filters.species.length > 0 || filters.pointType !== "all" || !!period || filters.statuses.length > 0;
     document.querySelector('[aria-controls="' + view + '-filters-control"]')?.classList.toggle("filters-active", custom);
   }

@@ -1,4 +1,4 @@
-const CACHE_NAME = "sieweczka-app-v2026-11-10-map-labels-touch";
+const CACHE_NAME = "sieweczka-app-v2026-11-10-map-points-fix";
 const ORTO_OFFLINE_CACHE = "sieweczka-orto-view-cache-v1";
 const DOMINIK_OFFLINE_CACHE = "sieweczka-dominik-view-cache-v1";
 const GEOPORTAL_ORTO_WMS_HOST = "mapy.geoportal.gov.pl";
@@ -12,9 +12,9 @@ const APP_SHELL = [
   "./styles.css",
   "./app.js",
   "./study-filters.js",
-  "./study-filters.js?v=2026.11.10-map-filters",
-  "./app.js?v=2026.11.10-map-labels-touch",
-  "./styles.css?v=2026.11.10-map-labels-touch",
+  "./study-filters.js?v=2026.11.10-map-points-fix",
+  "./app.js?v=2026.11.10-map-points-fix",
+  "./styles.css?v=2026.11.10-map-points-fix",
   "./field-help.js",
   "./manifest.webmanifest",
   "./data/points_brysna_smieck.geojson",

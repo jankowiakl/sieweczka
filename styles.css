@@ -3694,6 +3694,13 @@ body {
 .mapControlPanel .row-actions { flex-wrap: wrap; }
 .mapControlPanel fieldset { min-width: 0; }
 .mapControlPanel .mapControlContent { overflow-wrap: anywhere; }
+.map-render-error {
+  position: fixed; z-index: 1450;
+  top: calc(60px + env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right)); margin: 0; padding: 10px;
+  color: #7f1d1d; background: #fff1f2; border: 1px solid #fda4af; border-radius: 8px;
+  font-size: 13px; overflow-wrap: anywhere;
+}
 @media (max-width: 600px) {
   .mapControlPanel { max-height: min(54dvh, 380px, var(--field-map-panel-height, 380px)); }
   .map-bottom-legend { column-gap: 8px; }
