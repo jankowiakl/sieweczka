@@ -3683,6 +3683,38 @@ body {
 }
 .map-label-date { white-space: nowrap; }
 .map-label-note { overflow-wrap: anywhere; }
+.mapControlPanel .map-toolbar .map-navigation-switch {
+  display: flex; align-items: center; gap: 10px;
+  flex: 1 1 100%; width: 100%; min-height: 46px;
+  padding: 8px 10px; text-align: left;
+  background: #f7faf7; color: #234b32; border: 1px solid #c4d5bf; border-radius: 10px;
+}
+.map-switch-label { flex: 1; min-width: 0; font-weight: 600; }
+.map-switch-state { flex: 0 0 auto; font-size: 12px; color: #52655a; }
+.map-switch-track {
+  display: block; position: relative; flex: 0 0 44px; width: 44px; height: 26px;
+  border-radius: 20px; background: #7b8980; transition: background-color .15s;
+}
+.map-switch-thumb {
+  position: absolute; left: 3px; top: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: white; box-shadow: 0 1px 3px #0003;
+  transition: transform .15s;
+}
+.map-navigation-switch[aria-checked="true"] .map-switch-track { background: #197644; }
+.map-navigation-switch[aria-checked="true"] .map-switch-thumb { transform: translateX(18px); }
+.map-navigation-switch[aria-checked="true"] .map-switch-state { color: #17603b; font-weight: 700; }
+.map-navigation-switch:focus-visible { outline: 3px solid #2f8cff; outline-offset: 2px; }
+.map-navigation-switch[aria-busy="true"] { opacity: .65; cursor: wait; }
+.map-heading-beam { background: none; border: 0; pointer-events: none; }
+.map-heading-cone {
+  width: 160px; height: 160px; transform-origin: 50% 50%; pointer-events: none;
+  background: conic-gradient(from -35deg, #2f8cff24 0deg, #2f8cff99 35deg, #2f8cff24 70deg, transparent 70deg);
+  -webkit-mask-image: radial-gradient(circle, transparent 0 7px, #000 10px, #000a 40px, transparent 76px);
+  mask-image: radial-gradient(circle, transparent 0 7px, #000 10px, #000a 40px, transparent 76px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .map-switch-track, .map-switch-thumb { transition: none; }
+}
 /* Keep browser-native scrolling; these panels are siblings of the Leaflet canvas. */
 .mapControlPanel {
   overflow-x: hidden;

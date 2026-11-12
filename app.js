@@ -12,7 +12,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.11.10-map-points-fix";
+  const APP_VERSION = "2026.11.12-navigation-cone";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -6127,6 +6127,24 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     }
   }
 
+  function updateMapNavigationSwitch(button, enabled) {
+    button.setAttribute("aria-checked", String(!!enabled));
+    const state = button.querySelector(".map-switch-state");
+    if (state) state.textContent = enabled ? "Wł." : "Wył.";
+  }
+
+  async function runMapNavigationToggle(button, action) {
+    if (button.disabled) return;
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    try { await action(); }
+    finally {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      updateMapHeadingButtons();
+    }
+  }
+
   function updateMapHeadingButtons() {
     const statusText = latestUserLatLng
       ? `Twoja pozycja: aktywna${mapHeadingEnabled ? " (kierunek włączony)" : ""}`
@@ -6138,9 +6156,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     ["#map-enable-heading", "#working-enable-heading"].forEach((selector) => {
       const btn = $(selector);
       if (!btn) return;
-      btn.classList.toggle("active", mapHeadingEnabled);
-      btn.setAttribute("aria-pressed", mapHeadingEnabled ? "true" : "false");
-      btn.textContent = mapHeadingEnabled ? "Kierunek: włączony" : "Kierunek: wyłączony";
+      updateMapNavigationSwitch(btn, mapHeadingEnabled);
       btn.title = mapHeadingEnabled ? "Wyłącz kierunek mapy" : "Włącz kierunek mapy";
     });
     [
@@ -6150,9 +6166,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       const btn = $(selector);
       if (!btn) return;
       const active = !!state?.isTrackingUser;
-      btn.classList.toggle("active", active);
-      btn.setAttribute("aria-pressed", active ? "true" : "false");
-      btn.textContent = active ? "Śledzenie GPS: włączone" : "Śledzenie GPS: wyłączone";
+      updateMapNavigationSwitch(btn, active);
       btn.title = active ? "Wyłącz automatyczne podążanie mapy za GPS" : "Włącz automatyczne podążanie mapy za GPS";
     });
   }
@@ -6160,12 +6174,14 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
   function handleMapOrientation(event) {
     let heading = null;
     if (typeof event.webkitCompassHeading === "number") heading = event.webkitCompassHeading;
-    else if (event.absolute === true && typeof event.alpha === "number") heading = event.alpha;
     else if (typeof event.alpha === "number") heading = 360 - event.alpha;
     if (!Number.isFinite(heading)) return;
-    const normalized = ((heading % 360) + 360) % 360;
-    if (latestMapHeadingDeg != null && Math.abs(normalized - latestMapHeadingDeg) < 3) return;
-    latestMapHeadingDeg = latestMapHeadingDeg == null ? normalized : (latestMapHeadingDeg * 0.7 + normalized * 0.3);
+    const screenAngle = Number(window.screen?.orientation?.angle ?? window.orientation ?? 0) || 0;
+    const normalized = ((heading + screenAngle) % 360 + 360) % 360;
+    const delta = latestMapHeadingDeg == null ? 0 : ((normalized - latestMapHeadingDeg + 540) % 360) - 180;
+    if (latestMapHeadingDeg != null && Math.abs(delta) < 3) return;
+    // Smooth through north using the short arc, never via the opposite direction.
+    latestMapHeadingDeg = latestMapHeadingDeg == null ? normalized : (latestMapHeadingDeg + delta * 0.3 + 360) % 360;
     requestAnimationFrame(() => { renderMapHeading(recordsMap); renderMapHeading(workingMap); });
     updateMapHeadingButtons();
   }
@@ -6226,6 +6242,9 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     window.addEventListener("deviceorientationabsolute", mapHeadingOrientationHandler, true);
     window.addEventListener("deviceorientation", mapHeadingOrientationHandler, true);
     mapHeadingEnabled = true;
+    ensureUserLocationTracking([], null);
+    renderMapHeading(recordsMap);
+    renderMapHeading(workingMap);
     updateMapHeadingButtons();
     alert("Porusz telefonem ósemką, aby skalibrować kompas.");
   }
@@ -6239,10 +6258,21 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       return;
     }
     if (!latestUserLatLng || !Number.isFinite(latestMapHeadingDeg)) return;
-    if (!state.userHeadingMarker) state.userHeadingMarker = L.marker(latestUserLatLng,{icon:L.divIcon({className:"map-heading", html:"<div>▲</div>"}),zIndexOffset:900}).addTo(targetMap);
-    else state.userHeadingMarker.setLatLng(latestUserLatLng);
-    const arrow = state.userHeadingMarker.getElement()?.querySelector("div");
-    if (arrow) arrow.style.transform = `rotate(${latestMapHeadingDeg}deg)`;
+    const fieldMap = targetMap === recordsMap || targetMap === workingMap;
+    if (!state.userHeadingMarker) {
+      if (fieldMap) {
+        // Below the GPS dot and record markers, above the basemap; never intercept gestures.
+        const pane = targetMap.getPane("headingConePane") || targetMap.createPane("headingConePane");
+        pane.style.zIndex = "390";
+        pane.style.pointerEvents = "none";
+      }
+      const icon = fieldMap
+        ? L.divIcon({ className: "map-heading-beam", html: '<div class="map-heading-cone" aria-hidden="true"></div>', iconSize: [160, 160], iconAnchor: [80, 80] })
+        : L.divIcon({ className: "map-heading", html: "<div>▲</div>" });
+      state.userHeadingMarker = L.marker(latestUserLatLng, { icon, ...(fieldMap ? { pane: "headingConePane", interactive: false, keyboard: false } : { zIndexOffset: 900 }) }).addTo(targetMap);
+    } else state.userHeadingMarker.setLatLng(latestUserLatLng);
+    const indicator = state.userHeadingMarker.getElement()?.querySelector(fieldMap ? ".map-heading-cone" : "div");
+    if (indicator) indicator.style.transform = `rotate(${latestMapHeadingDeg}deg)`;
   }
 
   function setupGps() {
@@ -6443,8 +6473,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         alert("Nie udało się pobrać mojej pozycji. Sprawdź uprawnienia lokalizacji.");
       }
     });
-    $("#map-track-user").addEventListener("click", () => { void toggleUserLocationTracking("records", recordsMap, "#map-user-status"); });
-    $("#map-enable-heading").addEventListener("click", () => { void toggleMapHeading(); });
+    $("#map-track-user").addEventListener("click", (event) => { void runMapNavigationToggle(event.currentTarget, () => toggleUserLocationTracking("records", recordsMap, "#map-user-status")); });
+    $("#map-enable-heading").addEventListener("click", (event) => { void runMapNavigationToggle(event.currentTarget, toggleMapHeading); });
     $("#records-layer-health-check")?.addEventListener("click", () => runMapLayerDiagnostics("records").catch((error) => { console.error(error); renderMapLayerDiagnostics("records", [{ layerName: "Diagnostyka", type: "app", status: "nieznany błąd", elapsedMs: 0, url: "", diagnosis: error.message || String(error) }]); }));
     $("#map-screen").addEventListener("click", (event) => {
       const btn = event.target.closest("button[data-map-action]");
@@ -6511,8 +6541,8 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
       }
     });
     $("#working-fit").addEventListener("click", () => fitWorkingMapBounds());
-    $("#working-track-user").addEventListener("click", () => { void toggleUserLocationTracking("working", workingMap, "#working-user-status"); });
-    $("#working-enable-heading").addEventListener("click", () => { void toggleMapHeading(); });
+    $("#working-track-user").addEventListener("click", (event) => { void runMapNavigationToggle(event.currentTarget, () => toggleUserLocationTracking("working", workingMap, "#working-user-status")); });
+    $("#working-enable-heading").addEventListener("click", (event) => { void runMapNavigationToggle(event.currentTarget, toggleMapHeading); });
     $("#working-layer-health-check")?.addEventListener("click", () => runMapLayerDiagnostics("working").catch((error) => { console.error(error); renderMapLayerDiagnostics("working", [{ layerName: "Diagnostyka", type: "app", status: "nieznany błąd", elapsedMs: 0, url: "", diagnosis: error.message || String(error) }]); }));
     $("#working-show-map").addEventListener("click",()=>{workingViewMode="map";renderWorkingMap();});
     $("#working-show-list").addEventListener("click",()=>{workingViewMode="list";renderWorkingMap();});
