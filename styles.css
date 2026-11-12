@@ -3705,6 +3705,11 @@ body {
 .map-navigation-switch[aria-checked="true"] .map-switch-state { color: #17603b; font-weight: 700; }
 .map-navigation-switch:focus-visible { outline: 3px solid #2f8cff; outline-offset: 2px; }
 .map-navigation-switch[aria-busy="true"] { opacity: .65; cursor: wait; }
+.mapControlPanel .map-background-warning {
+  flex: 1 1 100%; margin: 0; padding: 8px 10px;
+  color: #713f12; background: #fff7dd; border: 1px solid #e5c770;
+  border-radius: 8px; font-size: 12px; line-height: 1.4;
+}
 .map-heading-beam { background: none; border: 0; pointer-events: none; }
 .map-heading-cone {
   width: 160px; height: 160px; transform-origin: 50% 50%; pointer-events: none;

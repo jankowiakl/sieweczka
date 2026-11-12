@@ -12,7 +12,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.11.12-navigation-cone";
+  const APP_VERSION = "2026.11.12-background-navigation";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -6036,9 +6036,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
         syncUserLocationLayers("working");
         syncUserLocationLayers("meso");
         followTrackedUserLocation();
-      }, () => {
-        mapUserState.records.isTrackingUser = false;
-        mapUserState.working.isTrackingUser = false;
+      }, (error) => {
+        // A temporary background timeout must not silently switch off retained tracking.
+        if (!keepNavigationInBackground() || !document.hidden || error.code === 1) {
+          mapUserState.records.isTrackingUser = false;
+          mapUserState.working.isTrackingUser = false;
+        }
         $("#map-user-status").textContent = "Twoja pozycja: niedostępna";
         $("#working-user-status").textContent = "Twoja pozycja: niedostępna";
         updateMapHeadingButtons();
@@ -6199,14 +6202,40 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     updateMapHeadingButtons();
   }
 
+  function keepNavigationInBackground() {
+    return getUiSettings().keepNavigationInBackground === true;
+  }
+
+  function updateBackgroundNavigationControls() {
+    const enabled = keepNavigationInBackground();
+    ["map", "working"].forEach((prefix) => {
+      const button = document.getElementById(prefix + "-keep-navigation");
+      if (button) updateMapNavigationSwitch(button, enabled);
+      const warning = document.getElementById(prefix + "-background-warning");
+      if (warning) warning.hidden = !enabled;
+    });
+  }
+
+  function setupBackgroundNavigationControls() {
+    ["map", "working"].forEach((prefix) => {
+      document.getElementById(prefix + "-keep-navigation")?.addEventListener("click", () => {
+        setUiSettings({ ...getUiSettings(), keepNavigationInBackground: !keepNavigationInBackground() });
+        updateBackgroundNavigationControls();
+      });
+    });
+    updateBackgroundNavigationControls();
+  }
+
   function pausePowerHungryFeatures() {
-    if (userLocationWatchId != null && navigator.geolocation?.clearWatch) {
-      navigator.geolocation.clearWatch(userLocationWatchId);
-      userLocationWatchId = null;
+    if (!keepNavigationInBackground()) {
+      if (userLocationWatchId != null && navigator.geolocation?.clearWatch) {
+        navigator.geolocation.clearWatch(userLocationWatchId);
+        userLocationWatchId = null;
+      }
+      mapUserState.records.isTrackingUser = false;
+      mapUserState.working.isTrackingUser = false;
+      disableMapHeading();
     }
-    mapUserState.records.isTrackingUser = false;
-    mapUserState.working.isTrackingUser = false;
-    disableMapHeading();
     for (const state of Object.values(ortoCacheState)) {
       clearTimeout(state.timer);
       clearTimeout(state.dominikTimer);
@@ -7781,6 +7810,7 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     setupOtherSpeciesPicker();
     setupFilterInterface();
     setupNavigation();
+    setupBackgroundNavigationControls();
     setupGps();
     setupCompass();
     ["#species"].forEach((sel) => $(sel)?.addEventListener("change", autoFillNearestDistances));
@@ -7793,6 +7823,12 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     window.addEventListener("pagehide", saveDraftSnapshotSync);
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) pausePowerHungryFeatures();
+      else {
+        updateBackgroundNavigationControls();
+        updateMapHeadingButtons();
+        renderMapHeading(recordsMap);
+        renderMapHeading(workingMap);
+      }
     });
     syncTilesFromInputs();
     updatePercentSummaries();
