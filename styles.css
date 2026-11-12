@@ -3674,9 +3674,15 @@ body {
 .map-label-species, .map-label-date, .map-label-note { display: block; }
 .map-label-date { font-weight: 500; font-variant-numeric: tabular-nums; }
 .record-species-label, .working-note-label {
-  background: #ffffffd9; max-width: 190px; white-space: normal;
-  overflow-wrap: anywhere; line-height: 1.3; pointer-events: none;
+  /* Leaflet panes have no intrinsic width: avoid shrinking labels to one letter. */
+  width: max-content;
+  max-width: min(280px, calc(100vw - 48px));
+  background: #ffffffd9; white-space: normal;
+  overflow-wrap: normal; word-break: normal; writing-mode: horizontal-tb;
+  line-height: 1.3; pointer-events: none;
 }
+.map-label-date { white-space: nowrap; }
+.map-label-note { overflow-wrap: anywhere; }
 /* Keep browser-native scrolling; these panels are siblings of the Leaflet canvas. */
 .mapControlPanel {
   overflow-x: hidden;
