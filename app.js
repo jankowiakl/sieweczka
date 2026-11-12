@@ -12,7 +12,7 @@
   const PHOTO_DB = "sieweczka-photo-db";
   const PHOTO_STORE = "photos";
   const PROTOCOL_VERSION = "field-sheet-v4-clean";
-  const APP_VERSION = "2026.11.12-background-navigation";
+  const APP_VERSION = "2026.11.12-measure-labels";
   const DEFAULT_API_URL = "https://bielik.myqnapcloud.com:18443";
   const UI_SETTINGS_KEY = "sieweczka-ui-settings-v1";
   const UI_COMPACT_SUGGESTION_KEY = "sieweczka-ui-compact-suggestion-v1";
@@ -4108,9 +4108,61 @@ ${list}` : "Nie znaleziono elementów powodujących poziomy overflow.";
     state.markers.forEach((marker) => marker.bringToFront());
   }
 
+  function measureLabelPosition(state) {
+    const projected = state.points.map((point) => state.map.project(point, 0));
+    if (state.mode === "line") {
+      const a = projected[projected.length - 2], b = projected[projected.length - 1];
+      return state.map.unproject(L.point((a.x + b.x) / 2, (a.y + b.y) / 2), 0);
+    }
+    // Place the label on an interior horizontal span, also for concave polygons.
+    const ys = projected.map((point) => point.y);
+    const y = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const crossings = [];
+    projected.forEach((a, index) => {
+      const b = projected[(index + 1) % projected.length];
+      if ((a.y > y) !== (b.y > y)) crossings.push(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y));
+    });
+    crossings.sort((a, b) => a - b);
+    let bestWidth = -1, x = projected[0].x;
+    for (let i = 0; i + 1 < crossings.length; i += 2) {
+      const width = crossings[i + 1] - crossings[i];
+      if (width > bestWidth) { bestWidth = width; x = (crossings[i] + crossings[i + 1]) / 2; }
+    }
+    return state.map.unproject(L.point(x, y), 0);
+  }
+
+  function updateMeasureMapLabel(mapId) {
+    if (mapId !== "records" && mapId !== "working") return;
+    const state = measureStates[mapId];
+    if (!state?.map) return;
+    const polygon = state.mode === "polygon";
+    const visible = (state.mode === "line" && state.points.length >= 2) || (polygon && state.points.length >= 3);
+    if (state.resultLabel && (!visible || state.resultLabelMode !== state.mode)) {
+      state.map.removeLayer(state.resultLabel);
+      state.resultLabel = null;
+    }
+    if (!visible) return;
+    const value = polygon ? geodesicArea(state.points) : state.points.slice(1).reduce((sum, point, index) => sum + state.map.distance(state.points[index], point), 0);
+    const number = (amount, digits) => amount.toLocaleString("pl-PL", { maximumFractionDigits: digits });
+    const main = number(value, polygon ? 0 : 1) + (polygon ? " m²" : " m");
+    const secondary = polygon ? number(value / 10000, 4) + " ha" : value >= 1000 ? number(value / 1000, 2) + " km" : "";
+    const content = '<span class="map-measure-label-title">' + (polygon ? "Powierzchnia" : "Łączna odległość") + '</span><strong>' + main + '</strong>' + (secondary ? '<span class="map-measure-label-secondary">' + secondary + '</span>' : '');
+    const position = measureLabelPosition(state);
+    if (!state.resultLabel) {
+      state.resultLabel = L.tooltip({
+        permanent: true, interactive: false, direction: polygon ? "center" : "bottom",
+        offset: polygon ? [0, 0] : [0, 12], opacity: 1,
+        className: "map-measure-label" + (polygon ? " map-measure-area-label" : "")
+      }).setLatLng(position).setContent(content).addTo(state.map);
+      state.resultLabelMode = state.mode;
+    } else state.resultLabel.setLatLng(position).setContent(content);
+    state.resultLabel.bringToFront();
+  }
+
   function updateMeasureResult(mapId, prefix = "") {
     const state = measureStates[mapId];
     const el = $(`#${mapId}-measure-result`);
+    updateMeasureMapLabel(mapId);
     if (!state || !el) return;
     let message = prefix;
     if (!message) {
